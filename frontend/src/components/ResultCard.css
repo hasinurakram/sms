@@ -1,0 +1,76 @@
+@media print {
+  @page {
+    size: A4;
+    margin: 5mm;
+  }
+  body * {
+    visibility: hidden;
+  }
+  .result-card-container,
+  .result-card-container * {
+    visibility: visible !important;
+  }
+  .result-card-container {
+    position: static !important;
+    left: auto;
+    top: auto;
+    width: 100% !important;
+    max-width: none !important;
+    box-shadow: none !important;
+    padding: 20px !important;
+    margin: 0 !important;
+    transform: scale(0.7);
+    transform-origin: top left;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .result-card-container table {
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+  .result-card-container .MuiTableCell-root {
+    padding: 4px 6px !important;
+    font-size: 0.7rem !important;
+    line-height: 1.2 !important;
+  }
+  .result-card-container .MuiTypography-h4 {
+    font-size: 1.2rem !important;
+    margin-bottom: 4px !important;
+  }
+  .result-card-container .MuiTypography-h5 {
+    font-size: 1rem !important;
+    margin-top: 4px !important;
+  }
+  .result-card-container .MuiTypography-h6 {
+    font-size: 0.95rem !important;
+  }
+  .result-card-container .MuiTypography-body1 {
+    font-size: 0.8rem !important;
+  }
+  .result-card-container .MuiTypography-body2 {
+    font-size: 0.75rem !important;
+  }
+  .result-card-container .MuiTypography-caption {
+    font-size: 0.7rem !important;
+  }
+  table {
+    page-break-inside: avoid;
+  }
+  tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+.result-card-container {
+  font-family: 'Roboto', 'Arial', sans-serif;
+}
+@media screen {
+  .result-card-container {
+    margin: 20px auto;
+  }
+}

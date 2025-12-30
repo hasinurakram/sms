@@ -1,0 +1,88 @@
+/* ID Card Styles */
+.id-card-wrapper {
+  display: inline-block;
+  margin: 10px;
+}
+
+.id-card {
+  font-family: 'Roboto', 'Arial', sans-serif;
+  border-radius: 6px;
+}
+
+/* Screen preview: scale CR80 portrait (54x86mm) to pixels nicely */
+@media screen {
+  .id-card-front,
+  .id-card-back {
+    /* approximate scale for screen preview */
+    width: 240px;
+    height: 380px;
+  }
+  .id-card-wrapper {
+    transition: transform 0.2s;
+  }
+  .id-card-wrapper:hover {
+    transform: translateY(-4px);
+  }
+}
+
+/* Print Styles */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  
+  .id-card-container,
+  .id-card-container * {
+    visibility: visible;
+  }
+  
+  .id-card-container {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+  
+  /* Hide print buttons and non-card elements */
+  .no-print {
+    display: none !important;
+  }
+  
+  /* Ensure colors print */
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  
+  /* True CR80 portrait size: 54mm x 86mm */
+  .id-card-front, .id-card-back {
+    width: 54mm !important;
+    height: 86mm !important;
+  }
+
+  .id-card {
+    page-break-inside: avoid;
+    margin: 5mm;
+  }
+  
+  /* Print multiple cards per page */
+  .id-card-wrapper {
+    display: inline-block;
+    margin: 5mm;
+    vertical-align: top;
+  }
+  
+  /* Page breaks */
+  @page {
+    size: A4;
+    margin: 10mm;
+  }
+}
+
+/* Ensure proper orientation for all cards */
+@media print {
+  .id-card-front, .id-card-back {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+}

@@ -1,0 +1,384 @@
+.receipt-book-container {
+  padding: 20px;
+  background-color: #f5f5f5;
+  min-height: 100vh;
+}
+
+.receipt-book-header {
+  text-align: center;
+  margin-bottom: 30px;
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.print-button {
+  margin-top: 15px;
+  background-color: #1976d2;
+  color: white;
+  padding: 10px 24px;
+  font-weight: 600;
+}
+
+.receipt-copies {
+  display: flex !important;
+  flex-direction: row !important;
+  gap: 10px;
+  width: 100%;
+}
+
+.receipt-copy {
+  background: white;
+  padding: 10px;
+  border-radius: 8px;
+  page-break-inside: avoid;
+  height: 100%;
+  font-size: 0.7rem;
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  padding-bottom: 30px;
+}
+
+.receipt-header {
+  text-align: center;
+  margin-bottom: 20px;
+  border-bottom: 2px solid #333;
+  padding-bottom: 15px;
+}
+
+.school-name {
+  font-weight: bold;
+  font-size: 1.2rem !important;
+  margin-bottom: 5px;
+}
+
+.school-address,
+.bank-info,
+.bank-account,
+.account-name {
+  margin: 2px 0;
+  font-size: 0.85rem !important;
+}
+
+.receipt-title {
+  font-weight: bold;
+  margin: 20px 0 10px;
+  text-decoration: underline;
+}
+
+.copy-label {
+  font-weight: bold;
+  color: #666;
+  margin-bottom: 15px;
+  font-style: italic;
+}
+
+.receipt-info,
+.student-info {
+  margin: 15px 0;
+  border: 1px solid #ddd;
+  padding: 10px;
+  background-color: #fafafa;
+}
+
+.fee-details-title {
+  font-weight: bold;
+  margin: 15px 0 10px;
+  text-decoration: underline;
+}
+
+.payment-method {
+  font-weight: bold;
+  margin: 10px 0;
+  text-align: center;
+  background-color: #f0f0f0;
+  padding: 5px;
+  border-radius: 4px;
+}
+
+.fee-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 15px 0;
+  font-size: 0.85rem;
+}
+
+.fee-table th,
+.fee-table td {
+  border: 1px solid #333;
+  padding: 8px;
+  text-align: left;
+}
+
+.fee-table th {
+  background-color: #f0f0f0;
+  font-weight: bold;
+  text-align: center;
+}
+
+.fee-table td:nth-child(2) {
+  text-align: center;
+  width: 120px;
+}
+
+.amount-input {
+  width: 100%;
+  border: 1px solid #ccc;
+  padding: 4px 6px;
+  border-radius: 4px;
+  text-align: center;
+}
+
+.total-row {
+  background-color: #f0f0f0;
+  font-weight: bold;
+}
+
+.amount-in-words {
+  font-weight: bold;
+  margin: 15px 0 30px 0;
+  border: 1px solid #ddd;
+  padding: 10px;
+  background-color: #fafafa;
+}
+
+.signatures {
+  margin-top: 60px;
+  padding-top: 5px;
+  text-align: center;
+  position: absolute;
+  bottom: 0px;
+  left: 0;
+  right: 0;
+}
+
+.signature-label {
+  font-weight: bold;
+  text-align: center;
+}
+
+.signature-role {
+  font-size: 0.8rem !important;
+  color: #666;
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.signature-line {
+  border-bottom: 1px solid #333;
+  height: 30px;
+  margin-top: 30px;
+}
+
+.thank-note {
+  font-style: italic;
+  margin-top: 20px;
+  padding: 10px;
+  background-color: #f9f9f9;
+  border: 1px dashed #ccc;
+  font-size: 0.85rem !important;
+}
+
+/* Print Styles */
+.school-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.school-logo {
+  margin-right: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.logo-image {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+}
+
+.school-details {
+  flex: 1;
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  
+  .receipt-copies, .receipt-copies * {
+    visibility: visible;
+  }
+  
+  .receipt-copies {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    display: flex !important;
+    flex-direction: row !important;
+    gap: 8px;
+  }
+  
+  .receipt-copy {
+    border: none;
+    padding: 5px;
+    font-size: 0.55rem;
+    flex: 1;
+    min-width: 0;
+    page-break-inside: avoid;
+    height: auto;
+    position: relative;
+    padding-bottom: 15px;
+    background: white !important;
+  }
+  
+  .receipt-copy,
+  .receipt-copy * {
+    color: #334065 !important;
+    background: white !important;
+  }
+  
+  .receipt-copy {
+    background: white !important;
+  }
+  
+  .school-name {
+    font-size: 0.9rem !important;
+    margin-bottom: 5px !important;
+    color: #334065 !important;
+  }
+  
+  .receipt-title {
+    font-size: 0.8rem !important;
+    margin-bottom: 8px !important;
+    color: #334065 !important;
+  }
+  
+  .receipt-header {
+    margin-bottom: 8px !important;
+    padding-bottom: 8px !important;
+  }
+  
+  .school-address,
+  .bank-info,
+  .bank-account,
+  .account-name {
+    font-size: 0.65rem !important;
+    margin: 2px 0 !important;
+    color: #334065 !important;
+  }
+  
+  .fee-table {
+    font-size: 0.7rem;
+    margin: 5px 0;
+  }
+  
+  .fee-table th,
+  .fee-table td {
+    padding: 1px;
+    border: 1px solid #334065;
+    font-size: 0.7rem;
+    color: #334065 !important;
+  }
+
+  .amount-input {
+    border: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+    font-size: 0.7rem !important;
+    color: #334065 !important;
+  }
+  
+  .amount-in-words {
+    font-size: 0.7rem !important;
+    margin: 8px 0 15px 0 !important;
+    padding: 5px !important;
+    color: #334065 !important;
+  }
+  
+  .signatures {
+    position: absolute;
+    bottom: 3px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 0.7rem !important;
+    color: #334065 !important;
+  }
+  
+  .signature-label {
+    font-size: 0.7rem !important;
+    margin: 0 !important;
+    color: #334065 !important;
+  }
+  
+  .student-info {
+    font-size: 0.6rem !important;
+    color: #334065 !important;
+  }
+  
+  .student-info .MuiTypography-root {
+    font-size: 0.6rem !important;
+    color: #334065 !important;
+  }
+  
+  .receipt-info {
+    font-size: 0.55rem !important;
+    color: #334065 !important;
+  }
+  
+  .receipt-info .MuiTypography-root {
+    font-size: 0.55rem !important;
+    white-space: nowrap !important;
+    color: #334065 !important;
+  }
+  
+  .receipt-date-number {
+    font-size: 0.55rem !important;
+    color: #334065 !important;
+  }
+  
+  .receipt-date-number .MuiTypography-root {
+    font-size: 0.55rem !important;
+    color: #334065 !important;
+  }
+  
+  .school-header {
+    display: flex !important;
+    align-items: center !important;
+    margin-bottom: 5px !important;
+  }
+  
+  .school-logo {
+    margin-right: 8px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+  
+  .logo-image {
+    width: 50px !important;
+    height: 50px !important;
+    object-fit: contain !important;
+  }
+  
+  .school-details {
+    flex: 1 !important;
+  }
+}
+
+/* Page break control */
+@page {
+  margin: 0.5in;
+  size: A4;
+}
+
+.receipt-copy {
+  page-break-inside: avoid;
+  page-break-after: auto;
+}

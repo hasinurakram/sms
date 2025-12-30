@@ -1,0 +1,477 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Box,
+  Typography,
+  Button,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Paper,
+  CircularProgress,
+  Alert,
+  Snackbar,
+  IconButton,
+  Avatar,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  Select,
+  Grid
+} from '@mui/material';
+import { 
+  Add as AddIcon, 
+  Refresh as RefreshIcon, 
+  Person as PersonIcon,
+  Close as CloseIcon
+} from '@mui/icons-material';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import api from '../utils/api';
+
+const StudentAvatar = ({ photo, name, size = 40 }) => {
+  if (photo) {
+    return (
+      <Avatar
+        src={photo}
+        alt={name}
+        sx={{ width: size, height: size }}
+        onError={(e) => {
+          e.target.style.display = 'none';
+          e.target.nextSibling.style.display = 'flex';
+        }}
+      />
+    );
+  }
+  return (
+    <Avatar sx={{ width: size, height: size, bgcolor: 'primary.main' }}>
+      {name ? name.charAt(0).toUpperCase() : <PersonIcon />}
+    </Avatar>
+  );
+};
+
+const FeesPage = () => {
+  const [fees, setFees] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [classes, setClasses] = useState([]);
+  const [selectedClass, setSelectedClass] = useState('');
+  const [students, setStudents] = useState([]);
+  const [isLoadingStudents, setIsLoadingStudents] = useState(false);
+  const [isLoadingClasses, setIsLoadingClasses] = useState(false);
+  const [feeTypes] = useState([
+    'Tuition',
+    'Admission',
+    'Exam',
+    'Library',
+    'Transportation',
+    'Other'
+  ]);
+
+  const [feeForm, setFeeForm] = useState({
+    studentId: '',
+    feeType: '',
+    amount: '',
+    dueDate: null,
+    description: ''
+  });
+
+  const [formErrors, setFormErrors] = useState({});
+  const [snackbar, setSnackbar] = useState({
+    open: false,
+    message: '',
+    severity: 'success'
+  });
+
+  // Fetch classes function
+  const fetchClasses = async () => {
+    try {
+      setIsLoadingClasses(true);
+      const token = localStorage.getItem('accessToken');
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+
+      const userData = JSON.parse(localStorage.getItem('user') || '{}');
+      const currentSchoolId = userData.school_id || userData.schoolId;
+      
+      if (!currentSchoolId) {
+        throw new Error('No school information found');
+      }
+      
+      const endpoints = [
+        `/api/classrooms/?school_id=${currentSchoolId}`,
+        `/api/classes/?school_id=${currentSchoolId}`,
+        `/api/academics/classrooms/?school=${currentSchoolId}`
+      ];
+      
+      let response;
+      let lastError;
+      
+      for (const endpoint of endpoints) {
+        try {
+          response = await api.get(endpoint, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Cache-Control': 'no-cache',
+              'Pragma': 'no-cache'
+            },
+            params: { _: new Date().getTime() }
+          });
+          
+          if (response.data) break;
+        } catch (err) {
+          lastError = err;
+          continue;
+        }
+      }
+      
+      if (!response) throw lastError || new Error('All endpoints failed');
+      
+      // Handle different response formats
+      let classesData = [];
+      if (Array.isArray(response.data)) {
+        classesData = response.data;
+      } else if (response.data && Array.isArray(response.data.results)) {
+        classesData = response.data.results;
+      } else if (response.data && Array.isArray(response.data.data)) {
+        classesData = response.data.data;
+      }
+      
+      const formattedClasses = classesData.map(cls => ({
+        id: cls.id || cls._id,
+        name: cls.name || cls.class_name || `Class ${cls.id || ''}`,
+        school_id: cls.school_id || cls.schoolId,
+        ...cls
+      }));
+      
+      setClasses(formattedClasses);
+      return formattedClasses;
+      
+    } catch (error) {
+      console.error('Error fetching classes:', error);
+      setSnackbar({
+        open: true,
+        message: 'Failed to load classes. Please try again.',
+        severity: 'error'
+      });
+      return [];
+    } finally {
+      setIsLoadingClasses(false);
+    }
+  };
+
+  // Fetch students function - Single version without duplicates
+  const fetchStudents = async (classId) => {
+    if (!classId) {
+      console.log('No class ID provided, skipping student fetch');
+      setStudents([]);
+      return [];
+    }
+
+    try {
+      setIsLoadingStudents(true);
+      
+      // Get current user data for school ID
+      const userData = JSON.parse(localStorage.getItem('user') || '{}');
+      const currentSchoolId = userData.school_id || userData.schoolId;
+      
+      if (!currentSchoolId) {
+        throw new Error('No school information found');
+      }
+
+      // Try different endpoints with both class and school filters
+      const endpoints = [
+        `/api/students/?class_id=${classId}&school_id=${currentSchoolId}`,
+        `/api/classrooms/${classId}/students/?school_id=${currentSchoolId}`,
+        `/api/users/?role=student&class_id=${classId}&school_id=${currentSchoolId}`
+      ];
+      
+      let response;
+      let lastError;
+      
+      // Try each endpoint until one works
+      for (const endpoint of endpoints) {
+        try {
+          console.log(`Trying student endpoint: ${endpoint}`);
+          response = await api.get(endpoint, {
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('accessToken')}`,
+              'Cache-Control': 'no-cache',
+              'Pragma': 'no-cache'
+            },
+            params: { _: new Date().getTime() }
+          });
+          
+          if (response.data) break;
+        } catch (err) {
+          lastError = err;
+          console.warn(`Failed with student endpoint ${endpoint}:`, err.message);
+          continue;
+        }
+      }
+      
+      if (!response) {
+        throw lastError || new Error('All student endpoints failed');
+      }
+      
+      // Handle different response formats
+      let studentsData = [];
+      if (Array.isArray(response.data)) {
+        studentsData = response.data;
+      } else if (response.data && Array.isArray(response.data.students)) {
+        studentsData = response.data.students;
+      } else if (response.data && Array.isArray(response.data.results)) {
+        studentsData = response.data.results;
+      } else if (response.data && Array.isArray(response.data.data)) {
+        studentsData = response.data.data;
+      } else if (response.data && typeof response.data === 'object') {
+        // Handle single student object
+        studentsData = [response.data];
+      }
+      
+      // Format student data for the dropdown
+      const formattedStudents = studentsData.map(student => ({
+        id: student.id || student._id,
+        name: student.name || student.full_name || `${student.first_name || ''} ${student.last_name || ''}`.trim(),
+        display_name: student.display_name || student.full_name || student.name || `Student ${student.id || ''}`,
+        profile_picture: student.profile_picture || student.photo || student.avatar,
+        class_id: student.class_id || student.classId || classId,
+        school_id: student.school_id || student.schoolId || currentSchoolId
+      }));
+      
+      setStudents(formattedStudents);
+      return formattedStudents;
+      
+    } catch (error) {
+      console.error('Error in fetchStudents:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        stack: error.stack
+      });
+      
+      setSnackbar({
+        open: true,
+        message: `Failed to load students: ${error.message}`,
+        severity: 'error',
+        autoHideDuration: 10000
+      });
+      
+      setStudents([]);
+      return [];
+    } finally {
+      setIsLoadingStudents(false);
+    }
+  };
+
+  // Rest of the component code...
+  // [Previous JSX and other functions remain the same]
+  
+  return (
+    <LocalizationProvider dateAdapter={AdapterDateFns}>
+      <Box sx={{ p: 3 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+          <Typography variant="h4" component="h1">Fees Management</Typography>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={handleOpenDialog}
+          >
+            Add Fee
+          </Button>
+        </Box>
+
+        {/* Add your table and other JSX here */}
+        
+        {/* Add Fee Dialog */}
+        <Dialog open={isDialogOpen} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
+          <DialogTitle>Add New Fee</DialogTitle>
+          <form onSubmit={handleSubmit}>
+            <DialogContent>
+              <Grid container spacing={2}>
+                <Grid item xs={12}>
+                  <FormControl fullWidth margin="normal" error={!!formErrors.classId}>
+                    <InputLabel id="class-select-label">Class</InputLabel>
+                    <Select
+                      labelId="class-select-label"
+                      id="class-select"
+                      value={selectedClass}
+                      label="Class"
+                      onChange={handleClassChange}
+                      disabled={isLoadingClasses}
+                    >
+                      {isLoadingClasses && (
+                        <MenuItem disabled>
+                          <CircularProgress size={24} />
+                        </MenuItem>
+                      )}
+                      {classes.map((cls) => (
+                        <MenuItem key={cls.id} value={cls.id}>
+                          {cls.name}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                    {formErrors.classId && (
+                      <Typography color="error" variant="caption">
+                        {formErrors.classId}
+                      </Typography>
+                    )}
+                  </FormControl>
+                </Grid>
+                
+                <Grid item xs={12}>
+                  <FormControl fullWidth margin="normal" error={!!formErrors.studentId}>
+                    <InputLabel id="student-select-label">Student</InputLabel>
+                    <Select
+                      labelId="student-select-label"
+                      id="student-select"
+                      value={feeForm.studentId}
+                      label="Student"
+                      onChange={(e) => setFeeForm({...feeForm, studentId: e.target.value})}
+                      disabled={!selectedClass || isLoadingStudents}
+                    >
+                      {isLoadingStudents ? (
+                        <MenuItem disabled>
+                          <CircularProgress size={24} />
+                        </MenuItem>
+                      ) : students.length === 0 ? (
+                        <MenuItem disabled>No students found</MenuItem>
+                      ) : (
+                        students.map((student) => (
+                          <MenuItem key={student.id} value={student.id}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <StudentAvatar 
+                                photo={student.profile_picture} 
+                                name={student.name} 
+                                size={24} 
+                              />
+                              {student.display_name || student.name}
+                            </Box>
+                          </MenuItem>
+                        ))
+                      )}
+                    </Select>
+                    {formErrors.studentId && (
+                      <Typography color="error" variant="caption">
+                        {formErrors.studentId}
+                      </Typography>
+                    )}
+                  </FormControl>
+                </Grid>
+
+                <Grid item xs={12} md={6}>
+                  <FormControl fullWidth margin="normal" error={!!formErrors.feeType}>
+                    <InputLabel id="fee-type-label">Fee Type</InputLabel>
+                    <Select
+                      labelId="fee-type-label"
+                      id="fee-type"
+                      value={feeForm.feeType}
+                      label="Fee Type"
+                      onChange={(e) => setFeeForm({...feeForm, feeType: e.target.value})}
+                    >
+                      {feeTypes.map((type) => (
+                        <MenuItem key={type} value={type}>
+                          {type}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                    {formErrors.feeType && (
+                      <Typography color="error" variant="caption">
+                        {formErrors.feeType}
+                      </Typography>
+                    )}
+                  </FormControl>
+                </Grid>
+
+                <Grid item xs={12} md={6}>
+                  <TextField
+                    fullWidth
+                    margin="normal"
+                    id="amount"
+                    label="Amount"
+                    type="number"
+                    value={feeForm.amount}
+                    onChange={(e) => setFeeForm({...feeForm, amount: e.target.value})}
+                    error={!!formErrors.amount}
+                    helperText={formErrors.amount}
+                  />
+                </Grid>
+
+                <Grid item xs={12}>
+                  <DatePicker
+                    label="Due Date"
+                    value={feeForm.dueDate}
+                    onChange={(newValue) => setFeeForm({...feeForm, dueDate: newValue})}
+                    renderInput={(params) => (
+                      <TextField 
+                        {...params} 
+                        fullWidth 
+                        margin="normal" 
+                        error={!!formErrors.dueDate}
+                        helperText={formErrors.dueDate}
+                      />
+                    )}
+                  />
+                </Grid>
+
+                <Grid item xs={12}>
+                  <TextField
+                    fullWidth
+                    margin="normal"
+                    id="description"
+                    label="Description"
+                    multiline
+                    rows={3}
+                    value={feeForm.description}
+                    onChange={(e) => setFeeForm({...feeForm, description: e.target.value})}
+                  />
+                </Grid>
+              </Grid>
+            </DialogContent>
+            <DialogActions sx={{ p: 2 }}>
+              <Button onClick={handleCloseDialog} color="inherit">
+                Cancel
+              </Button>
+              <Button 
+                type="submit" 
+                variant="contained" 
+                disabled={isSubmitting}
+                startIcon={isSubmitting ? <CircularProgress size={20} /> : null}
+              >
+                {isSubmitting ? 'Saving...' : 'Save'}
+              </Button>
+            </DialogActions>
+          </form>
+        </Dialog>
+
+        <Snackbar
+          open={snackbar.open}
+          autoHideDuration={snackbar.autoHideDuration || 6000}
+          onClose={handleCloseSnackbar}
+          anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+        >
+          <Alert 
+            onClose={handleCloseSnackbar} 
+            severity={snackbar.severity}
+            sx={{ width: '100%' }}
+          >
+            {snackbar.message}
+          </Alert>
+        </Snackbar>
+      </Box>
+    </LocalizationProvider>
+  );
+};
+
+export default FeesPage;

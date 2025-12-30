@@ -1,0 +1,22 @@
+# Python/Django
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+db.sqlite3
+media/
+backup.json
+sqlite_dump.json
+*.zip
+
+# Node/React
+frontend/node_modules/
+frontend/build/
+frontend/.env*
+
+# Logs and misc
+*.log
+.DS_Store
+Thumbs.db
