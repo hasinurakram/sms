@@ -1,0 +1,1379 @@
+﻿[
+{
+  "model": "contenttypes.contenttype",
+  "fields": {
+    "app_label": "admin",
+    "model": "logentry"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "fields": {
+    "app_label": "auth",
+    "model": "permission"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "fields": {
+    "app_label": "auth",
+    "model": "group"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "fields": {
+    "app_label": "contenttypes",
+    "model": "contenttype"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "fields": {
+    "app_label": "sessions",
+    "model": "session"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "fields": {
+    "app_label": "schools",
+    "model": "school"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "fields": {
+    "app_label": "academics",
+    "model": "classroom"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "fields": {
+    "app_label": "academics",
+    "model": "section"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "fields": {
+    "app_label": "academics",
+    "model": "studentprofile"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "fields": {
+    "app_label": "academics",
+    "model": "subject"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "fields": {
+    "app_label": "academics",
+    "model": "teacherassignment"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "fields": {
+    "app_label": "attendance",
+    "model": "attendancerecord"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "fields": {
+    "app_label": "fees",
+    "model": "feestructure"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "fields": {
+    "app_label": "fees",
+    "model": "payment"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "fields": {
+    "app_label": "fees",
+    "model": "feecategory"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "fields": {
+    "app_label": "fees",
+    "model": "feecollection"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "fields": {
+    "app_label": "fees",
+    "model": "studentfeeassignment"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "fields": {
+    "app_label": "fees",
+    "model": "feeslip"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "fields": {
+    "app_label": "users",
+    "model": "user"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "fields": {
+    "app_label": "users",
+    "model": "profile"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "fields": {
+    "app_label": "users",
+    "model": "adminprofile"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "fields": {
+    "app_label": "users",
+    "model": "committeeprofile"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "fields": {
+    "app_label": "users",
+    "model": "parentprofile"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "fields": {
+    "app_label": "users",
+    "model": "task"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "fields": {
+    "app_label": "results",
+    "model": "examination"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "fields": {
+    "app_label": "results",
+    "model": "result"
+  }
+},
+{
+  "model": "contenttypes.contenttype",
+  "fields": {
+    "app_label": "results",
+    "model": "studentoverallresult"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can add log entry",
+    "content_type": [
+      "admin",
+      "logentry"
+    ],
+    "codename": "add_logentry"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can change log entry",
+    "content_type": [
+      "admin",
+      "logentry"
+    ],
+    "codename": "change_logentry"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can delete log entry",
+    "content_type": [
+      "admin",
+      "logentry"
+    ],
+    "codename": "delete_logentry"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can view log entry",
+    "content_type": [
+      "admin",
+      "logentry"
+    ],
+    "codename": "view_logentry"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can add permission",
+    "content_type": [
+      "auth",
+      "permission"
+    ],
+    "codename": "add_permission"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can change permission",
+    "content_type": [
+      "auth",
+      "permission"
+    ],
+    "codename": "change_permission"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can delete permission",
+    "content_type": [
+      "auth",
+      "permission"
+    ],
+    "codename": "delete_permission"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can view permission",
+    "content_type": [
+      "auth",
+      "permission"
+    ],
+    "codename": "view_permission"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can add group",
+    "content_type": [
+      "auth",
+      "group"
+    ],
+    "codename": "add_group"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can change group",
+    "content_type": [
+      "auth",
+      "group"
+    ],
+    "codename": "change_group"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can delete group",
+    "content_type": [
+      "auth",
+      "group"
+    ],
+    "codename": "delete_group"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can view group",
+    "content_type": [
+      "auth",
+      "group"
+    ],
+    "codename": "view_group"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can add content type",
+    "content_type": [
+      "contenttypes",
+      "contenttype"
+    ],
+    "codename": "add_contenttype"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can change content type",
+    "content_type": [
+      "contenttypes",
+      "contenttype"
+    ],
+    "codename": "change_contenttype"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can delete content type",
+    "content_type": [
+      "contenttypes",
+      "contenttype"
+    ],
+    "codename": "delete_contenttype"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can view content type",
+    "content_type": [
+      "contenttypes",
+      "contenttype"
+    ],
+    "codename": "view_contenttype"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can add session",
+    "content_type": [
+      "sessions",
+      "session"
+    ],
+    "codename": "add_session"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can change session",
+    "content_type": [
+      "sessions",
+      "session"
+    ],
+    "codename": "change_session"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can delete session",
+    "content_type": [
+      "sessions",
+      "session"
+    ],
+    "codename": "delete_session"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can view session",
+    "content_type": [
+      "sessions",
+      "session"
+    ],
+    "codename": "view_session"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can add school",
+    "content_type": [
+      "schools",
+      "school"
+    ],
+    "codename": "add_school"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can change school",
+    "content_type": [
+      "schools",
+      "school"
+    ],
+    "codename": "change_school"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can delete school",
+    "content_type": [
+      "schools",
+      "school"
+    ],
+    "codename": "delete_school"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can view school",
+    "content_type": [
+      "schools",
+      "school"
+    ],
+    "codename": "view_school"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can add class room",
+    "content_type": [
+      "academics",
+      "classroom"
+    ],
+    "codename": "add_classroom"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can change class room",
+    "content_type": [
+      "academics",
+      "classroom"
+    ],
+    "codename": "change_classroom"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can delete class room",
+    "content_type": [
+      "academics",
+      "classroom"
+    ],
+    "codename": "delete_classroom"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can view class room",
+    "content_type": [
+      "academics",
+      "classroom"
+    ],
+    "codename": "view_classroom"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can add section",
+    "content_type": [
+      "academics",
+      "section"
+    ],
+    "codename": "add_section"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can change section",
+    "content_type": [
+      "academics",
+      "section"
+    ],
+    "codename": "change_section"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can delete section",
+    "content_type": [
+      "academics",
+      "section"
+    ],
+    "codename": "delete_section"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can view section",
+    "content_type": [
+      "academics",
+      "section"
+    ],
+    "codename": "view_section"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can add student profile",
+    "content_type": [
+      "academics",
+      "studentprofile"
+    ],
+    "codename": "add_studentprofile"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can change student profile",
+    "content_type": [
+      "academics",
+      "studentprofile"
+    ],
+    "codename": "change_studentprofile"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can delete student profile",
+    "content_type": [
+      "academics",
+      "studentprofile"
+    ],
+    "codename": "delete_studentprofile"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can view student profile",
+    "content_type": [
+      "academics",
+      "studentprofile"
+    ],
+    "codename": "view_studentprofile"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can add subject",
+    "content_type": [
+      "academics",
+      "subject"
+    ],
+    "codename": "add_subject"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can change subject",
+    "content_type": [
+      "academics",
+      "subject"
+    ],
+    "codename": "change_subject"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can delete subject",
+    "content_type": [
+      "academics",
+      "subject"
+    ],
+    "codename": "delete_subject"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can view subject",
+    "content_type": [
+      "academics",
+      "subject"
+    ],
+    "codename": "view_subject"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can add teacher assignment",
+    "content_type": [
+      "academics",
+      "teacherassignment"
+    ],
+    "codename": "add_teacherassignment"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can change teacher assignment",
+    "content_type": [
+      "academics",
+      "teacherassignment"
+    ],
+    "codename": "change_teacherassignment"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can delete teacher assignment",
+    "content_type": [
+      "academics",
+      "teacherassignment"
+    ],
+    "codename": "delete_teacherassignment"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can view teacher assignment",
+    "content_type": [
+      "academics",
+      "teacherassignment"
+    ],
+    "codename": "view_teacherassignment"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can add attendance record",
+    "content_type": [
+      "attendance",
+      "attendancerecord"
+    ],
+    "codename": "add_attendancerecord"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can change attendance record",
+    "content_type": [
+      "attendance",
+      "attendancerecord"
+    ],
+    "codename": "change_attendancerecord"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can delete attendance record",
+    "content_type": [
+      "attendance",
+      "attendancerecord"
+    ],
+    "codename": "delete_attendancerecord"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can view attendance record",
+    "content_type": [
+      "attendance",
+      "attendancerecord"
+    ],
+    "codename": "view_attendancerecord"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can add fee structure",
+    "content_type": [
+      "fees",
+      "feestructure"
+    ],
+    "codename": "add_feestructure"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can change fee structure",
+    "content_type": [
+      "fees",
+      "feestructure"
+    ],
+    "codename": "change_feestructure"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can delete fee structure",
+    "content_type": [
+      "fees",
+      "feestructure"
+    ],
+    "codename": "delete_feestructure"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can view fee structure",
+    "content_type": [
+      "fees",
+      "feestructure"
+    ],
+    "codename": "view_feestructure"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can add payment",
+    "content_type": [
+      "fees",
+      "payment"
+    ],
+    "codename": "add_payment"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can change payment",
+    "content_type": [
+      "fees",
+      "payment"
+    ],
+    "codename": "change_payment"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can delete payment",
+    "content_type": [
+      "fees",
+      "payment"
+    ],
+    "codename": "delete_payment"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can view payment",
+    "content_type": [
+      "fees",
+      "payment"
+    ],
+    "codename": "view_payment"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can add fee category",
+    "content_type": [
+      "fees",
+      "feecategory"
+    ],
+    "codename": "add_feecategory"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can change fee category",
+    "content_type": [
+      "fees",
+      "feecategory"
+    ],
+    "codename": "change_feecategory"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can delete fee category",
+    "content_type": [
+      "fees",
+      "feecategory"
+    ],
+    "codename": "delete_feecategory"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can view fee category",
+    "content_type": [
+      "fees",
+      "feecategory"
+    ],
+    "codename": "view_feecategory"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can add fee collection",
+    "content_type": [
+      "fees",
+      "feecollection"
+    ],
+    "codename": "add_feecollection"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can change fee collection",
+    "content_type": [
+      "fees",
+      "feecollection"
+    ],
+    "codename": "change_feecollection"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can delete fee collection",
+    "content_type": [
+      "fees",
+      "feecollection"
+    ],
+    "codename": "delete_feecollection"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can view fee collection",
+    "content_type": [
+      "fees",
+      "feecollection"
+    ],
+    "codename": "view_feecollection"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can add student fee assignment",
+    "content_type": [
+      "fees",
+      "studentfeeassignment"
+    ],
+    "codename": "add_studentfeeassignment"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can change student fee assignment",
+    "content_type": [
+      "fees",
+      "studentfeeassignment"
+    ],
+    "codename": "change_studentfeeassignment"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can delete student fee assignment",
+    "content_type": [
+      "fees",
+      "studentfeeassignment"
+    ],
+    "codename": "delete_studentfeeassignment"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can view student fee assignment",
+    "content_type": [
+      "fees",
+      "studentfeeassignment"
+    ],
+    "codename": "view_studentfeeassignment"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can add fee slip",
+    "content_type": [
+      "fees",
+      "feeslip"
+    ],
+    "codename": "add_feeslip"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can change fee slip",
+    "content_type": [
+      "fees",
+      "feeslip"
+    ],
+    "codename": "change_feeslip"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can delete fee slip",
+    "content_type": [
+      "fees",
+      "feeslip"
+    ],
+    "codename": "delete_feeslip"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can view fee slip",
+    "content_type": [
+      "fees",
+      "feeslip"
+    ],
+    "codename": "view_feeslip"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can add user",
+    "content_type": [
+      "users",
+      "user"
+    ],
+    "codename": "add_user"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can change user",
+    "content_type": [
+      "users",
+      "user"
+    ],
+    "codename": "change_user"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can delete user",
+    "content_type": [
+      "users",
+      "user"
+    ],
+    "codename": "delete_user"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can view user",
+    "content_type": [
+      "users",
+      "user"
+    ],
+    "codename": "view_user"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can add profile",
+    "content_type": [
+      "users",
+      "profile"
+    ],
+    "codename": "add_profile"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can change profile",
+    "content_type": [
+      "users",
+      "profile"
+    ],
+    "codename": "change_profile"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can delete profile",
+    "content_type": [
+      "users",
+      "profile"
+    ],
+    "codename": "delete_profile"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can view profile",
+    "content_type": [
+      "users",
+      "profile"
+    ],
+    "codename": "view_profile"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can add Admin",
+    "content_type": [
+      "users",
+      "adminprofile"
+    ],
+    "codename": "add_adminprofile"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can change Admin",
+    "content_type": [
+      "users",
+      "adminprofile"
+    ],
+    "codename": "change_adminprofile"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can delete Admin",
+    "content_type": [
+      "users",
+      "adminprofile"
+    ],
+    "codename": "delete_adminprofile"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can view Admin",
+    "content_type": [
+      "users",
+      "adminprofile"
+    ],
+    "codename": "view_adminprofile"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can add Committee",
+    "content_type": [
+      "users",
+      "committeeprofile"
+    ],
+    "codename": "add_committeeprofile"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can change Committee",
+    "content_type": [
+      "users",
+      "committeeprofile"
+    ],
+    "codename": "change_committeeprofile"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can delete Committee",
+    "content_type": [
+      "users",
+      "committeeprofile"
+    ],
+    "codename": "delete_committeeprofile"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can view Committee",
+    "content_type": [
+      "users",
+      "committeeprofile"
+    ],
+    "codename": "view_committeeprofile"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can add Parent",
+    "content_type": [
+      "users",
+      "parentprofile"
+    ],
+    "codename": "add_parentprofile"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can change Parent",
+    "content_type": [
+      "users",
+      "parentprofile"
+    ],
+    "codename": "change_parentprofile"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can delete Parent",
+    "content_type": [
+      "users",
+      "parentprofile"
+    ],
+    "codename": "delete_parentprofile"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can view Parent",
+    "content_type": [
+      "users",
+      "parentprofile"
+    ],
+    "codename": "view_parentprofile"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can add task",
+    "content_type": [
+      "users",
+      "task"
+    ],
+    "codename": "add_task"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can change task",
+    "content_type": [
+      "users",
+      "task"
+    ],
+    "codename": "change_task"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can delete task",
+    "content_type": [
+      "users",
+      "task"
+    ],
+    "codename": "delete_task"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can view task",
+    "content_type": [
+      "users",
+      "task"
+    ],
+    "codename": "view_task"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can add examination",
+    "content_type": [
+      "results",
+      "examination"
+    ],
+    "codename": "add_examination"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can change examination",
+    "content_type": [
+      "results",
+      "examination"
+    ],
+    "codename": "change_examination"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can delete examination",
+    "content_type": [
+      "results",
+      "examination"
+    ],
+    "codename": "delete_examination"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can view examination",
+    "content_type": [
+      "results",
+      "examination"
+    ],
+    "codename": "view_examination"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can add result",
+    "content_type": [
+      "results",
+      "result"
+    ],
+    "codename": "add_result"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can change result",
+    "content_type": [
+      "results",
+      "result"
+    ],
+    "codename": "change_result"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can delete result",
+    "content_type": [
+      "results",
+      "result"
+    ],
+    "codename": "delete_result"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can view result",
+    "content_type": [
+      "results",
+      "result"
+    ],
+    "codename": "view_result"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can add student overall result",
+    "content_type": [
+      "results",
+      "studentoverallresult"
+    ],
+    "codename": "add_studentoverallresult"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can change student overall result",
+    "content_type": [
+      "results",
+      "studentoverallresult"
+    ],
+    "codename": "change_studentoverallresult"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can delete student overall result",
+    "content_type": [
+      "results",
+      "studentoverallresult"
+    ],
+    "codename": "delete_studentoverallresult"
+  }
+},
+{
+  "model": "auth.permission",
+  "fields": {
+    "name": "Can view student overall result",
+    "content_type": [
+      "results",
+      "studentoverallresult"
+    ],
+    "codename": "view_studentoverallresult"
+  }
+}
+]

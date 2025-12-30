@@ -14,42 +14,84 @@
     position: static !important;
     left: auto;
     top: auto;
-    width: 100% !important;
-    max-width: none !important;
+    width: 176mm !important;
+    max-width: 100% !important;
     box-shadow: none !important;
-    padding: 20px !important;
-    margin: 0 !important;
-    transform: scale(0.7);
-    transform-origin: top left;
+    padding: 8mm !important;
+    margin: 0 auto !important;
+  }
+  .result-card-header {
+    position: relative !important;
+    min-height: 18mm !important;
+    padding-bottom: 1mm !important;
+    margin-bottom: 1mm !important;
+    border-bottom-width: 1px !important;
+  }
+  .result-card-header .school-logo,
+  .result-card-header .student-photo {
+    position: absolute !important;
+    width: 15mm !important;
+    height: 15mm !important;
+    top: 0mm !important;
+    z-index: 2 !important;
+  }
+  .result-card-header .school-logo { left: 5mm !important; }
+  .result-card-header .student-photo { right: 5mm !important; }
+  .result-card-header img {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+    display: block !important;
+  }
+  .result-card-footer {
+    page-break-inside: avoid;
+    break-inside: avoid;
+    margin-top: 4mm !important;
+  }
+  .result-card-info {
+    margin-bottom: 3mm !important;
+    padding: 2mm !important;
+  }
+  .result-card-table {
+    page-break-inside: avoid;
+    break-inside: avoid;
+    margin-bottom: 3mm !important;
+    page-break-after: avoid;
   }
   .no-print {
     display: none !important;
+  }
+  .result-card-header,
+  .result-card-info,
+  .result-card-table {
+    page-break-inside: avoid;
+    break-inside: avoid;
   }
   .result-card-container table {
     min-width: 0 !important;
     width: 100% !important;
   }
   .result-card-container .MuiTableCell-root {
-    padding: 4px 6px !important;
-    font-size: 0.7rem !important;
+    padding: 3px 4px !important;
+    font-size: 0.65rem !important;
     line-height: 1.2 !important;
   }
   .result-card-container .MuiTypography-h4 {
-    font-size: 1.2rem !important;
-    margin-bottom: 4px !important;
+    font-size: 1.1rem !important;
+    margin-bottom: 2px !important;
   }
   .result-card-container .MuiTypography-h5 {
-    font-size: 1rem !important;
-    margin-top: 4px !important;
+    font-size: 0.95rem !important;
+    margin-top: 2px !important;
   }
   .result-card-container .MuiTypography-h6 {
     font-size: 0.95rem !important;
   }
   .result-card-container .MuiTypography-body1 {
-    font-size: 0.8rem !important;
+    font-size: 0.75rem !important;
   }
   .result-card-container .MuiTypography-body2 {
-    font-size: 0.75rem !important;
+    font-size: 0.7rem !important;
   }
   .result-card-container .MuiTypography-caption {
     font-size: 0.7rem !important;

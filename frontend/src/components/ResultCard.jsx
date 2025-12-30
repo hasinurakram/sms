@@ -393,9 +393,10 @@ export default function ResultCard({ studentData, results, overallResult, examin
   return (
     <Box className="result-card-container" sx={{ maxWidth: 900, mx: 'auto', bgcolor: 'white', p: { xs: 2, sm: 4 }, borderRadius: 2, boxShadow: 3 }}>
       {/* Header */}
-      <Box sx={{ position: 'relative', textAlign: 'center', mb: 3, borderBottom: '3px solid #1976d2', pb: 2 }}>
+      <Box className="result-card-header" sx={{ position: 'relative', textAlign: 'center', mb: 3, borderBottom: '3px solid #1976d2', pb: 2 }}>
         {/* School Logo - Top Left */}
         <Box
+          className="school-logo"
           sx={{
             position: 'absolute',
             top: 0,
@@ -427,6 +428,7 @@ export default function ResultCard({ studentData, results, overallResult, examin
 
         {/* Student Photo - Top Right */}
         <Box
+          className="student-photo"
           sx={{
             position: 'absolute',
             top: 0,
@@ -444,20 +446,20 @@ export default function ResultCard({ studentData, results, overallResult, examin
           <ImageWithFallback src={studentPhotoUrl} alt={studentName || 'Student Photo'} width="100%" height="100%" />
         </Box>
         
-        <Typography variant="h4" sx={{ fontWeight: 'bold', color: '#1976d2', mb: 1, fontSize: { xs: '1.25rem', sm: '2rem' } }}>
+        <Typography variant="h4" sx={{ fontWeight: 'bold', color: '#1976d2', mb: 0.5, fontSize: { xs: '1.1rem', sm: '1.6rem' } }}>
           {(() => {
             console.log('School data in ResultCard:', { school, student, examination });
             return school?.name || student?.school_name || examination?.school_name || 'School Name';
           })()}
         </Typography>
         {/* Address Removed */}
-        <Typography variant="h5" sx={{ mt: 2, fontWeight: 'bold', color: '#424242', fontSize: { xs: '1.1rem', sm: '1.5rem' } }}>
+        <Typography variant="h5" sx={{ mt: 1, fontWeight: 'bold', color: '#424242', fontSize: { xs: '0.95rem', sm: '1.3rem' } }}>
           ACADEMIC RESULT CARD
         </Typography>
       </Box>
 
       {/* Student Information */}
-      <Grid container spacing={2} rowSpacing={2} sx={{ mb: 3, bgcolor: '#f5f5f5', p: 2, borderRadius: 1 }}>
+      <Grid className="result-card-info" container spacing={2} rowSpacing={2} sx={{ mb: 3, bgcolor: '#f5f5f5', p: 2, borderRadius: 1 }}>
         <Grid size={{ xs: 6 }}>
           <Typography variant="body2" color="text.secondary">Student Name:</Typography>
           <Typography variant="body1" sx={{ fontWeight: 'bold', mb: 0.25 }}>{studentName}</Typography>
@@ -499,7 +501,7 @@ export default function ResultCard({ studentData, results, overallResult, examin
       </Grid>
 
       {/* Marks Table */}
-      <TableContainer component={Paper} sx={{ mb: 3, boxShadow: 2, overflowX: 'auto' }}>
+      <TableContainer className="result-card-table" component={Paper} sx={{ mb: 3, boxShadow: 2, overflowX: 'auto' }}>
         <Table size="small" sx={{ border: '2px solid #000', minWidth: 560 }}>
           <TableHead>
             <TableRow sx={{ bgcolor: '#1976d2' }}>
@@ -646,7 +648,7 @@ export default function ResultCard({ studentData, results, overallResult, examin
 
 
       {/* Footer */}
-      <Box sx={{ mt: 2, pt: 1.5, borderTop: '2px solid #e0e0e0' }}>
+      <Box className="result-card-footer" sx={{ mt: 2, pt: 1.5, borderTop: '2px solid #e0e0e0' }}>
         <Grid container spacing={4}>
           <Grid size={{ xs: 4 }} sx={{ textAlign: 'center' }}>
             <Box sx={{ height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 0.25 }}>

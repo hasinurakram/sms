@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>School Management API Test</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 { font-size: 28px; margin-bottom: 10px; }
+        .header p { opacity: 0.9; }
+        .content { padding: 30px; }
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-weight: 500;
+        }
+        .status.success { background: #d4edda; color: #155724; }
+        .status.error { background: #f8d7da; color: #721c24; }
+        .status.loading { background: #d1ecf1; color: #0c5460; }
+        .indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        .success .indicator { background: #28a745; }
+        .error .indicator { background: #dc3545; }
+        .loading .indicator { background: #17a2b8; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .section {
+            margin-bottom: 25px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        .section h2 {
+            font-size: 18px;
+            margin-bottom: 15px;
+            color: #333;
+        }
+        .info-grid {
+            display: grid;
+            gap: 10px;
+        }
+        .info-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px;
+            background: white;
+            border-radius: 5px;
+            border-left: 3px solid #667eea;
+        }
+        .info-label { font-weight: 600; color: #555; }
+        .info-value { color: #333; }
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: transform 0.2s;
+        }
+        button:hover { transform: translateY(-2px); }
+        button:active { transform: translateY(0); }
+        .schools-list {
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 10px;
+        }
+        .school-item {
+            padding: 12px;
+            background: white;
+            margin-bottom: 8px;
+            border-radius: 5px;
+            border-left: 3px solid #28a745;
+        }
+        .school-name { font-weight: 600; color: #333; }
+        .school-address { font-size: 13px; color: #666; margin-top: 4px; }
+        code {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 15px;
+            border-radius: 5px;
+            display: block;
+            overflow-x: auto;
+            font-size: 13px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎓 School Management System</h1>
+            <p>Backend API Test Dashboard</p>
+        </div>
+        
+        <div class="content">
+            <div id="status" class="status loading">
+                <div class="indicator"></div>
+                <span>Checking server status...</span>
+            </div>
+
+            <div class="section">
+                <h2>📊 System Information</h2>
+                <div class="info-grid">
+                    <div class="info-item">
+                        <span class="info-label">Backend URL</span>
+                        <span class="info-value">http://127.0.0.1:8000</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Total Schools</span>
+                        <span class="info-value" id="schoolCount">Loading...</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Database</span>
+                        <span class="info-value">SQLite (db.sqlite3)</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Framework</span>
+                        <span class="info-value">Django 4.2.7 + React</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>🏫 Schools List</h2>
+                <button onclick="loadSchools()">Refresh Schools</button>
+                <div id="schoolsList" class="schools-list"></div>
+            </div>
+
+            <div class="section">
+                <h2>🔐 API Endpoints</h2>
+                <div class="info-grid">
+                    <div class="info-item">
+                        <span class="info-label">Login (Token)</span>
+                        <span class="info-value">POST /api/token/</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Schools</span>
+                        <span class="info-value">GET /api/schools/</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Dashboard</span>
+                        <span class="info-value">GET /api/dashboard-stats/</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Admin Panel</span>
+                        <span class="info-value"><a href="http://127.0.0.1:8000/admin/" target="_blank">Open Admin</a></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>📝 Quick Start</h2>
+                <p style="margin-bottom: 10px;">To start the frontend:</p>
+                <code>cd frontend
+npm install
+npm start</code>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const BASE_URL = 'http://127.0.0.1:8000';
+        
+        async function checkServer() {
+            const statusEl = document.getElementById('status');
+            try {
+                const response = await fetch(`${BASE_URL}/api/schools/`);
+                if (response.ok) {
+                    statusEl.className = 'status success';
+                    statusEl.innerHTML = '<div class="indicator"></div><span>✓ Backend server is running</span>';
+                    loadSchools();
+                } else {
+                    throw new Error('Server returned error');
+                }
+            } catch (error) {
+                statusEl.className = 'status error';
+                statusEl.innerHTML = '<div class="indicator"></div><span>✗ Backend server is not running. Run: start-backend.bat</span>';
+            }
+        }
+
+        async function loadSchools() {
+            const schoolsList = document.getElementById('schoolsList');
+            const schoolCount = document.getElementById('schoolCount');
+            
+            schoolsList.innerHTML = '<p style="padding: 10px;">Loading schools...</p>';
+            
+            try {
+                const response = await fetch(`${BASE_URL}/api/schools/`);
+                const schools = await response.json();
+                
+                schoolCount.textContent = schools.length;
+                
+                if (schools.length === 0) {
+                    schoolsList.innerHTML = '<p style="padding: 10px;">No schools found</p>';
+                    return;
+                }
+                
+                schoolsList.innerHTML = schools.map(school => `
+                    <div class="school-item">
+                        <div class="school-name">${school.name || 'Unnamed School'}</div>
+                        <div class="school-address">${school.address || 'No address'}</div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                schoolsList.innerHTML = '<p style="padding: 10px; color: #dc3545;">Error loading schools</p>';
+                schoolCount.textContent = 'Error';
+            }
+        }
+
+        // Check server on load
+        checkServer();
+    </script>
+</body>
+</html>

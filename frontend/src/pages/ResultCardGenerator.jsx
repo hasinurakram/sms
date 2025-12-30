@@ -342,9 +342,9 @@ export default function ResultCardGenerator() {
       const requireCQ = wMax > 0;
       const requireMCQ = mMax > 0;
       const requirePR = pMax > 0;
-      const tCQ = requireCQ ? Math.ceil(wMax / 3) : 0;
-      const tMCQ = requireMCQ ? Math.ceil(mMax / 3) : 0;
-      const tPR = requirePR ? Math.ceil(pMax / 3) : 0;
+      const tCQ = requireCQ ? Math.round(wMax / 3) : 0;
+      const tMCQ = requireMCQ ? Math.round(mMax / 3) : 0;
+      const tPR = requirePR ? Math.round(pMax / 3) : 0;
       const cqOk = requireCQ ? (w >= tCQ) : true;
       const mcqOk = requireMCQ ? (m >= tMCQ) : true;
       const prOk = requirePR ? (p >= tPR) : true;
