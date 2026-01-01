@@ -321,6 +321,7 @@ class StudentOverallResultViewSet(viewsets.ModelViewSet):
         student_id = request.query_params.get('student')
         exam_type = request.query_params.get('exam_type')
         classroom_id = request.query_params.get('classroom')
+        section_id = request.query_params.get('section')
         
         if not student_id or not exam_type or not classroom_id:
             return Response(
@@ -460,6 +461,13 @@ class StudentOverallResultViewSet(viewsets.ModelViewSet):
         # Get all students in this classroom
         from academics.models import StudentProfile
         all_students = StudentProfile.objects.filter(classroom_id=classroom_id)
+        
+        # Enforce section-based ranking:
+        # If the student belongs to a section, rank is calculated ONLY within that section.
+        if student.section_id:
+            all_students = all_students.filter(section_id=student.section_id)
+        elif section_id:
+            all_students = all_students.filter(section_id=section_id)
         
         student_results = []
         for s in all_students:

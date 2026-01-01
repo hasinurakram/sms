@@ -632,18 +632,7 @@ export default function StudentsPage() {
       }
 
       try {
-        const endpoint = `${(api?.defaults?.baseURL || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/$/, '')}/api/academics/students/`;
-        const authHeader = (api?.defaults?.headers?.common?.Authorization) || '';
-        const res = await fetch(endpoint, {
-          method: 'POST',
-          body: form,
-          headers: authHeader ? { Authorization: authHeader } : undefined,
-          credentials: 'include'
-        });
-        if (!res.ok) {
-          const errBody = await res.text();
-          throw { response: { status: res.status, data: errBody } };
-        }
+        await api.post('/api/academics/students/', form);
       } catch (postErr) {
         const b = postErr.response?.data || {};
         const usernameErr = Array.isArray(b?.username) && b.username.some(x => String(x).toLowerCase().includes('taken'));
@@ -651,18 +640,7 @@ export default function StudentsPage() {
           // Retry once with a fresh available username
           const retryUsername = await ensureAvailableUsername(base);
           form.set('username', retryUsername);
-          const endpoint2 = `${(api?.defaults?.baseURL || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/$/, '')}/api/academics/students/`;
-          const authHeader2 = (api?.defaults?.headers?.common?.Authorization) || '';
-          const res2 = await fetch(endpoint2, {
-            method: 'POST',
-            body: form,
-            headers: authHeader2 ? { Authorization: authHeader2 } : undefined,
-            credentials: 'include'
-          });
-          if (!res2.ok) {
-            const errBody2 = await res2.text();
-            throw { response: { status: res2.status, data: errBody2 } };
-          }
+          await api.post('/api/academics/students/', form);
         } else {
           throw postErr;
         }

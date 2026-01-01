@@ -638,7 +638,11 @@ export default function ResultCardGenerator() {
 
       // Get combined overall result with rank from backend
       try {
-        const overallRes = await api.get(`/api/results/overall/combined_by_exam_type/?student=${student.id}&exam_type=${normalizeExamType(selectedExamType)}&classroom=${selectedClass}&school=${id}`);
+        let url = `/api/results/overall/combined_by_exam_type/?student=${student.id}&exam_type=${normalizeExamType(selectedExamType)}&classroom=${selectedClass}&school=${id}`;
+        if (selectedSection) {
+            url += `&section=${selectedSection}`;
+        }
+        const overallRes = await api.get(url);
         setOverallResult(overallRes.data);
       } catch (err) {
         console.error('Error fetching combined overall result:', err);
