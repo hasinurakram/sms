@@ -316,6 +316,193 @@ class StudentOverallResultViewSet(viewsets.ModelViewSet):
         return qs.select_related('examination', 'examination__classroom', 'examination__section', 'student__user')
     
     @action(detail=False, methods=['get'])
+    def dashboard_result_summary(self, request):
+        """
+        Get result summary (pass/fail/absent) for dashboard.
+        Optimized to avoid N+1 queries.
+        """
+        school_id = request.query_params.get('school')
+        exam_type = request.query_params.get('exam_type')
+        year = request.query_params.get('year')
+        
+        if not school_id or not exam_type:
+            return Response(
+                {"detail": "school and exam_type are required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        try:
+            year = int(year) if year else None
+        except ValueError:
+            year = None
+        if year is None:
+            base_qs = Examination.objects.filter(school_id=school_id, exam_type__iexact=exam_type)
+            latest_year = None
+            for e in base_qs.values('exam_date', 'name'):
+                d = e.get('exam_date')
+                if d:
+                    y = d.year
+                    latest_year = y if latest_year is None or y > latest_year else latest_year
+                n = e.get('name') or ''
+                import re
+                m = re.search(r'(19|20)\d{2}', n)
+                if m:
+                    y2 = int(m.group(0))
+                    latest_year = y2 if latest_year is None or y2 > latest_year else latest_year
+            year = latest_year or datetime.now().year
+
+        # 1. Find Examinations
+        # Logic matches frontend: filter by type, then check year in date or name
+        from django.db.models import Q
+        from academics.models import StudentProfile, ClassRoom, Section
+        
+        exams = Examination.objects.filter(school_id=school_id)
+        
+        # Filter by exam type (normalized)
+        # Note: Frontend normalizeExamType logic is complex. 
+        # Here we assume the frontend sends the "normalized" key like 'annual', 'half_yearly'
+        # OR we rely on the exact match in DB if the DB stores normalized values.
+        # DB choices: half_yearly, annual, test, terminal, model.
+        # If frontend sends 'annual', we match 'annual'.
+        
+        # Refined exam filtering
+        exams = exams.filter(exam_type__iexact=exam_type)
+        
+        # Filter by year (approximate)
+        # We check exam_date year OR name containing year
+        exams = exams.filter(
+            Q(exam_date__year=year) | 
+            Q(name__icontains=str(year))
+        )
+        
+        exam_ids = set(exams.values_list('id', flat=True))
+        
+        # Also need to know pass marks per exam
+        exam_pass_marks = {e.id: e.pass_marks for e in exams}
+        exam_names = {e.id: e.name.lower() for e in exams}
+        
+        # 2. Get All Students for the school
+        # We need their class/section info
+        students = StudentProfile.objects.filter(
+            school_id=school_id
+        ).select_related('classroom', 'section')
+        
+        # 3. Get All Results for these exams
+        results = Result.objects.filter(
+            examination_id__in=exam_ids
+        ).select_related('subject', 'examination', 'student')
+        
+        # 4. Process in memory
+        
+        # Map: student_id -> list of results
+        student_results = {}
+        # Track active groups (class_id, section_id) that have at least one result
+        active_groups = set()
+        
+        for r in results:
+            sid = r.student_id
+            if sid not in student_results:
+                student_results[sid] = []
+            student_results[sid].append(r)
+            
+            # Track active group (where results actually exist)
+            if r.student:
+                active_groups.add((r.student.classroom_id, r.student.section_id))
+            
+        # Helper for Bangla Combined
+        def is_bangla(name):
+            n = (name or '').lower()
+            return ('bangla' in n or 'বাংলা' in n)
+            
+        def is_bangla_first(name):
+            n = (name or '').lower()
+            return is_bangla(n) and ('1st' in n or 'first' in n or '১ম' in n or 'প্রথম' in n)
+            
+        def is_bangla_second(name):
+            n = (name or '').lower()
+            return is_bangla(n) and ('2nd' in n or 'second' in n or '২য়' in n or 'দ্বিত' in n)
+            
+        summary_data = {} # class_section_key -> stats
+        
+        for student in students:
+            # Skip students in groups where NO results exist (Data entry hasn't started)
+            # This avoids showing "0 Absent" (misleading) or "All Absent" (scary)
+            if (student.classroom_id, student.section_id) not in active_groups:
+                continue
+
+            # Determine Class/Section key
+            c_name = student.classroom.name if student.classroom else "Unknown"
+            s_name = student.section.name if student.section else "" # Section can be null
+            key = f"{c_name} ({s_name})" if s_name else c_name
+            
+            if key not in summary_data:
+                summary_data[key] = {
+                    'classLabel': key,
+                    'total': 0,
+                    'absent': 0,
+                    'allPassed': 0,
+                    'failBuckets': {}
+                }
+            
+            stats = summary_data[key]
+            stats['total'] += 1
+            
+            s_results = student_results.get(student.id, [])
+            
+            if not s_results:
+                # Only count as absent if at least one student in this class/section has results
+                # (This is guaranteed by the loop filter above, but keeping safety check)
+                if (student.classroom_id, student.section_id) in active_groups:
+                    stats['absent'] += 1
+                continue
+                
+            # Calculate failures
+            failed_count = 0
+            
+            # Check for Class 9/10 Combined Bangla
+            is_9_10 = '9' in c_name or '10' in c_name or 'nine' in c_name.lower() or 'ten' in c_name.lower() or 'নবম' in c_name or 'দশম' in c_name
+            
+            bangla_passed_combined = False
+            if is_9_10:
+                # Find Bangla 1st and 2nd results
+                b_results = [r for r in s_results if is_bangla(r.subject.name if r.subject else "")]
+                if b_results:
+                    sum_cq = sum(float(r.written_marks) for r in b_results)
+                    sum_mcq = sum(float(r.mcq_marks) for r in b_results)
+                    # Use pass marks from first bangla exam found or default 33
+                    pm = 33
+                    for r in b_results:
+                        if r.examination_id in exam_pass_marks:
+                            pm = exam_pass_marks[r.examination_id]
+                            break
+                    if sum_cq >= pm and sum_mcq >= pm:
+                        bangla_passed_combined = True
+            
+            for r in s_results:
+                # If subject is Bangla and we passed combined, skip check
+                subj_name = r.subject.name if r.subject else ""
+                if is_9_10 and bangla_passed_combined and is_bangla(subj_name):
+                    continue
+                    
+                if not r.is_passed:
+                    failed_count += 1
+            
+            if failed_count == 0:
+                stats['allPassed'] += 1
+            else:
+                stats['failBuckets'][failed_count] = stats['failBuckets'].get(failed_count, 0) + 1
+                
+        # Format for frontend
+        response_list = []
+        for key in sorted(summary_data.keys()):
+            data = summary_data[key]
+            # Convert failBuckets to map-like object if needed, or keep as dict
+            # Frontend expects map or object. JSON will be object.
+            response_list.append(data)
+            
+        return Response(response_list)
+
+    @action(detail=False, methods=['get'])
     def combined_by_exam_type(self, request):
         """Get combined overall result for a student across all examinations of a specific type"""
         student_id = request.query_params.get('student')

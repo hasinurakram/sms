@@ -113,6 +113,16 @@ const SchoolDashboard = () => {
   const [schoolData, setSchoolData] = useState(null);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  
+  // Reset state when school ID changes to show loading screen immediately
+  const [prevId, setPrevId] = useState(id);
+  if (id !== prevId) {
+    setPrevId(id);
+    setLoading(true);
+    setStats(null);
+    setSchoolData(null);
+  }
+
   const [error, setError] = useState(null);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [schoolsList, setSchoolsList] = useState([]);
@@ -183,231 +193,17 @@ const SchoolDashboard = () => {
     if (!id) return;
     setSummaryLoading(true);
     try {
-      const clsRes = await api.get(`/api/academics/classrooms/?school=${id}`);
-      const classrooms = Array.isArray(clsRes.data) ? clsRes.data : (clsRes.data?.results || []);
-      const allRows = [];
-      for (const classroom of classrooms) {
-        const secRes = await api.get(`/api/academics/sections/?school=${id}&classroom=${classroom.id}`);
-        const sections = Array.isArray(secRes.data) ? secRes.data : (secRes.data?.results || []);
-        let exams = [];
-        try {
-          const exRes = await api.get(`/api/results/examinations/?school=${id}&classroom=${classroom.id}`);
-          exams = Array.isArray(exRes.data) ? exRes.data : (exRes.data?.results || []);
-        } catch (_) { exams = []; }
-        if (!exams.length) {
-          try {
-            const exRes2 = await api.get(`/api/results/examinations/?school=${id}`);
-            exams = Array.isArray(exRes2.data) ? exRes2.data : (exRes2.data?.results || []);
-          } catch (_) { exams = []; }
+      // Use the optimized backend endpoint
+      const res = await api.get(`/api/results/overall/dashboard_result_summary/`, {
+        params: {
+          school: id,
+          exam_type: normalizeExamType(summaryExamType),
+          year: summaryYear
         }
-        const bnMap = { '০':'0','১':'1','২':'2','৩':'3','৪':'4','৫':'5','৬':'6','৭':'7','৮':'8','৯':'9' };
-        const bnToEn = (str) => String(str || '').replace(/[০-৯]/g, d => bnMap[d] ?? d);
-        const normalizeYear = (y) => parseInt(bnToEn(y), 10);
-        const targetYear = normalizeYear(summaryYear);
-        const getYear = (d) => {
-          const val = String(d || '').trim();
-          if (!val) return null;
-          const dt = new Date(val);
-          if (!Number.isFinite(dt.getTime())) return null;
-          return dt.getFullYear();
-        };
-        
-        const targetType = normalizeExamType(summaryExamType);
-        
-        // Find ALL exams that match the criteria (Type + Year)
-        let targetExams = exams.filter(e => {
-            const typeMatch = normalizeExamType(e.exam_type, e.name) === targetType;
-            if (!typeMatch) return false;
-            
-            const yearByDate = getYear(e.exam_date);
-            const yearByField = (() => {
-              try {
-                return parseInt(bnToEn(e.academic_year), 10);
-              } catch (_) { return null; }
-            })();
-            if (yearByDate === targetYear || yearByField === targetYear) return true;
-            
-            const nameNormalized = bnToEn(String(e.name || ''));
-            const nameHasYear = nameNormalized.includes(String(targetYear));
-            if (nameHasYear) return true;
-            
-            return false;
-        });
-
-        // Fallback: If absolutely no exams found with specific year, 
-        // and the user is asking for the current year, maybe the exams just have no date/year in name?
-        // But that's risky. Let's stick to the explicit match first.
-        
-        // If still empty, try relaxed match on type ONLY if we found NOTHING strict
-        // (This was the old logic, maybe useful if year is totally missing from DB)
-        if (targetExams.length === 0 && exams.length > 0) {
-             // If we can't find ANY exam for 2025, maybe the user means "Latest Annual"?
-             // But the UI shows "2025". If we show 2024 data, it's confusing.
-             // Better to show empty than wrong year.
-             // However, for "Class 8", maybe they just created "Annual Exam" without date/year name.
-             // Let's check if there are exams with NO date and NO year in name, but correct type?
-             // Only if targetYear matches current year?
-             const currentYear = new Date().getFullYear();
-             if (targetYear === currentYear) {
-                 const potentialExams = exams.filter(e => 
-                    normalizeExamType(e.exam_type, e.name) === targetType &&
-                    !getYear(e.exam_date) && 
-                    !/\d{4}/.test(e.name || '') // No year in name
-                 );
-                 if (potentialExams.length > 0) {
-                     targetExams = potentialExams;
-                 }
-             }
-        }
-
-        const targetExamIds = new Set(targetExams.map(e => e.id));
-        const passMarksMap = new Map(); // examId -> passMarks
-        targetExams.forEach(e => {
-            passMarksMap.set(e.id, parseFloat(e.pass_marks) || 33);
-        });
-
-        for (const section of sections) {
-          const stuRes = await api.get(`/api/academics/students/?school=${id}&classroom=${classroom.id}&section=${section.id}`);
-          const studentsArr = Array.isArray(stuRes.data) ? stuRes.data : (stuRes.data?.results || []);
-          
-          let resultsArr = [];
-          try {
-            let rawResults = [];
-            try {
-              const rResSec = await api.get(`/api/results/results/?school=${id}&classroom=${classroom.id}&section=${section.id}&page_size=5000`);
-              rawResults = Array.isArray(rResSec.data) ? rResSec.data : (rResSec.data?.results || []);
-            } catch (_) {
-              const rResCls = await api.get(`/api/results/results/?school=${id}&classroom=${classroom.id}&page_size=5000`);
-              rawResults = Array.isArray(rResCls.data) ? rResCls.data : (rResCls.data?.results || []);
-            }
-            resultsArr = rawResults.filter(r => {
-                const exObj = typeof r.examination === 'object' ? r.examination : null;
-                if (exObj) {
-                  const typeMatch = normalizeExamType(exObj.exam_type, exObj.name) === targetType;
-                  const yearByDate = getYear(exObj.exam_date);
-                  const yearByField = (() => {
-                    try {
-                      return parseInt(bnToEn(exObj.academic_year), 10);
-                    } catch (_) { return null; }
-                  })();
-                  const nameHasYear = bnToEn(String(exObj.name || '')).includes(String(targetYear));
-                  const yearMatch = (yearByDate === targetYear) || (yearByField === targetYear) || nameHasYear;
-                  if (typeMatch && yearMatch) return true;
-                }
-                const eid = exObj ? exObj.id : r.examination;
-                if (eid && targetExamIds.has(eid)) return true;
-                const rType = r.exam_type || null;
-                const rName = r.exam_name || null;
-                const rYearField = (() => {
-                  try {
-                    return parseInt(bnToEn(r.academic_year), 10);
-                  } catch (_) { return null; }
-                })();
-                if (rType || rName) {
-                  const typeMatch2 = normalizeExamType(rType, rName) === targetType;
-                  const nameHasYear2 = bnToEn(String(rName || '')).includes(String(targetYear));
-                  if (typeMatch2 && (nameHasYear2 || rYearField === targetYear)) return true;
-                }
-                return false;
-            });
-          } catch (_) {
-            resultsArr = [];
-          }
-
-          const byStudent = new Map();
-          for (const r of resultsArr) {
-            const sid = typeof r.student === 'object' ? r.student?.id : r.student;
-            if (!sid) continue;
-            if (!byStudent.has(sid)) byStudent.set(sid, []);
-            byStudent.get(sid).push(r);
-          }
-          
-          const totalStudents = studentsArr.length;
-          let absent = 0;
-          let allPassedCount = 0;
-          const failBucketsCounts = new Map();
-          
-          for (const stu of studentsArr) {
-            const sid = stu.id;
-            const studentResults = byStudent.get(sid) || [];
-            
-            // If student has NO results for ANY of the target exams, mark as Absent
-            if (studentResults.length === 0) {
-              absent += 1;
-              continue;
-            }
-
-            const classIs910 = isClassNineOrTenName(classroom.name);
-            let failedSubjects = 0;
-            
-            // We need to check failure against ALL target exams.
-            // If a student has a result for an exam, check pass/fail.
-            // If a student represents a missing result for an exam?
-            // Usually, result cards treat missing as fail or absent. 
-            // Here, we'll iterate over the RESULTS the student HAS.
-            // If we strictly enforce "must have result for all subjects", failures will skyrocket for data entry gaps.
-            // Let's stick to: Count failures in available results. 
-            // AND (Optional) count missing mandatory exams? 
-            // For now, let's just fix the "counting failures in available results" which was broken because we only fetched 1 exam.
-            
-            // But wait, if they missed English, they failed English. 
-            // If we don't count missing results, we under-report failures.
-            // However, distinguishing "Data Entry Pending" from "Absent/Fail" is hard.
-            // Let's iterate over unique subjects found in the student's results + target exams?
-            // To be safe and match the previous logic's intent (which processed available results),
-            // let's iterate over the student's results first.
-            
-            // Better approach:
-            // 1. Identify distinct subjects the student ATTEMPTED (or should have).
-            // Since we don't know "optional" subjects easily, let's just count failures in the results present.
-            // This fixes the immediate bug where only 1 subject was being checked.
-            
-            // Special handling for Bangla 1st/2nd combined pass
-            let combinedBanglaPass = false;
-            if (classIs910) {
-               // We need a pass mark. Use the one from the first bangla exam found or default 33
-               const banglaExam = targetExams.find(e => isBanglaPaper(e.name));
-               const pm = banglaExam ? (parseFloat(banglaExam.pass_marks)||33) : 33;
-               combinedBanglaPass = computeBanglaCombinedPass(studentResults, pm);
-            }
-
-            for (const r of studentResults) {
-                const eid = typeof r.examination === 'object' ? r.examination?.id : r.examination;
-                const subjName = r.subject?.name || r.subject_name || '';
-                
-                // Skip if this result is not part of our target exams (should be handled by filter above, but double check)
-                if (!targetExamIds.has(eid)) continue;
-
-                // Check combined bangla
-                if (classIs910 && combinedBanglaPass && isBanglaPaper(subjName)) {
-                    continue; // Passed via combined logic
-                }
-
-                const isFail = (r.grade === 'F') || (r.is_passed === false);
-                if (isFail) {
-                    failedSubjects += 1;
-                }
-            }
-
-            if (failedSubjects === 0) {
-              allPassedCount += 1;
-            } else {
-              failBucketsCounts.set(failedSubjects, (failBucketsCounts.get(failedSubjects) || 0) + 1);
-            }
-          }
-          
-          const row = {
-            classLabel: `${classroom.name} (${section.name})`,
-            total: totalStudents,
-            absent,
-            allPassed: allPassedCount,
-            failBuckets: failBucketsCounts
-          };
-          allRows.push(row);
-        }
-      }
-      setSummaryRows(allRows);
+      });
+      setSummaryRows(res.data || []);
     } catch (e) {
+      console.error("Error generating summary:", e);
       setSummaryRows([]);
     } finally {
       setSummaryLoading(false);
@@ -710,8 +506,22 @@ const SchoolDashboard = () => {
   const renderDashboardContent = () => {
     if (loading) {
       return (
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '50vh' }}>
-          <CircularProgress />
+        <Box sx={{ 
+          display: 'flex', 
+          flexDirection: 'column',
+          justifyContent: 'center', 
+          alignItems: 'center', 
+          height: '80vh',
+          textAlign: 'center',
+          p: 3
+        }}>
+          <CircularProgress size={60} sx={{ mb: 4 }} />
+          <Typography variant="h5" color="primary" gutterBottom sx={{ fontWeight: 'bold' }}>
+            অনুগ্রহ করে অপেক্ষা করুন...
+          </Typography>
+          <Typography variant="body1" sx={{ maxWidth: 600, mt: 2, fontSize: '1.2rem', lineHeight: 1.6 }}>
+            আপনার নির্ধারিত স্কুলের সকল স্টুডেন্টের এ্যাটেন্ডেন্স, পাস-ফেল, বকেয়া বেতনসহ শিক্ষক ও অভিভাবকসহ বিদ্যালয়ের সর্বশেষ সকল তথ্য এখনই আপনার সামনে তুলে ধরা হচ্ছে, দয়া করে 5 সেকেন্ড সময় দিন আমাদের।
+          </Typography>
         </Box>
       );
     }
@@ -855,7 +665,7 @@ const SchoolDashboard = () => {
                         <TableCell align="center">{row.absent}</TableCell>
                         <TableCell align="center">{row.allPassed}</TableCell>
                         {summaryFailBuckets.map((n) => (
-                          <TableCell key={n} align="center">{row.failBuckets.get(n) || 0}</TableCell>
+                          <TableCell key={n} align="center">{row.failBuckets[n] || 0}</TableCell>
                         ))}
                       </TableRow>
                     ))}
@@ -873,7 +683,7 @@ const SchoolDashboard = () => {
                         </TableCell>
                         {summaryFailBuckets.map((n) => (
                           <TableCell key={n} align="center" sx={{ fontWeight: 'bold' }}>
-                            {summaryRows.reduce((s, r) => s + (r.failBuckets.get(n) || 0), 0)}
+                            {summaryRows.reduce((s, r) => s + (r.failBuckets[n] || 0), 0)}
                           </TableCell>
                         ))}
                       </TableRow>
