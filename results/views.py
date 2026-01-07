@@ -1,7 +1,7 @@
 from rest_framework import viewsets, filters, status, pagination
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from users.permissions import AdminOrReadOnly, RolePermission
+from users.permissions import AdminOrReadOnly, RolePermission, SubjectResultWritePermission
 from django.http import HttpResponse
 from .utils import _class_group, get_subject_maxima, SECTION_MAXIMA
 from .models import Examination, Result, StudentOverallResult
@@ -23,10 +23,28 @@ class ExaminationViewSet(viewsets.ModelViewSet):
     filter_backends = [filters.SearchFilter]
     search_fields = ['name']
     
-    @action(detail=True, methods=['post'], permission_classes=[RolePermission])
+    @action(detail=True, methods=['post'], permission_classes=[SubjectResultWritePermission])
     def bulk_results(self, request, pk=None):
         """Create or update results in bulk for an examination"""
         examination = self.get_object()
+        user = request.user
+        prof = getattr(user, 'profile', None)
+        is_admin = bool(getattr(user, 'is_superuser', False) or getattr(user, 'is_staff', False) or (prof and getattr(prof, 'role', None) in ('admin','super_admin')))
+        if not is_admin:
+            from academics.models import TeacherAssignment
+            allow_subjects = set(TeacherAssignment.objects.filter(
+                teacher=user,
+                classroom_id=examination.classroom_id,
+                section_id=examination.section_id
+            ).values_list('subject_id', flat=True))
+            incoming = request.data.get('results', [])
+            for item in incoming:
+                sid = item.get('subject_id') or item.get('subject')
+                if sid and int(sid) not in allow_subjects:
+                    return Response(
+                        {"detail": "এই সাবজেক্টে রেজাল্ট ইনপুট দেবার জন্য আপনি অনুমোদিত নন। দয়া করে আপনার প্রতিষ্ঠানের প্রধান শিক্ষক অথবা এ্যাডমিনের সাথে যোগাযোগ করুন।"},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
         results_data = request.data.get('results', [])
         
         if not results_data:
@@ -229,7 +247,7 @@ class ExaminationViewSet(viewsets.ModelViewSet):
 class ResultViewSet(viewsets.ModelViewSet):
     queryset = Result.objects.select_related('examination', 'student__user', 'subject').all()
     serializer_class = ResultSerializer
-    permission_classes = [RolePermission]
+    permission_classes = [SubjectResultWritePermission]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['student__user__first_name', 'student__user__last_name', 'student__roll_number']
     ordering_fields = ['student', 'subject', 'examination']
@@ -387,10 +405,26 @@ class StudentOverallResultViewSet(viewsets.ModelViewSet):
             school_id=school_id
         ).select_related('classroom', 'section')
         
+        sections_by_classroom = {}
+        for s in students:
+            cid = s.classroom_id
+            sid = s.section_id
+            if cid not in sections_by_classroom:
+                sections_by_classroom[cid] = set()
+            sections_by_classroom[cid].add(sid)
+        
         # 3. Get All Results for these exams
         results = Result.objects.filter(
             examination_id__in=exam_ids
         ).select_related('subject', 'examination', 'student')
+        
+        planned_groups = set()
+        for e in exams:
+            if e.section_id:
+                planned_groups.add((e.classroom_id, e.section_id))
+            else:
+                for sid in sections_by_classroom.get(e.classroom_id, {None}):
+                    planned_groups.add((e.classroom_id, sid))
         
         # 4. Process in memory
         
@@ -425,8 +459,8 @@ class StudentOverallResultViewSet(viewsets.ModelViewSet):
         summary_data = {} # class_section_key -> stats
         
         for student in students:
-            # Skip students in groups where NO results exist (Data entry hasn't started)
-            # This avoids showing "0 Absent" (misleading) or "All Absent" (scary)
+            if (student.classroom_id, student.section_id) not in planned_groups:
+                continue
             if (student.classroom_id, student.section_id) not in active_groups:
                 continue
 

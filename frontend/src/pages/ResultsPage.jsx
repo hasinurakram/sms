@@ -905,6 +905,11 @@ export default function ResultsPage() {
         const msg = serverMsg || err.message || 'Failed to save result';
         toast.error(`Failed to save result: ${msg}${serverErrors ? ' | ' + serverErrors : ''}`);
         setSavingResult(false);
+      })
+      .catch(err => {
+        const msg = (err?.response?.data?.detail) || 'অনুমতি নেই বা ইনপুট ব্যর্থ';
+        toast.error(msg);
+        setSavingResult(false);
       });
   };
 
@@ -1127,7 +1132,8 @@ export default function ResultsPage() {
       loadResults(examId);
     } catch (e) {
       console.error('Bulk save error:', e?.response?.data || e);
-      toast.error('বাল্ক ফল সংরক্ষণ ব্যর্থ');
+      const msg = (e?.response?.status === 403 && (e?.response?.data?.detail)) ? e.response.data.detail : 'বাল্ক ফল সংরক্ষণ ব্যর্থ';
+      toast.error(msg);
     } finally {
       setBulkSaving(false);
     }

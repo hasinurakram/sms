@@ -492,7 +492,24 @@ export default function ResultCard({ studentData, results, overallResult, examin
                 first_term: 'প্রথম টার্ম',
                 final: 'ফাইনাল'
               };
-              const year = examination?.academic_year || new Date().getFullYear();
+              const parseYearFromName = (s) => {
+                const txt = String(s || '');
+                const m = txt.match(/(19|20)\d{2}/);
+                if (m) return parseInt(m[0], 10);
+                const bn = ['০','১','২','৩','৪','৫','৬','৭','৮','৯'];
+                const enMap = {'০':'0','১':'1','২':'2','৩':'3','৪':'4','৫':'5','৬':'6','৭':'7','৮':'8','৯':'9'};
+                const bnToEn = txt.replace(/[০-৯]/g, d => enMap[d] || d);
+                const m2 = bnToEn.match(/(19|20)\d{2}/);
+                return m2 ? parseInt(m2[0], 10) : null;
+              };
+              const year = (() => {
+                if (examination?.exam_date) {
+                  const d = new Date(examination.exam_date);
+                  if (!Number.isNaN(d.getTime())) return d.getFullYear();
+                }
+                const y = parseYearFromName(examination?.name);
+                return y || new Date().getFullYear();
+              })();
               const t = map[examination?.exam_type] || examination?.exam_type || '';
               return t ? `${t} পরীক্ষা- ${toBn(year)} খ্রিঃ` : `${toBn(year)} খ্রিঃ`;
             })()}
@@ -705,16 +722,7 @@ export default function ResultCard({ studentData, results, overallResult, examin
           </Grid>
           <Grid size={{ xs: 4 }} sx={{ textAlign: 'center' }}>
             <Box sx={{ height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 0.25 }}>
-              <img
-                src="/images/signatures/seal.png"
-                alt="School Seal"
-                style={{
-                  maxHeight: '100%',
-                  maxWidth: '100%',
-                  objectFit: 'contain'
-                }}
-                onError={(e) => { e.target.style.display = 'none'; }}
-              />
+              {/* School seal removed for guardian signature area */}
             </Box>
             <Divider sx={{ mb: 0.5, borderColor: '#000', width: '70%', mx: 'auto' }} />
             <Typography variant="caption">অভিভাবকের স্বাক্ষর</Typography>

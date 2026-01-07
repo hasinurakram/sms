@@ -136,7 +136,10 @@ class Result(models.Model):
             self.is_passed = bool(ok_w and ok_m and ok_p)
         else:
             # If no component marks, just check total marks
-            self.is_passed = self.total_obtained >= self.examination.pass_marks
+            threshold = Decimal(self.examination.pass_marks or 0)
+            if threshold <= 0 or threshold > denom:
+                threshold = Decimal(_round_half_up(denom / Decimal(3)))
+            self.is_passed = self.total_obtained >= threshold
         
         if not self.is_passed:
             self.grade = 'F'

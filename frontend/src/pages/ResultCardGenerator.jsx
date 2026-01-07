@@ -333,8 +333,7 @@ export default function ResultCardGenerator() {
       let mMax = parseFloat(exObj?.mcq_max) || 0;
       let pMax = parseFloat(exObj?.practical_max) || 0;
       if (!(wMax || mMax || pMax)) {
-        const maxDict = SUBJECT_MAXIMA?.six_to_eight || {};
-        const spec = maxDict[lower] || {};
+        const spec = getSubjectMaximaForClass(name) || {};
         wMax = parseFloat(spec.written) || 0;
         mMax = parseFloat(spec.mcq) || 0;
         pMax = parseFloat(spec.practical) || 0;
@@ -394,12 +393,11 @@ export default function ResultCardGenerator() {
     const subjectTotal = m ? (m.written + m.mcq + m.practical) : null;
     const direct = getExamMax(ex);
     const rawTotal = parseFloat(r.total_marks);
-    if (subjectTotal && (!direct || direct === 100)) return subjectTotal;
-    if (subjectTotal && (!Number.isFinite(rawTotal) || rawTotal <= 0 || rawTotal === 100)) return subjectTotal;
-    if (direct && direct !== 100) return direct;
+    const hasExplicitExMax = (parseFloat(ex?.written_max) || 0) || (parseFloat(ex?.mcq_max) || 0) || (parseFloat(ex?.practical_max) || 0);
+    if (subjectTotal && !hasExplicitExMax) return subjectTotal;
     if (Number.isFinite(rawTotal) && rawTotal > 0) return rawTotal;
-    if (subjectTotal) return subjectTotal;
-    return direct;
+    if (hasExplicitExMax) return direct;
+    return subjectTotal || direct || 100;
   };
 
   const dedupeAndFillResults = (arr, exams) => {
@@ -412,46 +410,85 @@ export default function ResultCardGenerator() {
       
       const prev = map.get(nm);
       if (prev) {
-        // Merge with previous result (sum marks)
-        const written = (parseFloat(prev.written_marks) || 0) + (parseFloat(r.written_marks) || 0);
-        const mcq = (parseFloat(prev.mcq_marks) || 0) + (parseFloat(r.mcq_marks) || 0);
-        const practical = (parseFloat(prev.practical_marks) || 0) + (parseFloat(r.practical_marks) || 0);
-        const totalObtained = (parseFloat(prev.total_obtained) || 0) + (parseFloat(r.total_obtained) || 0);
-        
-        // Sum total possible marks
-        const prevTotal = getTotalMaxForResult(prev);
-        const currTotal = getTotalMaxForResult(r);
-        const newTotalMax = prevTotal + currTotal;
-        
-        // Recalculate GPA/Grade
-        let { grade, gpa } = calculateGradeAndGPA(totalObtained, newTotalMax);
-        const passed = computeSubjectPass(prev.subject?.name || prev.subject_name || nm, written, mcq, practical, exams, prev.examination);
-        if (!passed) { grade = 'F'; gpa = '0.00'; }
-        
-        let cleanName = prev.subject?.name || prev.subject_name || nm;
-        cleanName = cleanName.replace(/\s*\(.*?\)\s*/g, '').trim();
-        {
+        const prevExId = typeof prev.examination === 'object' ? prev.examination?.id : prev.examination;
+        const currExId = typeof r.examination === 'object' ? r.examination?.id : r.examination;
+        if (prevExId === currExId) {
+          const pw = parseFloat(prev.written_marks) || 0;
+          const pmq = parseFloat(prev.mcq_marks) || 0;
+          const pp = parseFloat(prev.practical_marks) || 0;
+          const po = (parseFloat(prev.total_obtained) || (pw + pmq + pp)) || 0;
+          const pt = getTotalMaxForResult(prev);
+          let { grade: pGrade, gpa: pGpa } = calculateGradeAndGPA(po, pt);
+          const pPassed = computeSubjectPass(prev.subject?.name || prev.subject_name || nm, pw, pmq, pp, exams, prev.examination);
+          if (!pPassed) { pGrade = 'F'; pGpa = '0.00'; }
+          else if (pGrade === 'F') { pGrade = 'D'; pGpa = '1.00'; }
+          const rw = parseFloat(r.written_marks) || 0;
+          const rmq = parseFloat(r.mcq_marks) || 0;
+          const rp = parseFloat(r.practical_marks) || 0;
+          const ro = (parseFloat(r.total_obtained) || (rw + rmq + rp)) || 0;
+          const rt = getTotalMaxForResult(r);
+          let { grade: rGrade, gpa: rGpa } = calculateGradeAndGPA(ro, rt);
+          const rPassed = computeSubjectPass(r.subject?.name || r.subject_name || nm, rw, rmq, rp, exams, r.examination);
+          if (!rPassed) { rGrade = 'F'; rGpa = '0.00'; }
+          else if (rGrade === 'F') { rGrade = 'D'; rGpa = '1.00'; }
+          const chosen = ro >= po ? { base: r, w: rw, m: rmq, p: rp, o: ro, t: rt, grade: rGrade, gpa: rGpa, pass: rPassed } : { base: prev, w: pw, m: pmq, p: pp, o: po, t: pt, grade: pGrade, gpa: pGpa, pass: pPassed };
+          let cleanName = chosen.base.subject?.name || chosen.base.subject_name || nm;
+          cleanName = cleanName.replace(/\s*\(.*?\)\s*/g, '').trim();
           const clsObj = classrooms.find(c => parseInt(c.id, 10) === parseInt(selectedClass, 10)) || {};
-          const nm = String(clsObj?.name || '').toLowerCase();
-          const isNineTen = /নবম|nine|\b9\b|দশম|ten|\b10\b/.test(nm);
+          const nm2 = String(clsObj?.name || '').toLowerCase();
+          const isNineTen = /নবম|nine|\b9\b|দশম|ten|\b10\b/.test(nm2);
           if (isNineTen) {
             cleanName = cleanName.replace(/[- ]?(১ম|২য়|1st|2nd|first|second)([- ]?(paper|পত্র))?/gi, '').trim();
           }
+          map.set(nm, {
+            ...chosen.base,
+            written_marks: chosen.w,
+            mcq_marks: chosen.m,
+            practical_marks: chosen.p,
+            total_obtained: chosen.o,
+            total_marks: chosen.t,
+            grade: chosen.grade,
+            gpa: chosen.gpa,
+            is_passed: chosen.pass,
+            subject: { ...(chosen.base.subject || {}), name: cleanName },
+            subject_name: cleanName
+          });
+        } else {
+          const prevDate = new Date((typeof prev.examination === 'object' ? prev.examination?.exam_date : null) || 0).getTime();
+          const currDate = new Date((typeof r.examination === 'object' ? r.examination?.exam_date : null) || 0).getTime();
+          const useCurr = currDate && (!prevDate || currDate >= prevDate);
+          const base = useCurr ? r : prev;
+          const w = parseFloat(base.written_marks) || 0;
+          const m = parseFloat(base.mcq_marks) || 0;
+          const p = parseFloat(base.practical_marks) || 0;
+          const o = (parseFloat(base.total_obtained) || (w + m + p)) || 0;
+          const t = getTotalMaxForResult(base);
+          let { grade, gpa } = calculateGradeAndGPA(o, t);
+          const passed = computeSubjectPass(base.subject?.name || base.subject_name || nm, w, m, p, exams, base.examination);
+          if (!passed) { grade = 'F'; gpa = '0.00'; }
+          else if (grade === 'F') { grade = 'D'; gpa = '1.00'; }
+          let cleanName = base.subject?.name || base.subject_name || nm;
+          cleanName = cleanName.replace(/\s*\(.*?\)\s*/g, '').trim();
+          const clsObj = classrooms.find(c => parseInt(c.id, 10) === parseInt(selectedClass, 10)) || {};
+          const nm2 = String(clsObj?.name || '').toLowerCase();
+          const isNineTen = /নবম|nine|\b9\b|দশম|ten|\b10\b/.test(nm2);
+          if (isNineTen) {
+            cleanName = cleanName.replace(/[- ]?(১ম|২য়|1st|2nd|first|second)([- ]?(paper|পত্র))?/gi, '').trim();
+          }
+          map.set(nm, {
+            ...base,
+            written_marks: w,
+            mcq_marks: m,
+            practical_marks: p,
+            total_obtained: o,
+            total_marks: t,
+            grade,
+            gpa,
+            is_passed: passed,
+            subject: { ...(base.subject || {}), name: cleanName },
+            subject_name: cleanName
+          });
         }
-
-        map.set(nm, {
-          ...prev,
-          written_marks: written,
-          mcq_marks: mcq,
-          practical_marks: practical,
-          total_obtained: totalObtained,
-          total_marks: newTotalMax,
-          grade,
-          gpa,
-          is_passed: passed,
-          subject: { ...(prev.subject || {}), name: cleanName },
-          subject_name: cleanName
-        });
       } else {
         const w = parseFloat(r.written_marks) || 0;
         const m = parseFloat(r.mcq_marks) || 0;
@@ -461,6 +498,7 @@ export default function ResultCardGenerator() {
         let { grade, gpa } = calculateGradeAndGPA(obtained, totalMax);
         const passed = computeSubjectPass(r.subject?.name || r.subject_name || nm, w, m, p, exams, r.examination);
         if (!passed) { grade = 'F'; gpa = '0.00'; }
+        else if (grade === 'F') { grade = 'D'; gpa = '1.00'; }
         let cleanName = r.subject?.name || r.subject_name || nm;
         cleanName = cleanName.replace(/\s*\(.*?\)\s*/g, '').trim();
         {
@@ -571,15 +609,21 @@ export default function ResultCardGenerator() {
         }
       }
 
-      // Choose an examination to display header (most recent by exam_date)
+      let chosenExam = null;
+      const possibleExams = [...matchingExams];
       try {
         const examResList = await Promise.all(matchingExams.map(ex => api.get(`/api/results/examinations/${ex.id}/`).then(r => r.data).catch(() => null)));
         const valid = examResList.filter(Boolean);
-        const chosen = valid.sort((a, b) => new Date(b.exam_date || 0) - new Date(a.exam_date || 0))[0] || valid[0] || null;
-        setExamination(chosen);
+        const validSorted = [...valid].sort((a, b) => new Date(b.exam_date || 0) - new Date(a.exam_date || 0));
+        chosenExam = validSorted[0] || valid[0] || null;
+        setExamination(chosenExam);
       } catch (_) {
-        setExamination(matchingExams[0] || null);
+        chosenExam = matchingExams[0] || null;
+        setExamination(chosenExam);
       }
+      // Keep all matching examinations for subject coverage; chosenExam is only for header
+      const originalMatching = [...matchingExams];
+      matchingExams = originalMatching.length ? originalMatching : (chosenExam ? [chosenExam] : []);
       
       // Fetch results for all matching examinations and merge
       let fetchedResults = [];
@@ -607,6 +651,30 @@ export default function ResultCardGenerator() {
           } catch (_) {}
         }
       }
+      if ((!fetchedResults || fetchedResults.length === 0) && possibleExams.length > 1) {
+        const sortedPossible = [...possibleExams].sort((a, b) => new Date(b.exam_date || 0) - new Date(a.exam_date || 0));
+        for (const ex of sortedPossible) {
+          try {
+            const params = { examination: ex.id, student: student.id, page_size: 1000 };
+            if (selectedSection) params.section = selectedSection;
+            const resA = await scopedGet('/api/results/results/', id, params, { timeout: 15000 });
+            let arrA = Array.isArray(resA.data) ? resA.data : (resA.data?.results || []);
+            if ((!arrA || arrA.length === 0) && selectedSection) {
+              const resB = await scopedGet('/api/results/results/', id, { examination: ex.id, student: student.id, page_size: 1000 }, { timeout: 15000 });
+              arrA = Array.isArray(resB.data) ? resB.data : (resB.data?.results || []);
+            }
+            if (arrA && arrA.length) {
+              fetchedResults = arrA;
+              matchingExams = [ex];
+              try {
+                const exObj = await api.get(`/api/results/examinations/${ex.id}/`).then(r => r.data).catch(() => null);
+                if (exObj) setExamination(exObj);
+              } catch (_) {}
+              break;
+            }
+          } catch (_) {}
+        }
+      }
       setResults(fetchedResults);
 
       if (fetchedResults.length === 0) {
@@ -617,12 +685,7 @@ export default function ResultCardGenerator() {
           const filtered = arr.filter(it => {
             const exObj = typeof it.examination === 'object' ? it.examination : null;
             const exId = exObj ? exObj.id : it.examination;
-            const exType = exObj ? exObj.exam_type : it.exam_type;
-            const exName = exObj ? exObj.name : it.exam_name;
-            const exCls = exObj ? exObj.classroom : null;
-            if (allowedIds.has(parseInt(exId, 10))) return true;
-            return getClassroomId(exCls) === selectedClass &&
-              normalizeExamType(exType, exName) === normalizeExamType(selectedExamType);
+            return allowedIds.has(parseInt(exId, 10));
           });
           if (filtered.length > 0) {
             fetchedResults = filtered;
@@ -631,9 +694,20 @@ export default function ResultCardGenerator() {
         } catch (_) {}
       }
       if (fetchedResults.length > 0) {
-        setResults(dedupeAndFillResults(fetchedResults, matchingExams));
+        const merged = dedupeAndFillResults(fetchedResults, matchingExams);
+        setResults(merged);
+        const usedExamIds = Array.from(new Set(merged.map(r => {
+          const exObj = r.examination;
+          return typeof exObj === 'object' ? exObj?.id : exObj;
+        }).filter(Boolean)));
+        try {
+          const usedExamObjs = await Promise.all(usedExamIds.map(eid => api.get(`/api/results/examinations/${eid}/`).then(r => r.data).catch(() => null)));
+          const validUsed = usedExamObjs.filter(Boolean).sort((a, b) => new Date(b.exam_date || 0) - new Date(a.exam_date || 0));
+          if (validUsed[0]) setExamination(validUsed[0]);
+        } catch (_) {}
       } else {
-        setResults(dedupeAndFillResults([], matchingExams));
+        const merged = dedupeAndFillResults([], matchingExams);
+        setResults(merged);
       }
 
       // Get combined overall result with rank from backend
