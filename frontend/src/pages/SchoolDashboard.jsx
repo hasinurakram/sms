@@ -16,6 +16,7 @@ import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import PaymentIcon from "@mui/icons-material/Payment";
 import ReceiptIcon from "@mui/icons-material/Receipt";
 import PeopleIcon from "@mui/icons-material/People";
+import SupportAgentIcon from "@mui/icons-material/SupportAgent";
 import { setCurrentSchoolId, getDashboardStats } from '../services/dashboardService';
 import api from '../utils/api';
 import StatCard from '../components/dashboard/StatCard';
@@ -92,6 +93,7 @@ const menuItems = [
   { label: 'হাজিরা', icon: <CheckCircleIcon />, key: 'attendance' },
   { label: 'রেজাল্ট', icon: <AssessmentIcon />, key: 'results' },
   { label: 'রেজাল্ট কার্ড', icon: <CardMembershipIcon />, key: 'result-card' },
+  { label: 'Rank List', icon: <CardMembershipIcon />, key: 'rank-list' },
   { label: 'আইডি কার্ড', icon: <CardMembershipIcon />, key: 'id-card' },
   { label: 'সার্টিফিকেট', icon: <CardMembershipIcon />, key: 'certificate' },
   { label: 'প্রবেশপত্র', icon: <CardMembershipIcon />, key: 'admission-cards' },
@@ -99,6 +101,7 @@ const menuItems = [
   { label: 'ফি', icon: <PaymentIcon />, key: 'fees' },
   { label: 'ফি পরিশোধ', icon: <ReceiptIcon />, key: 'fee-receipt' },
   { label: 'রিসিট বই', icon: <ReceiptIcon />, key: 'receipt-book' },
+  { label: 'সফটওয়ার এ্যাসিসটেন্ট', icon: <SupportAgentIcon />, key: 'assistant' },
   { label: 'এসএমএস', icon: <SmsIcon />, key: 'sms' },
   { label: 'অভিভাবক', icon: <PeopleIcon />, key: 'parent' },
   { label: 'কমিটি', icon: <GroupIcon />, key: 'committee' },

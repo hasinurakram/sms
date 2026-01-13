@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 import unicodedata
 from schools.models import School
-from .models import Profile, AdminProfile, ParentProfile, CommitteeProfile, Task
+from .models import Profile, AdminProfile, ParentProfile, CommitteeProfile, Task, AssistantLog, AssistantMemory
 from academics.models import StudentProfile
 
 User = get_user_model()
@@ -323,3 +323,15 @@ class TaskSerializer(serializers.ModelSerializer):
         if request and hasattr(request, 'user'):
             validated_data['created_by'] = request.user
         return super().create(validated_data)
+
+class AssistantLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AssistantLog
+        fields = ['id', 'user', 'school', 'query_text', 'intent', 'params', 'result_summary', 'created_at']
+        read_only_fields = ['id', 'created_at']
+
+class AssistantMemorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AssistantMemory
+        fields = ['id', 'school', 'key', 'data', 'updated_at']
+        read_only_fields = ['id', 'updated_at']

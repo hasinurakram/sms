@@ -23,9 +23,15 @@ import {
   Card,
   CardContent,
   CardActionArea,
-  Chip
+  Chip,
+  Autocomplete,
+  Checkbox
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
+import {
+  CheckBox as CheckBoxIcon,
+  CheckBoxOutlineBlank as CheckBoxOutlineBlankIcon
+} from '@mui/icons-material';
 import SearchIcon from '@mui/icons-material/Search';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import CloseIcon from '@mui/icons-material/Close';
@@ -36,6 +42,9 @@ import EmptyState from '../components/EmptyState';
 import SubjectCard from '../components/SubjectCard';
 import { CardSkeleton } from '../components/LoadingSkeleton';
 import { useToast } from '../components/Toast';
+
+  const icon = <CheckBoxOutlineBlankIcon fontSize="small" />;
+  const checkedIcon = <CheckBoxIcon fontSize="small" />;
 
 export default function SubjectsPage() {
   const { id } = useParams();
@@ -56,7 +65,8 @@ export default function SubjectsPage() {
   
   const [formData, setFormData] = useState({
     name: '',
-    code: ''
+    code: '',
+    classrooms: []
   });
   const [formErrors, setFormErrors] = useState({});
 
@@ -64,6 +74,67 @@ export default function SubjectsPage() {
     loadSubjects();
     loadTeachers();
   }, [id]);
+
+  // Bangla number words mapping for sorting
+  const banglaNumberMap = {
+    'প্রথম': 1,
+    'দ্বিতীয়': 2,
+    'দ্বিতীয়': 2,
+    'তৃতীয়': 3,
+    'তৃতীয়': 3,
+    'চতুর্থ': 4,
+    'পঞ্চম': 5,
+    'ষষ্ঠ': 6,
+    'সপ্তম': 7,
+    'অষ্টম': 8,
+    'নবম': 9,
+    'দশম': 10,
+    'একাদশ': 11,
+    'দ্বাদশ': 12
+  };
+
+  // Subject order mapping based on user request
+  const subjectOrderMap = {
+    'বাংলা-১ম': 1, 'বাংলা ১ম': 1, 'Bangla 1st': 1,
+    'বাংলা-২য়': 2, 'বাংলা ২য়': 2, 'বাংলা-দ্বিতীয়': 2, 'Bangla 2nd': 2,
+    'ইংরেজী-১ম': 3, 'ইংরেজি-১ম': 3, 'ইংরেজী ১ম': 3, 'ইংরেজি ১ম': 3, 'English 1st': 3, 'English-1st': 3,
+    'ইংরেজি-২য়': 4, 'ইংরেজী-২য়': 4, 'ইংরেজি ২য়': 4, 'ইংরেজী ২য়': 4, 'English 2nd': 4, 'English-2nd': 4,
+    'গণিত': 5, 'Math': 5, 'Mathematics': 5,
+    'বিজ্ঞান': 6, 'Science': 6,
+    'বাংলাদেশ ও বিশ্বপরিচয়': 7, 'বাংলাদেশ ও বিশ্ব পরিচয়': 7, 'BGS': 7,
+    'ICT': 8, 'আইসিটি': 8, 'তথ্য ও যোগাযোগ প্রযুক্তি': 8,
+    'ধর্ম': 9, 'Religion': 9, 'ইসলাম ধর্ম': 9, 'হিন্দু ধর্ম': 9, 'Islam': 9, 'Hindu': 9
+  };
+
+  const getSubjectOrder = (name) => {
+    // Try exact match first
+    if (subjectOrderMap[name]) return subjectOrderMap[name];
+    
+    // Try fuzzy match (if name contains the key)
+    for (const [key, order] of Object.entries(subjectOrderMap)) {
+      if (name.includes(key)) return order;
+    }
+    
+    return 999;
+  };
+
+  const getClassOrder = (className) => {
+    // Check for Bangla numbers
+    for (const [bangla, num] of Object.entries(banglaNumberMap)) {
+      if (className.includes(bangla)) {
+        return num;
+      }
+    }
+    
+    // Check for English numbers (Class 6, Class 7, etc.)
+    const match = className.match(/\d+/);
+    if (match) {
+      return parseInt(match[0]);
+    }
+    
+    // Default: return a high number so it goes to the end
+    return 999;
+  };
 
   const loadSubjects = async () => {
     setLoading(true);
@@ -73,17 +144,31 @@ export default function SubjectsPage() {
       const subjectsData = Array.isArray(subjectRes.data) ? subjectRes.data : subjectRes.data.results || [];
       setSubjects(subjectsData);
 
-      // Load classes and derive naive counts (subjects are school-wide; assignments are optional)
+      // Load classes and derive counts based on assignments/linkage
       const classRes = await api.get(`/api/academics/classrooms/?school=${id}`);
-      const classesData = Array.isArray(classRes.data) ? classRes.data : classRes.data.results || [];
+      let classesData = Array.isArray(classRes.data) ? classRes.data : classRes.data.results || [];
+      
+      // Sort classes
+      classesData = classesData.sort((a, b) => {
+        return getClassOrder(a.name) - getClassOrder(b.name);
+      });
+      
       setClassrooms(classesData);
 
-      const summary = classesData.map(classroom => ({
-        id: classroom.id,
-        name: classroom.name,
-        subjectCount: subjectsData.length,
-        subjects: subjectsData
-      }));
+      const summary = classesData.map(classroom => {
+        // Filter subjects that are assigned to this classroom
+        // The subject object now has a 'classrooms' array of IDs
+        const classSubjects = subjectsData.filter(s => 
+          s.classrooms && s.classrooms.includes(classroom.id)
+        );
+        
+        return {
+          id: classroom.id,
+          name: classroom.name,
+          subjectCount: classSubjects.length,
+          subjects: classSubjects
+        };
+      });
       setClassSummary(summary);
 
       if (subjectsData.length > 0) {
@@ -119,7 +204,12 @@ export default function SubjectsPage() {
       navigate('/login');
       return;
     }
-    setFormData({ name: '', code: '' });
+    // Pre-select the current class if one is selected
+    setFormData({ 
+      name: '', 
+      code: '',
+      classrooms: selectedClass ? [selectedClass] : []
+    });
     setFormErrors({});
     setDialogOpen(true);
   };
@@ -141,10 +231,21 @@ export default function SubjectsPage() {
 
     setSaving(true);
     try {
-      await api.post('/api/academics/subjects/', {
-        ...formData,
-        school_id: id
-      });
+      // If we have a selected class, we want to add the subject to THIS class
+      // The backend logic I implemented checks for 'classroom_id' in body
+      const payload = {
+        name: formData.name,
+        code: formData.code,
+        school_id: id,
+        classrooms: formData.classrooms.map(c => c.id)
+      };
+      
+      // Keep classroom_id for backward compatibility if needed, but 'classrooms' list should be primary
+      if (selectedClass) {
+        payload.classroom_id = selectedClass.id;
+      }
+
+      await api.post('/api/academics/subjects/', payload);
       toast.success('Subject added successfully!');
       setDialogOpen(false);
       loadSubjects();
@@ -186,8 +287,23 @@ export default function SubjectsPage() {
       return s.name.toLowerCase().includes(searchLower) ||
              s.code.toLowerCase().includes(searchLower);
     })
+    .filter(s => {
+      // If a class is selected, only show subjects assigned to it
+      if (selectedClass) {
+        return s.classrooms && s.classrooms.includes(selectedClass.id);
+      }
+      return true;
+    })
     .sort((a, b) => {
-      // Sort by subject ID (ascending) - first added subject appears first
+      // Sort by defined order first
+      const orderA = getSubjectOrder(a.name);
+      const orderB = getSubjectOrder(b.name);
+      
+      if (orderA !== orderB) {
+        return orderA - orderB;
+      }
+
+      // Then sort by ID (ascending) as fallback
       return a.id - b.id;
     });
 
@@ -444,6 +560,36 @@ export default function SubjectsPage() {
               error={!!formErrors.code}
               helperText={formErrors.code || 'Short code for the subject (will be uppercase)'}
               inputProps={{ style: { textTransform: 'uppercase' } }}
+            />
+
+            <Autocomplete
+              multiple
+              options={classrooms}
+              disableCloseOnSelect
+              getOptionLabel={(option) => option.name}
+              value={formData.classrooms}
+              onChange={(event, newValue) => {
+                setFormData({ ...formData, classrooms: newValue });
+              }}
+              renderOption={(props, option, { selected }) => (
+                <li {...props}>
+                  <Checkbox
+                    icon={icon}
+                    checkedIcon={checkedIcon}
+                    style={{ marginRight: 8 }}
+                    checked={selected}
+                  />
+                  {option.name}
+                </li>
+              )}
+              renderInput={(params) => (
+                <TextField 
+                  {...params} 
+                  label="Assign to Classes" 
+                  placeholder="Select classes"
+                  helperText="Select one or more classes for this subject"
+                />
+              )}
             />
           </Stack>
         </DialogContent>

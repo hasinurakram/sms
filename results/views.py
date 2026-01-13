@@ -213,6 +213,7 @@ class ExaminationViewSet(viewsets.ModelViewSet):
         
         # Check if passed (all subjects must be passed)
         is_passed = all(r.is_passed for r in student_results)
+        failed_subjects_count = sum(1 for r in student_results if not r.is_passed)
         
         # Create or update overall result
         overall_result, created = StudentOverallResult.objects.update_or_create(
@@ -224,7 +225,8 @@ class ExaminationViewSet(viewsets.ModelViewSet):
                 'percentage': percentage,
                 'cgpa': cgpa,
                 'grade': grade,
-                'is_passed': is_passed
+                'is_passed': is_passed,
+                'failed_subjects_count': failed_subjects_count
             }
         )
         
@@ -735,6 +737,118 @@ class StudentOverallResultViewSet(viewsets.ModelViewSet):
             'rank': rank,
             'total_students': len(student_results)
         })
+
+    @action(detail=False, methods=['get'])
+    def combined_rank_list_by_exam_type(self, request):
+        exam_type = request.query_params.get('exam_type')
+        classroom_id = request.query_params.get('classroom')
+        section_id = request.query_params.get('section')
+
+        if not exam_type or not classroom_id:
+            return Response(
+                {"detail": "exam_type and classroom parameters are required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        from academics.models import StudentProfile
+
+        examinations = Examination.objects.filter(
+            exam_type=exam_type,
+            classroom_id=classroom_id
+        )
+
+        if not examinations.exists():
+            return Response([], status=status.HTTP_200_OK)
+
+        students = StudentProfile.objects.filter(classroom_id=classroom_id).select_related('user', 'classroom', 'section')
+        if section_id:
+            students = students.filter(section_id=section_id)
+
+        student_list = list(students)
+        if not student_list:
+            return Response([], status=status.HTTP_200_OK)
+
+        results = Result.objects.filter(
+            examination__in=examinations,
+            student__in=student_list
+        ).select_related('examination', 'examination__classroom', 'subject', 'student__user', 'student__classroom', 'student__section')
+
+        by_student = {}
+        for r in results:
+            sid = r.student_id
+            if sid not in by_student:
+                by_student[sid] = []
+            by_student[sid].append(r)
+
+        rows = []
+        for st in student_list:
+            s_results = by_student.get(st.id) or []
+            if not s_results:
+                continue
+
+            total_obtained = sum(float(r.total_obtained) for r in s_results)
+            total_possible = 0
+            for r in s_results:
+                tm = None
+                try:
+                    cg = _class_group(getattr(r.examination.classroom, "name", None))
+                    maxima = get_subject_maxima(cg, getattr(r.subject, "name", None))
+                    if maxima:
+                        tm = int(maxima.get("written", 0)) + int(maxima.get("mcq", 0)) + int(maxima.get("practical", 0))
+                except Exception:
+                    tm = None
+                total_possible += (tm if tm else r.examination.total_marks)
+
+            avg_gpa = sum(float(r.gpa) for r in s_results) / len(s_results)
+            percentage = (total_obtained / total_possible * 100) if total_possible > 0 else 0
+            is_passed = all(r.is_passed for r in s_results)
+            failed_subjects_count = sum(1 for r in s_results if not r.is_passed)
+
+            if avg_gpa >= 5.0:
+                grade = 'A+'
+            elif avg_gpa >= 4.0:
+                grade = 'A'
+            elif avg_gpa >= 3.5:
+                grade = 'A-'
+            elif avg_gpa >= 3.0:
+                grade = 'B'
+            elif avg_gpa >= 2.0:
+                grade = 'C'
+            elif avg_gpa >= 1.0:
+                grade = 'D'
+            else:
+                grade = 'F'
+
+            rows.append({
+                'student': {
+                    'id': st.id,
+                    'roll_number': st.roll_number,
+                    'group': st.group,
+                    'user': {
+                        'id': st.user_id,
+                        'username': getattr(st.user, 'username', ''),
+                        'first_name': getattr(st.user, 'first_name', ''),
+                        'last_name': getattr(st.user, 'last_name', '')
+                    },
+                    'classroom': {'id': st.classroom_id, 'name': st.classroom.name if st.classroom else None},
+                    'section': {'id': st.section_id, 'name': st.section.name if st.section else None},
+                },
+                'exam_type': exam_type,
+                'classroom': classroom_id,
+                'total_marks_obtained': round(total_obtained, 2),
+                'total_marks_possible': round(total_possible, 2),
+                'percentage': round(percentage, 2),
+                'cgpa': round(avg_gpa, 2),
+                'grade': grade,
+                'is_passed': is_passed,
+                'failed_subjects_count': failed_subjects_count,
+            })
+
+        rows.sort(key=lambda x: (x.get('failed_subjects_count', 0), -(float(x.get('cgpa') or 0)), -(float(x.get('percentage') or 0))))
+        for idx, row in enumerate(rows, start=1):
+            row['rank'] = idx
+
+        return Response(rows)
     
     @action(detail=False, methods=['get'])
     def export_csv(self, request):

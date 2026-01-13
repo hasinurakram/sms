@@ -184,7 +184,7 @@ export default function ClassroomsPage() {
       refreshAll(id); // Use context's refresh function instead of loadData
     } catch (err) {
       console.error(err);
-      toast.error(err.response?.data?.name?.[0] || 'Failed to save class');
+      toast.error(err.response?.data?.name?.[0] || err.response?.data?.detail || 'Failed to save class');
     } finally {
       setSaving(false);
     }
@@ -211,7 +211,7 @@ export default function ClassroomsPage() {
       refreshAll(id); // Use context's refresh function instead of loadData
     } catch (err) {
       console.error(err);
-      toast.error(err.response?.data?.name?.[0] || 'Failed to add section');
+      toast.error(err.response?.data?.name?.[0] || err.response?.data?.detail || 'Failed to add section');
     } finally {
       setSaving(false);
     }
@@ -256,6 +256,13 @@ export default function ClassroomsPage() {
 
   // Bangla number words mapping for sorting
   const banglaNumberMap = {
+    'প্রথম': 1,
+    'দ্বিতীয়': 2,
+    'দ্বিতীয়': 2,
+    'তৃতীয়': 3,
+    'তৃতীয়': 3,
+    'চতুর্থ': 4,
+    'পঞ্চম': 5,
     'ষষ্ঠ': 6,
     'সপ্তম': 7,
     'অষ্টম': 8,
@@ -434,7 +441,12 @@ export default function ClassroomsPage() {
                           </Typography>
                         </Box>
                       </Stack>
-                      <Stack direction="row" spacing={1}>
+                      <Stack 
+                        direction="row" 
+                        spacing={1} 
+                        onClick={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => e.stopPropagation()}
+                      >
                         <Tooltip title="সেকশন যোগ করুন">
                           <ProtectedButton 
                             size="small" 

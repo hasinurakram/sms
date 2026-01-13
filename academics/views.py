@@ -1,5 +1,5 @@
 from rest_framework import viewsets, filters
-from users.permissions import AdminOrReadOnly
+from users.permissions import AdminOrReadOnly, RolePermission
 from rest_framework.decorators import action
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.views import APIView
@@ -100,14 +100,17 @@ class ClassRoomViewSet(viewsets.ModelViewSet):
 class SectionViewSet(viewsets.ModelViewSet):
     queryset = Section.objects.select_related('classroom__school').all()
     serializer_class = SectionSerializer
-    permission_classes = [AdminOrReadOnly]
+    permission_classes = [RolePermission]
     filter_backends = []
     
     def get_queryset(self):
         queryset = Section.objects.select_related('classroom__school').all()
         classroom_id = self.request.query_params.get('classroom')
+        school_id = self.request.query_params.get('school')
         if classroom_id:
             queryset = queryset.filter(classroom_id=classroom_id)
+        if school_id:
+            queryset = queryset.filter(classroom__school_id=school_id)
         return queryset
 
 
@@ -119,12 +122,83 @@ class SubjectViewSet(viewsets.ModelViewSet):
     search_fields = ['name','code']
     
     def get_queryset(self):
-        queryset = Subject.objects.select_related('school').all()
+        queryset = Subject.objects.select_related('school').prefetch_related('classrooms').all()
         school_id = self.request.query_params.get('school')
+        classroom_id = self.request.query_params.get('classroom')
         if school_id:
             queryset = queryset.filter(school_id=school_id)
+        # We don't strictly filter by classroom here if we want to show all school subjects
+        # but if the frontend explicitly asks for classroom subjects, we can filter.
+        # However, for the "SubjectsPage" we usually fetch all and filter in frontend OR
+        # fetch per classroom. Let's support filtering.
+        if classroom_id:
+            queryset = queryset.filter(classrooms__id=classroom_id)
         return queryset
     
+    def create(self, request, *args, **kwargs):
+        school_id = request.data.get('school_id')
+        name = request.data.get('name')
+        
+        # Check if subject exists for this school to handle "add to class" for existing subjects
+        if school_id and name:
+            existing_subject = Subject.objects.filter(school_id=school_id, name=name).first()
+            if existing_subject:
+                # Update existing subject's classrooms
+                classrooms = request.data.get('classrooms', [])
+                classroom_id = request.data.get('classroom_id')
+                
+                ids_to_add = set()
+                if isinstance(classrooms, list):
+                    try:
+                        ids_to_add.update([int(c) for c in classrooms])
+                    except (ValueError, TypeError):
+                        pass
+                
+                if classroom_id:
+                    try:
+                        ids_to_add.add(int(classroom_id))
+                    except (ValueError, TypeError):
+                        pass
+                    
+                if ids_to_add:
+                    existing_subject.classrooms.add(*ids_to_add)
+                
+                # Update code if provided and different
+                code = request.data.get('code')
+                if code and code != existing_subject.code:
+                    existing_subject.code = code
+                    existing_subject.save()
+
+                serializer = self.get_serializer(existing_subject)
+                return Response(serializer.data, status=status.HTTP_200_OK)
+        
+        return super().create(request, *args, **kwargs)
+
+    def perform_create(self, serializer):
+        classroom_id = self.request.data.get('classroom_id')
+        instance = serializer.save()
+        if classroom_id:
+            try:
+                classroom = ClassRoom.objects.get(id=classroom_id)
+                instance.classrooms.add(classroom)
+            except ClassRoom.DoesNotExist:
+                pass
+
+    @action(detail=True, methods=['post'])
+    def assign_class(self, request, pk=None):
+        """Assign this subject to a classroom"""
+        subject = self.get_object()
+        classroom_id = request.data.get('classroom_id')
+        if not classroom_id:
+            return Response({"detail": "classroom_id required"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            classroom = ClassRoom.objects.get(id=classroom_id)
+            subject.classrooms.add(classroom)
+            return Response({"status": "assigned"})
+        except ClassRoom.DoesNotExist:
+            return Response({"detail": "Classroom not found"}, status=status.HTTP_404_NOT_FOUND)
+
     @action(detail=True, methods=['get'])
     def detail(self, request, pk=None):
         """Get detailed subject information including assignments, results, and attendance"""

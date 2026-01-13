@@ -18,6 +18,7 @@ from .views import (
     send_template_sms_view,
     UsernameAvailabilityView,
     CreateProfileView,
+    SoftwareAssistantView,
 )
 
 router = DefaultRouter()
@@ -51,4 +52,5 @@ urlpatterns = [
     path('sms/send/', send_sms_view, name='send-sms'),
     path('sms/bulk/', send_bulk_sms_view, name='send-bulk-sms'),
     path('sms/template/', send_template_sms_view, name='send-template-sms'),
+    path('assistant/', SoftwareAssistantView.as_view(), name='software-assistant'),
 ]

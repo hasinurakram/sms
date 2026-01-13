@@ -65,10 +65,11 @@ class SectionSerializer(serializers.ModelSerializer):
 class SubjectSerializer(serializers.ModelSerializer):
     assigned_teachers = serializers.SerializerMethodField()
     school_id = serializers.PrimaryKeyRelatedField(source='school', queryset=School.objects.all(), write_only=True, required=True)
+    classrooms = serializers.PrimaryKeyRelatedField(many=True, queryset=ClassRoom.objects.all(), required=False)
     
     class Meta:
         model = Subject
-        fields = ['id', 'school', 'school_id', 'name', 'code', 'assigned_teachers']
+        fields = ['id', 'school', 'school_id', 'name', 'code', 'assigned_teachers', 'classrooms']
         read_only_fields = ['school']
     
     def get_assigned_teachers(self, obj):
@@ -123,7 +124,7 @@ class StudentProfileSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = StudentProfile
-        fields = ['id', 'user', 'user_id', 'username', 'password', 'first_name', 'last_name', 'email', 'phone_number', 'photo', 'school', 'school_id', 'classroom', 'classroom_id', 'section', 'section_id', 'roll_number', 'blood_group', 'guardian', 'guardian_id', 'guardian_name']
+        fields = ['id', 'user', 'user_id', 'username', 'password', 'first_name', 'last_name', 'email', 'phone_number', 'photo', 'school', 'school_id', 'classroom', 'classroom_id', 'section', 'section_id', 'roll_number', 'group', 'blood_group', 'guardian', 'guardian_id', 'guardian_name']
         read_only_fields = ['school']
 
     def validate(self, data):

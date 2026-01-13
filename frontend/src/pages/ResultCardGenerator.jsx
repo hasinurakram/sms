@@ -282,7 +282,11 @@ export default function ResultCardGenerator() {
       if (/(english|ইংরেজি|ইংরেজী)/i.test(lower)) return lower; // keep paper-specific names separate for class 6–8
       return lower;
     }
-    const s = base.replace(/[- ]?(১ম|২য়|1st|2nd|first|second)([- ]?(paper|পত্র))?/gi, '').trim();
+    const lower = base.toLowerCase();
+    const paperNo = (/(১ম|1st|first)/i.test(lower) ? 1 : (/(২য়|২য়|2nd|second)/i.test(lower) ? 2 : null));
+    if (/(বাংলা|bangla|bengali)/i.test(lower)) return paperNo ? `bangla__paper${paperNo}` : 'bangla';
+    if (/(english|ইংরেজি|ইংরেজী)/i.test(lower)) return paperNo ? `english__paper${paperNo}` : 'english';
+    const s = base.replace(/[- ]?(১ম|২য়|২য়|1st|2nd|first|second)([- ]?(paper|পত্র))?/gi, '').trim();
     return s.toLowerCase();
   };
 
@@ -416,7 +420,7 @@ export default function ResultCardGenerator() {
           const pw = parseFloat(prev.written_marks) || 0;
           const pmq = parseFloat(prev.mcq_marks) || 0;
           const pp = parseFloat(prev.practical_marks) || 0;
-          const po = (parseFloat(prev.total_obtained) || (pw + pmq + pp)) || 0;
+          const po = ((pw + pmq + pp) > 0) ? (pw + pmq + pp) : (parseFloat(prev.total_obtained) || 0);
           const pt = getTotalMaxForResult(prev);
           let { grade: pGrade, gpa: pGpa } = calculateGradeAndGPA(po, pt);
           const pPassed = computeSubjectPass(prev.subject?.name || prev.subject_name || nm, pw, pmq, pp, exams, prev.examination);
@@ -425,7 +429,7 @@ export default function ResultCardGenerator() {
           const rw = parseFloat(r.written_marks) || 0;
           const rmq = parseFloat(r.mcq_marks) || 0;
           const rp = parseFloat(r.practical_marks) || 0;
-          const ro = (parseFloat(r.total_obtained) || (rw + rmq + rp)) || 0;
+          const ro = ((rw + rmq + rp) > 0) ? (rw + rmq + rp) : (parseFloat(r.total_obtained) || 0);
           const rt = getTotalMaxForResult(r);
           let { grade: rGrade, gpa: rGpa } = calculateGradeAndGPA(ro, rt);
           const rPassed = computeSubjectPass(r.subject?.name || r.subject_name || nm, rw, rmq, rp, exams, r.examination);
@@ -438,7 +442,7 @@ export default function ResultCardGenerator() {
           const nm2 = String(clsObj?.name || '').toLowerCase();
           const isNineTen = /নবম|nine|\b9\b|দশম|ten|\b10\b/.test(nm2);
           if (isNineTen) {
-            cleanName = cleanName.replace(/[- ]?(১ম|২য়|1st|2nd|first|second)([- ]?(paper|পত্র))?/gi, '').trim();
+            cleanName = cleanName.replace(/[- ]?(১ম|২য়|২য়|1st|2nd|first|second)([- ]?(paper|পত্র))?/gi, '').trim();
           }
           map.set(nm, {
             ...chosen.base,
@@ -461,7 +465,7 @@ export default function ResultCardGenerator() {
           const w = parseFloat(base.written_marks) || 0;
           const m = parseFloat(base.mcq_marks) || 0;
           const p = parseFloat(base.practical_marks) || 0;
-          const o = (parseFloat(base.total_obtained) || (w + m + p)) || 0;
+          const o = ((w + m + p) > 0) ? (w + m + p) : (parseFloat(base.total_obtained) || 0);
           const t = getTotalMaxForResult(base);
           let { grade, gpa } = calculateGradeAndGPA(o, t);
           const passed = computeSubjectPass(base.subject?.name || base.subject_name || nm, w, m, p, exams, base.examination);
@@ -473,7 +477,7 @@ export default function ResultCardGenerator() {
           const nm2 = String(clsObj?.name || '').toLowerCase();
           const isNineTen = /নবম|nine|\b9\b|দশম|ten|\b10\b/.test(nm2);
           if (isNineTen) {
-            cleanName = cleanName.replace(/[- ]?(১ম|২য়|1st|2nd|first|second)([- ]?(paper|পত্র))?/gi, '').trim();
+            cleanName = cleanName.replace(/[- ]?(১ম|২য়|২য়|1st|2nd|first|second)([- ]?(paper|পত্র))?/gi, '').trim();
           }
           map.set(nm, {
             ...base,
@@ -493,7 +497,7 @@ export default function ResultCardGenerator() {
         const w = parseFloat(r.written_marks) || 0;
         const m = parseFloat(r.mcq_marks) || 0;
         const p = parseFloat(r.practical_marks) || 0;
-        const obtained = (parseFloat(r.total_obtained) || (w + m + p)) || 0;
+        const obtained = ((w + m + p) > 0) ? (w + m + p) : (parseFloat(r.total_obtained) || 0);
         const totalMax = getTotalMaxForResult(r);
         let { grade, gpa } = calculateGradeAndGPA(obtained, totalMax);
         const passed = computeSubjectPass(r.subject?.name || r.subject_name || nm, w, m, p, exams, r.examination);
@@ -506,7 +510,7 @@ export default function ResultCardGenerator() {
           const nm = String(clsObj?.name || '').toLowerCase();
           const isNineTen = /নবম|nine|\b9\b|দশম|ten|\b10\b/.test(nm);
           if (isNineTen) {
-            cleanName = cleanName.replace(/[- ]?(১ম|২য়|1st|2nd|first|second)([- ]?(paper|পত্র))?/gi, '').trim();
+            cleanName = cleanName.replace(/[- ]?(১ম|২য়|২য়|1st|2nd|first|second)([- ]?(paper|পত্র))?/gi, '').trim();
           }
         }
         map.set(nm, {

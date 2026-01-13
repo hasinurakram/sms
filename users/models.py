@@ -63,7 +63,6 @@ class CommitteeProfile(Profile):
         verbose_name_plural = 'Committees'
 
 class Task(models.Model):
-    """Task model for committee members"""
     STATUS_CHOICES = [
         ('pending', 'Pending'),
         ('in_progress', 'In Progress'),
@@ -111,3 +110,33 @@ class Task(models.Model):
     
     def __str__(self):
         return f"{self.title} - {self.assigned_to.username}"
+
+class AssistantLog(models.Model):
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='assistant_logs')
+    school = models.ForeignKey(School, on_delete=models.SET_NULL, null=True, blank=True, related_name='assistant_logs')
+    query_text = models.TextField()
+    intent = models.CharField(max_length=100, blank=True, null=True)
+    params = models.JSONField(default=dict)
+    result_summary = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['school', 'intent']),
+            models.Index(fields=['created_at']),
+        ]
+    def __str__(self):
+        return f"{self.intent or ''} - {self.query_text[:30]}"
+
+class AssistantMemory(models.Model):
+    school = models.ForeignKey(School, on_delete=models.CASCADE, related_name='assistant_memory')
+    key = models.CharField(max_length=200)
+    data = models.JSONField(default=dict)
+    updated_at = models.DateTimeField(auto_now=True)
+    class Meta:
+        unique_together = ('school', 'key')
+        indexes = [
+            models.Index(fields=['school', 'key']),
+        ]
+    def __str__(self):
+        return f"{self.school_id} - {self.key}"

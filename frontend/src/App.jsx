@@ -18,6 +18,7 @@ const LoginPage = React.lazy(() => import('./pages/LoginPage'));
 const TeachersPage = React.lazy(() => import('./pages/TeachersPage'));
 const AddTeacherPage = React.lazy(() => import('./pages/AddTeacherPage'));
 const TeacherCardsPage = React.lazy(() => import('./pages/TeacherCardsPage'));
+const SoftwareAssistant = React.lazy(() => import('./pages/SoftwareAssistant.jsx'));
 const StudentsPage = React.lazy(() => import('./pages/StudentsPage'));
 const AcademicsPage = React.lazy(() => import('./pages/AcademicsPage'));
 const ParentsPage = React.lazy(() => import('./pages/ParentsPage'));
@@ -26,6 +27,7 @@ const ParentDashboard = React.lazy(() => import('./pages/ParentDashboard'));
 const StudentDashboard = React.lazy(() => import('./pages/StudentDashboard'));
 const ResultsPage = React.lazy(() => import('./pages/ResultsPage'));
 const ResultCardGenerator = React.lazy(() => import('./pages/ResultCardGenerator'));
+const RankListPage = React.lazy(() => import('./pages/RankListPage'));
 const IDCardGenerator = React.lazy(() => import('./pages/IDCardGenerator'));
 const CertificateGenerator = React.lazy(() => import('./pages/CertificateGenerator'));
 const AdmissionCardGenerator = React.lazy(() => import('./pages/AdmissionCardGenerator'));
@@ -98,9 +100,11 @@ function App() {
           <Route path="groups" element={<GroupsPage />} />
           <Route path="schools" element={<SchoolsPage />} />
           <Route path="result-card" element={<ResultCardGenerator />} />
+          <Route path="rank-list" element={<RankListPage />} />
           <Route path="id-card" element={<IDCardGenerator />} />
           <Route path="certificate" element={<CertificateGenerator />} />
           <Route path="admission-cards" element={<AdmissionCardGenerator />} />
+          <Route path="assistant" element={<SoftwareAssistant />} />
           <Route path="sms" element={<SMSPage />} />
           <Route path="profile" element={<ProfilePage />} />
           <Route path="admin" element={<RoleDashboard role="admin" />} />

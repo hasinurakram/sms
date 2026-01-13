@@ -168,6 +168,7 @@ class StudentOverallResult(models.Model):
     
     rank = models.IntegerField(null=True, blank=True)
     is_passed = models.BooleanField(default=False)
+    failed_subjects_count = models.IntegerField(default=0)
     
     class Meta:
         unique_together = ('examination', 'student')

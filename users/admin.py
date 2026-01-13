@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django import forms
 from django.contrib.auth import get_user_model
-from .models import Profile, AdminProfile, ParentProfile, CommitteeProfile, Task
+from .models import Profile, AdminProfile, ParentProfile, CommitteeProfile, Task, AssistantLog, AssistantMemory
 
 User = get_user_model()
 
@@ -258,3 +258,17 @@ class TaskAdmin(admin.ModelAdmin):
         if not change:  # Only set created_by on creation
             obj.created_by = request.user
         super().save_model(request, obj, form, change)
+
+@admin.register(AssistantLog)
+class AssistantLogAdmin(admin.ModelAdmin):
+    list_display = ['id', 'school', 'user', 'intent', 'created_at']
+    list_filter = ['school', 'intent', 'created_at']
+    search_fields = ['query_text', 'result_summary']
+    readonly_fields = ['created_at']
+
+@admin.register(AssistantMemory)
+class AssistantMemoryAdmin(admin.ModelAdmin):
+    list_display = ['id', 'school', 'key', 'updated_at']
+    list_filter = ['school', 'updated_at']
+    search_fields = ['key']
+    readonly_fields = ['updated_at']

@@ -1419,29 +1419,46 @@ export default function ResultsPage() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {overallResults.map((result, idx) => {
-                const student = result.student;
-                const studentName = `${student.user?.first_name || ''} ${student.user?.last_name || ''}`.trim() || student.user?.username;
-                return (
-                  <TableRow key={idx} hover>
-                    <TableCell><strong>{result.rank || idx + 1}</strong></TableCell>
-                    <TableCell>{student.roll_number || result.student_roll_number || '-'}</TableCell>
-                    <TableCell>{studentName}</TableCell>
-                    <TableCell align="center">{result.total_marks_obtained}</TableCell>
-                    <TableCell align="center">{result.total_marks_possible}</TableCell>
-                    <TableCell align="center">{result.percentage}%</TableCell>
-                    <TableCell align="center"><strong>{result.cgpa}</strong></TableCell>
-                    <TableCell align="center">
-                      {(() => { const s = getGradeStyle(result.grade); return (
-                        <Chip label={result.grade} size="small" sx={{ bgcolor: s.bg, color: s.fg, fontWeight: 'bold' }} />
-                      ); })()}
-                    </TableCell>
-                    <TableCell align="center">
-                      <Chip label={isPassed(result) ? 'Passed' : 'Failed'} color={isPassed(result) ? 'success' : 'error'} size="small" />
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
+              {overallResults
+                .sort((a, b) => {
+                  // Sort by rank first (if available), then by CGPA, then by percentage
+                  if (a.rank && b.rank) return a.rank - b.rank;
+                  if (a.rank && !b.rank) return -1;
+                  if (!a.rank && b.rank) return 1;
+                  
+                  // If no rank, sort by CGPA (descending)
+                  const cgpaA = parseFloat(a.cgpa) || 0;
+                  const cgpaB = parseFloat(b.cgpa) || 0;
+                  if (cgpaB !== cgpaA) return cgpaB - cgpaA;
+                  
+                  // If CGPA is tied, sort by percentage (descending)
+                  const percentageA = parseFloat(a.percentage) || 0;
+                  const percentageB = parseFloat(b.percentage) || 0;
+                  return percentageB - percentageA;
+                })
+                .map((result, idx) => {
+                  const student = result.student;
+                  const studentName = `${student.user?.first_name || ''} ${student.user?.last_name || ''}`.trim() || student.user?.username;
+                  return (
+                    <TableRow key={idx} hover>
+                      <TableCell><strong>{result.rank || idx + 1}</strong></TableCell>
+                      <TableCell>{student.roll_number || result.student_roll_number || '-'}</TableCell>
+                      <TableCell>{studentName}</TableCell>
+                      <TableCell align="center">{result.total_marks_obtained}</TableCell>
+                      <TableCell align="center">{result.total_marks_possible}</TableCell>
+                      <TableCell align="center">{result.percentage}%</TableCell>
+                      <TableCell align="center"><strong>{result.cgpa}</strong></TableCell>
+                      <TableCell align="center">
+                        {(() => { const s = getGradeStyle(result.grade); return (
+                          <Chip label={result.grade} size="small" sx={{ bgcolor: s.bg, color: s.fg, fontWeight: 'bold' }} />
+                        ); })()}
+                      </TableCell>
+                      <TableCell align="center">
+                        <Chip label={isPassed(result) ? 'Passed' : 'Failed'} color={isPassed(result) ? 'success' : 'error'} size="small" />
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
             </TableBody>
           </Table>
         </TableContainer>

@@ -32,6 +32,7 @@ class Section(models.Model):
 
 class Subject(models.Model):
     school = models.ForeignKey(School, on_delete=models.CASCADE, related_name='subjects')
+    classrooms = models.ManyToManyField(ClassRoom, related_name='subjects', blank=True)
     name = models.CharField(max_length=100)
     code = models.CharField(max_length=20, blank=True, null=True)
 
@@ -51,6 +52,11 @@ class StudentProfile(models.Model):
     classroom = models.ForeignKey(ClassRoom, on_delete=models.SET_NULL, null=True, blank=True, related_name='students')
     section = models.ForeignKey(Section, on_delete=models.SET_NULL, null=True, blank=True, related_name='students')
     roll_number = models.CharField(max_length=50, blank=True, null=True)
+    group = models.CharField(max_length=20, blank=True, null=True, choices=[
+        ('science', 'Science'),
+        ('arts', 'Arts'),
+        ('commerce', 'Commerce'),
+    ])
     blood_group = models.CharField(max_length=10, choices=[
         ('A+', 'A+'),
         ('A-', 'A-'),

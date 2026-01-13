@@ -555,10 +555,13 @@ export default function ResultCard({ studentData, results, overallResult, examin
                     <TableCell align="center" sx={{ border: '1px solid #ddd' }}>{parseFloat(result.practical_marks) || 0}</TableCell>
                     <TableCell align="center" sx={{ fontWeight: 'bold', border: '1px solid #ddd' }}>
                       {(() => {
+                        const w = (parseFloat(result.written_marks) || 0);
+                        const m = (parseFloat(result.mcq_marks) || 0);
+                        const p = (parseFloat(result.practical_marks) || 0);
+                        const sum = w + m + p;
+                        const hasComponent = sum > 0;
                         const hasObtained = result.total_obtained != null && result.total_obtained !== '';
-                        const obtained = hasObtained
-                          ? parseFloat(result.total_obtained) || 0
-                          : ((parseFloat(result.written_marks) || 0) + (parseFloat(result.mcq_marks) || 0) + (parseFloat(result.practical_marks) || 0));
+                        const obtained = hasComponent ? sum : (hasObtained ? (parseFloat(result.total_obtained) || 0) : 0);
                         return obtained;
                       })()}
                     </TableCell>
