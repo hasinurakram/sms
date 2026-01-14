@@ -56,6 +56,7 @@ export default function SubjectsPage() {
   const [classSummary, setClassSummary] = useState([]);
   const [selectedClass, setSelectedClass] = useState(null);
   const [teachers, setTeachers] = useState([]);
+  const [sections, setSections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -66,13 +67,15 @@ export default function SubjectsPage() {
   const [formData, setFormData] = useState({
     name: '',
     code: '',
-    classrooms: []
+    classrooms: [],
+    sections: []
   });
   const [formErrors, setFormErrors] = useState({});
 
   useEffect(() => {
     loadSubjects();
     loadTeachers();
+    loadSections();
   }, [id]);
 
   // Bangla number words mapping for sorting
@@ -156,11 +159,10 @@ export default function SubjectsPage() {
       setClassrooms(classesData);
 
       const summary = classesData.map(classroom => {
-        // Filter subjects that are assigned to this classroom
-        // The subject object now has a 'classrooms' array of IDs
-        const classSubjects = subjectsData.filter(s => 
-          s.classrooms && s.classrooms.includes(classroom.id)
-        );
+        const classSubjects = subjectsData.filter(s => {
+          if (!s.classrooms || s.classrooms.length === 0) return true;
+          return s.classrooms.includes(classroom.id);
+        });
         
         return {
           id: classroom.id,
@@ -190,6 +192,16 @@ export default function SubjectsPage() {
       console.error('Failed to load teachers:', err);
     }
   };
+
+  const loadSections = async () => {
+    try {
+      const res = await api.get(`/api/academics/sections/?school=${id}`);
+      const data = Array.isArray(res.data) ? res.data : res.data.results || [];
+      setSections(data);
+    } catch (err) {
+      console.error('Failed to load sections:', err);
+    }
+  };
   
   const handleClassSelect = (classroom) => {
     setSelectedClass(classroom);
@@ -205,10 +217,11 @@ export default function SubjectsPage() {
       return;
     }
     // Pre-select the current class if one is selected
-    setFormData({ 
-      name: '', 
+    setFormData({
+      name: '',
       code: '',
-      classrooms: selectedClass ? [selectedClass] : []
+      classrooms: selectedClass ? [selectedClass] : [],
+      sections: []
     });
     setFormErrors({});
     setDialogOpen(true);
@@ -237,7 +250,8 @@ export default function SubjectsPage() {
         name: formData.name,
         code: formData.code,
         school_id: id,
-        classrooms: formData.classrooms.map(c => c.id)
+        classrooms: formData.classrooms.map(c => c.id),
+        sections: formData.sections.map(s => s.id)
       };
       
       // Keep classroom_id for backward compatibility if needed, but 'classrooms' list should be primary
@@ -288,9 +302,9 @@ export default function SubjectsPage() {
              s.code.toLowerCase().includes(searchLower);
     })
     .filter(s => {
-      // If a class is selected, only show subjects assigned to it
       if (selectedClass) {
-        return s.classrooms && s.classrooms.includes(selectedClass.id);
+        if (!s.classrooms || s.classrooms.length === 0) return true;
+        return s.classrooms.includes(selectedClass.id);
       }
       return true;
     })
@@ -591,6 +605,45 @@ export default function SubjectsPage() {
                 />
               )}
             />
+
+            {formData.classrooms.some(c => 
+              c.name.includes('নবম') || 
+              c.name.includes('দশম') || 
+              c.name.includes('Class 9') || 
+              c.name.includes('Class 10')
+            ) && (
+              <Autocomplete
+                multiple
+                options={sections.filter(sec => 
+                  formData.classrooms.some(c => c.id === (sec.classroom?.id || sec.classroom))
+                )}
+                disableCloseOnSelect
+                getOptionLabel={(option) => `${option.classroom?.name || ''} - ${option.name}`}
+                value={formData.sections}
+                onChange={(event, newValue) => {
+                  setFormData({ ...formData, sections: newValue });
+                }}
+                renderOption={(props, option, { selected }) => (
+                  <li {...props}>
+                    <Checkbox
+                      icon={icon}
+                      checkedIcon={checkedIcon}
+                      style={{ marginRight: 8 }}
+                      checked={selected}
+                    />
+                    {(option.classroom?.name || '') + ' - ' + option.name}
+                  </li>
+                )}
+                renderInput={(params) => (
+                  <TextField 
+                    {...params} 
+                    label="Assign to Sections (only for Class 9-10)" 
+                    placeholder="Select sections"
+                    helperText="Select one or more sections for Class 9-10"
+                  />
+                )}
+              />
+            )}
           </Stack>
         </DialogContent>
         

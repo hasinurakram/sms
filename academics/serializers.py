@@ -66,10 +66,11 @@ class SubjectSerializer(serializers.ModelSerializer):
     assigned_teachers = serializers.SerializerMethodField()
     school_id = serializers.PrimaryKeyRelatedField(source='school', queryset=School.objects.all(), write_only=True, required=True)
     classrooms = serializers.PrimaryKeyRelatedField(many=True, queryset=ClassRoom.objects.all(), required=False)
+    sections = serializers.PrimaryKeyRelatedField(many=True, queryset=Section.objects.all(), required=False)
     
     class Meta:
         model = Subject
-        fields = ['id', 'school', 'school_id', 'name', 'code', 'assigned_teachers', 'classrooms']
+        fields = ['id', 'school', 'school_id', 'name', 'code', 'assigned_teachers', 'classrooms', 'sections']
         read_only_fields = ['school']
     
     def get_assigned_teachers(self, obj):
@@ -236,6 +237,7 @@ class StudentProfileSerializer(serializers.ModelSerializer):
         last_name = validated_data.pop('last_name', '')
         email = validated_data.pop('email', '')
         phone_number = validated_data.pop('phone_number', '')
+        guardian_name = validated_data.get('guardian_name') or (self.initial_data.get('guardian_name') if isinstance(self.initial_data, dict) else '')
 
         # If no user provided, create one (auto-generate username/password if missing)
         if not user:
@@ -289,6 +291,32 @@ class StudentProfileSerializer(serializers.ModelSerializer):
         # Ensure a Profile exists and set school/role
         school = validated_data.get('school')
         Profile.objects.update_or_create(user=user, defaults={'school': school, 'role': 'student'})
+
+        # If guardian not provided but guardian_name present, auto-create a parent profile and link
+        if guardian is None and guardian_name:
+            g_first = str(guardian_name).strip()
+            if g_first:
+                g_base = g_first.lower().replace(' ', '') or 'parent'
+                g_username = g_base
+                g_idx = 1
+                while User.objects.filter(username=g_username).exists():
+                    g_idx += 1
+                    g_username = f"{g_base}{g_idx}"
+                g_password = '123456'
+                g_user = User.objects.create_user(
+                    username=g_username,
+                    password=g_password,
+                    first_name=g_first,
+                    last_name=''
+                )
+                try:
+                    if phone_number and hasattr(g_user, 'phone_number'):
+                        g_user.phone_number = phone_number
+                        g_user.save(update_fields=['phone_number'])
+                except Exception:
+                    pass
+                Profile.objects.update_or_create(user=g_user, defaults={'school': school, 'role': 'parent'})
+                guardian = g_user
 
         # Create the StudentProfile
         sp = StudentProfile.objects.create(user=user, classroom=classroom, section=section, guardian=guardian, **validated_data)
@@ -368,6 +396,26 @@ class TeacherAssignmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = TeacherAssignment
         fields = ['id', 'teacher', 'teacher_id', 'subject', 'subject_id', 'classroom', 'classroom_id', 'section', 'section_id']
+    
+    def create(self, validated_data):
+        teacher = validated_data.get('teacher')
+        classroom = validated_data.get('classroom')
+        subject = validated_data.get('subject')
+        # Ensure subject and classroom belong to the same school
+        if subject and classroom and subject.school_id != classroom.school_id:
+            raise serializers.ValidationError({'subject_id': 'Subject must belong to the same school as classroom.'})
+        # Ensure the teacher has a profile in this school with role=teacher
+        try:
+            school = classroom.school if classroom else (subject.school if subject else None)
+            if teacher and school:
+                Profile.objects.update_or_create(
+                    user=teacher,
+                    defaults={'school': school, 'role': 'teacher'}
+                )
+        except Exception:
+            # Do not fail assignment creation due to profile sync issues
+            pass
+        return super().create(validated_data)
     
     def to_representation(self, instance):
         """Override to ensure context is passed to nested serializers"""

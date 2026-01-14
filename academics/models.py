@@ -33,6 +33,7 @@ class Section(models.Model):
 class Subject(models.Model):
     school = models.ForeignKey(School, on_delete=models.CASCADE, related_name='subjects')
     classrooms = models.ManyToManyField(ClassRoom, related_name='subjects', blank=True)
+    sections = models.ManyToManyField(Section, related_name='subjects', blank=True)
     name = models.CharField(max_length=100)
     code = models.CharField(max_length=20, blank=True, null=True)
 

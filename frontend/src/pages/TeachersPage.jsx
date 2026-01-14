@@ -662,18 +662,53 @@ export default function TeachersPage() {
     }
   };
 
-  const filtered = assignments
-    .filter(a => {
-      const teacherName = a.teacher?.username || '';
-      const subjectName = a.subject?.name || '';
-      const className = a.classroom?.name || '';
-      const searchLower = searchQuery.toLowerCase();
-      return teacherName.toLowerCase().includes(searchLower) ||
-             subjectName.toLowerCase().includes(searchLower) ||
-             className.toLowerCase().includes(searchLower);
+  const groupAssignments = (items) => {
+    const grouped = [];
+    const byUser = new Map();
+    items.forEach(a => {
+      const uid = a.teacher?.id;
+      if (!uid) return;
+      let g = byUser.get(uid);
+      if (!g) {
+        g = {
+          teacher: a.teacher,
+          teacherProfile: a.teacherProfile || null,
+          subjects: new Set(),
+          classes: new Set(),
+          sectionsByClass: new Map(),
+          assignmentCount: 0
+        };
+        byUser.set(uid, g);
+        grouped.push(g);
+      }
+      if (a.subject?.name) g.subjects.add(a.subject.name);
+      if (a.classroom?.name) {
+        g.classes.add(a.classroom.name);
+        if (a.section?.name) {
+          const key = a.classroom.name;
+          const sec = g.sectionsByClass.get(key) || new Set();
+          sec.add(a.section.name);
+          g.sectionsByClass.set(key, sec);
+        }
+      }
+      g.assignmentCount += 1;
+    });
+    return grouped;
+  };
+
+  const aggregated = groupAssignments(assignments);
+
+  const filtered = aggregated
+    .filter(g => {
+      const teacherName = g.teacher?.username || '';
+      const subjJoined = Array.from(g.subjects).join(', ');
+      const classJoined = Array.from(g.classes).join(', ');
+      const q = searchQuery.toLowerCase();
+      return teacherName.toLowerCase().includes(q) ||
+             subjJoined.toLowerCase().includes(q) ||
+             classJoined.toLowerCase().includes(q);
     })
     .sort((a, b) => {
-      // Sort by teacher ID (ascending) - first added teacher appears first
       const teacherIdA = a.teacher?.id || 0;
       const teacherIdB = b.teacher?.id || 0;
       return teacherIdA - teacherIdB;
@@ -773,10 +808,9 @@ export default function TeachersPage() {
 
       {!loading && filtered.length > 0 && (
         <Grid container spacing={2}>
-          {filtered.map(a => {
-            // Get educational qualification from teacher object
+          {filtered.map(g => {
+            const a = g; // aggregated item
             const qualification = a.teacher?.educational_qualification || '';
-            
             // Debug log
             console.log('Teacher data:', a.teacher);
             console.log('Educational qualification:', qualification);
@@ -816,7 +850,7 @@ export default function TeachersPage() {
                           )}
                         </Box>
                       }
-                      subheader={`${a.subject?.name || ''} — ${a.classroom?.name || ''}${a.section ? ' (' + a.section.name + ')' : ''}`}
+                      subheader={`${Array.from(a.subjects).join(', ') || 'No subjects'} — ${Array.from(a.classes).join(', ') || 'No classes'}`}
                       titleTypographyProps={{ variant: 'h6' }}
                     />
 
@@ -834,18 +868,19 @@ export default function TeachersPage() {
                   setDetailOpen(true);
                 }} sx={{ cursor: 'pointer' }}>
                   <Stack spacing={1}>
-                    <Typography variant="body2" color="textSecondary">
-                      <strong>Subject:</strong> {a.subject?.name || 'Not assigned'}
-                    </Typography>
+                    <Stack direction="row" spacing={1} flexWrap="wrap">
+                      {Array.from(a.subjects).map((name, idx) => (
+                        <Chip key={`sub-${idx}`} label={name} size="small" />
+                      ))}
+                    </Stack>
                     <Typography variant="body2" color="textSecondary">
                       <strong>Mobile:</strong> {a.teacher?.phone_number || a.teacher?.mobile_number || 'Not available'}
                     </Typography>
-                    {a.classroom?.name && (
-                      <Typography variant="body2" color="textSecondary">
-                        <strong>Class:</strong> {a.classroom.name}
-                        {a.section ? `, Section ${a.section.name}` : ''}
-                      </Typography>
-                    )}
+                    <Stack direction="row" spacing={1} flexWrap="wrap">
+                      {Array.from(a.classes).map((name, idx) => (
+                        <Chip key={`cls-${idx}`} label={name} size="small" color="secondary" />
+                      ))}
+                    </Stack>
                   </Stack>
                 </CardContent>
                 

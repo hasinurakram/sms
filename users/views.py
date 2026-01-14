@@ -1,4 +1,4 @@
-from rest_framework import generics, permissions, status, viewsets
+from rest_framework import generics, permissions, status, viewsets, serializers
 from users.permissions import AdminOrReadOnly, RolePermission
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -885,6 +885,16 @@ class TeacherProfileViewSet(viewsets.ModelViewSet):
         if school_id:
             queryset = queryset.filter(school_id=school_id)
         return queryset
+    
+    def create(self, request, *args, **kwargs):
+        try:
+            return super().create(request, *args, **kwargs)
+        except serializers.ValidationError as e:
+            return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            # Surface clean error instead of 500
+            msg = str(e)
+            return Response({'detail': msg or 'Unable to create teacher profile'}, status=status.HTTP_400_BAD_REQUEST)
 
 class TaskViewSet(viewsets.ModelViewSet):
     """ViewSet for managing committee tasks"""

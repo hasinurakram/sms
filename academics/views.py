@@ -1,4 +1,5 @@
 from rest_framework import viewsets, filters
+from rest_framework.exceptions import ValidationError
 from users.permissions import AdminOrReadOnly, RolePermission
 from rest_framework.decorators import action
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -112,6 +113,22 @@ class SectionViewSet(viewsets.ModelViewSet):
         if school_id:
             queryset = queryset.filter(classroom__school_id=school_id)
         return queryset
+    
+    def create(self, request, *args, **kwargs):
+        classroom_id = request.data.get('classroom_id')
+        name = (request.data.get('name') or '').strip()
+        if not classroom_id or not name:
+            return super().create(request, *args, **kwargs)
+        allowed = {'ক', 'খ', 'গ'}
+        if name not in allowed:
+            return Response({"detail": "শুধু ক, খ, বা গ সেকশন অনুমোদিত"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            count = Section.objects.filter(classroom_id=classroom_id).count()
+            if count >= 3:
+                return Response({"detail": "প্রতি শ্রেণীতে সর্বোচ্চ তিনটি সেকশন (ক, খ, গ)"}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            pass
+        return super().create(request, *args, **kwargs)
 
 
 class SubjectViewSet(viewsets.ModelViewSet):
@@ -138,40 +155,39 @@ class SubjectViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         school_id = request.data.get('school_id')
         name = request.data.get('name')
-        
-        # Check if subject exists for this school to handle "add to class" for existing subjects
         if school_id and name:
             existing_subject = Subject.objects.filter(school_id=school_id, name=name).first()
             if existing_subject:
-                # Update existing subject's classrooms
                 classrooms = request.data.get('classrooms', [])
                 classroom_id = request.data.get('classroom_id')
-                
+                sections = request.data.get('sections', [])
                 ids_to_add = set()
                 if isinstance(classrooms, list):
                     try:
                         ids_to_add.update([int(c) for c in classrooms])
                     except (ValueError, TypeError):
                         pass
-                
                 if classroom_id:
                     try:
                         ids_to_add.add(int(classroom_id))
                     except (ValueError, TypeError):
                         pass
-                    
                 if ids_to_add:
                     existing_subject.classrooms.add(*ids_to_add)
-                
-                # Update code if provided and different
+                section_ids = set()
+                if isinstance(sections, list):
+                    try:
+                        section_ids.update([int(s) for s in sections])
+                    except (ValueError, TypeError):
+                        pass
+                if section_ids:
+                    existing_subject.sections.add(*section_ids)
                 code = request.data.get('code')
                 if code and code != existing_subject.code:
                     existing_subject.code = code
                     existing_subject.save()
-
                 serializer = self.get_serializer(existing_subject)
                 return Response(serializer.data, status=status.HTTP_200_OK)
-        
         return super().create(request, *args, **kwargs)
 
     def perform_create(self, serializer):
@@ -275,6 +291,28 @@ class StudentProfileViewSet(viewsets.ModelViewSet):
         if section_id:
             queryset = queryset.filter(section_id=section_id)
         return queryset
+    
+    def _validate_section(self, data):
+        """Ensure section belongs to classroom and name is one of ক/খ/গ"""
+        section_id = data.get('section_id')
+        classroom_id = data.get('classroom_id')
+        if section_id:
+            try:
+                section = Section.objects.select_related('classroom').get(id=section_id)
+            except Section.DoesNotExist:
+                raise ValidationError({"section_id": "Invalid section"})
+            if classroom_id and int(section.classroom_id) != int(classroom_id):
+                raise ValidationError({"section_id": "Section must belong to the selected classroom"})
+            if section.name not in {'ক', 'খ', 'গ'}:
+                raise ValidationError({"section_id": "Only ক, খ, গ sections are allowed"})
+    
+    def perform_create(self, serializer):
+        self._validate_section(self.request.data)
+        serializer.save()
+    
+    def perform_update(self, serializer):
+        self._validate_section(self.request.data)
+        serializer.save()
     
     @action(detail=True, methods=['get'])
     def detail(self, request, pk=None):

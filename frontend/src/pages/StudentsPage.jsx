@@ -231,7 +231,8 @@ export default function StudentsPage() {
     section_id: '',
     roll_number: '',
     blood_group: '',
-    guardian_id: ''
+    guardian_id: '',
+    guardian_name: ''
   });
   const [newStudentErrors, setNewStudentErrors] = useState({});
 
@@ -277,6 +278,9 @@ export default function StudentsPage() {
   // Helper: count students for a given section in the selected class
   const getStudentCountForSection = (sectionId) => {
     try {
+      if (sectionId === 'UNASSIGNED') {
+        return (contextStudents || []).filter(s => (s.classroom?.id === selectedClass) && !(s.section?.id ?? s.section)).length;
+      }
       const sid = Number(sectionId);
       return (contextStudents || []).filter(s => (s.classroom?.id === selectedClass) && ((s.section?.id ?? s.section) === sid)).length;
     } catch (_) { return 0; }
@@ -482,6 +486,24 @@ export default function StudentsPage() {
     loadFormData();
   }, [id]);
 
+  // Pre-fill Add Student form with selected class/section so entry goes inside that section even without roll
+  useEffect(() => {
+    if (!addDialogOpen) return;
+    const cls = selectedClass || newStudent.classroom_id || '';
+    let sec = selectedSection || newStudent.section_id || '';
+    if (cls && !sec) {
+      const list = (contextSections || []).filter(s => (s.classroom?.id ?? s.classroom) === Number(cls));
+      const order = ['ক','খ','গ'];
+      const prioritized = order.map(nm => (list.find(s => s.name === nm) || null)?.id).find(Boolean);
+      sec = prioritized || (list[0]?.id || '');
+    }
+    setNewStudent(ns => ({
+      ...ns,
+      classroom_id: cls,
+      section_id: sec
+    }));
+  }, [addDialogOpen, selectedClass, selectedSection, contextSections]);
+
   // Preselect class/section from URL query (?classroom=ID&section=ID)
   useEffect(() => {
     try {
@@ -556,16 +578,30 @@ export default function StudentsPage() {
     }
   };
 
-  // Load sections when classroom changes in Add Student form
+  // Ensure default Bengali sections (ক, খ, গ) exist when class changes
   useEffect(() => {
-    const cls = newStudent.classroom_id;
-    if (!cls) return;
-    // Use sections from context that match the selected classroom
-    const filteredSections = contextSections.filter(section => section.classroom === parseInt(cls));
-    if (filteredSections.length === 0) {
-      // If no sections found in context, refresh sections
-      refreshSections();
-    }
+    const ensureDefaultSections = async (classId) => {
+      if (!classId) return;
+      try {
+        const existing = contextSections.filter(section => (section.classroom?.id ?? section.classroom) === Number(classId));
+        const names = ['ক', 'খ', 'গ'];
+        if (existing.length < 3) {
+          const existingNames = new Set(existing.map(s => s.name));
+          for (const nm of names) {
+            if (!existingNames.has(nm)) {
+              try {
+                await api.post('/api/academics/sections/', { classroom_id: classId, name: nm });
+              } catch (_) {
+                // Ignore if already exists or permission issues
+              }
+            }
+          }
+          // Refresh sections
+          refreshSections();
+        }
+      } catch (_) {}
+    };
+    ensureDefaultSections(newStudent.classroom_id);
   }, [newStudent.classroom_id, contextSections, refreshSections]);
 
   const handleAddStudent = async () => {
@@ -577,17 +613,12 @@ export default function StudentsPage() {
       toast.warning('Provide at least a username or a first name');
       return;
     }
-    
-    // Validate section belongs to selected classroom
-    if (newStudent.section_id && newStudent.classroom_id) {
-      const classIdNum = Number(newStudent.classroom_id);
-      const selectedSection = contextSections.find(s => s.id === Number(newStudent.section_id));
-      if (selectedSection && (selectedSection.classroom?.id ?? selectedSection.classroom) !== classIdNum) {
-        errors.section_id = 'Section must belong to the selected class';
-        setNewStudentErrors(errors);
-        toast.warning('Selected section does not belong to the selected class');
-        return;
-      }
+    // If classroom chosen, section must be selected (ক/খ/গ)
+    if (newStudent.classroom_id && !newStudent.section_id) {
+      errors.section_id = 'Section is required';
+      setNewStudentErrors(errors);
+      toast.warning('সেকশন নির্বাচন করুন (ক/খ/গ)');
+      return;
     }
 
     try {
@@ -605,6 +636,41 @@ export default function StudentsPage() {
         setSaving(false);
         return;
       }
+      let createdGuardianId = '';
+      const typedGuardianName = String(newStudent.guardian_name || '').trim();
+      if (!newStudent.guardian_id && typedGuardianName.length > 1) {
+        const normalize = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+        const typedNorm = normalize(typedGuardianName);
+        const matched = (parents || []).find(p => {
+          const full = normalize(`${p?.user?.first_name || ''} ${p?.user?.last_name || ''}`.trim() || p?.user?.first_name || '');
+          return full && full === typedNorm;
+        });
+        if (matched?.id) {
+          createdGuardianId = matched.id;
+        } else {
+          try {
+            const parentBase = (typedGuardianName || newStudent.phone_number || 'parent').toLowerCase().replace(/[^a-z0-9]/g, '');
+            const parentUsername = await ensureAvailableUsername(parentBase);
+            const parentForm = new FormData();
+            parentForm.append('school_id', id);
+            parentForm.append('username', parentUsername);
+            parentForm.append('password', '123456');
+            parentForm.append('first_name', typedGuardianName);
+            if (newStudent.phone_number) parentForm.append('phone_number', newStudent.phone_number);
+            parentForm.append('role', 'parent');
+            parentForm.append('is_active', 'true');
+            const resp = await api.post('/api/users/parents/', parentForm, {
+              headers: {
+                'Content-Type': 'multipart/form-data',
+                'X-Requested-With': 'XMLHttpRequest'
+              }
+            });
+            createdGuardianId = resp.data?.user?.id || '';
+          } catch (pgErr) {
+            toast.warning('অভিভাবক তৈরি করতে সমস্যা হয়েছে');
+          }
+        }
+      }
       // Use multipart so we can include optional photo
       const form = new FormData();
       // Backend serializer expects school_id for writes
@@ -617,7 +683,9 @@ export default function StudentsPage() {
       form.append('phone_number', newStudent.phone_number || '');
       if (newStudent.classroom_id) form.append('classroom_id', newStudent.classroom_id);
       if (newStudent.section_id) form.append('section_id', newStudent.section_id);
-      if (newStudent.guardian_id) form.append('guardian_id', newStudent.guardian_id);
+      const guardianToLink = newStudent.guardian_id || createdGuardianId;
+      if (guardianToLink) form.append('guardian_id', guardianToLink);
+      if (typedGuardianName) form.append('guardian_name', typedGuardianName);
       form.append('roll_number', newStudent.roll_number || '');
       form.append('blood_group', newStudent.blood_group || '');
       if (newStudent._photoFile) {
@@ -631,8 +699,10 @@ export default function StudentsPage() {
         }
       }
 
+      let createdStudent = null;
       try {
-        await api.post('/api/academics/students/', form);
+        const res = await api.post('/api/academics/students/', form);
+        createdStudent = res.data;
       } catch (postErr) {
         const b = postErr.response?.data || {};
         const usernameErr = Array.isArray(b?.username) && b.username.some(x => String(x).toLowerCase().includes('taken'));
@@ -640,11 +710,27 @@ export default function StudentsPage() {
           // Retry once with a fresh available username
           const retryUsername = await ensureAvailableUsername(base);
           form.set('username', retryUsername);
-          await api.post('/api/academics/students/', form);
+          const res2 = await api.post('/api/academics/students/', form);
+          createdStudent = res2.data;
         } else {
           throw postErr;
         }
       }
+
+      // Fallback: if guardian not linked in create response, patch it explicitly
+      try {
+        const gId = guardianToLink;
+        const sid = createdStudent?.id;
+        const hasGuardian =
+          createdStudent?.guardian?.id != null ||
+          createdStudent?.guardian_id != null ||
+          createdStudent?.guardian != null;
+        if (sid && gId && !hasGuardian) {
+          const patchForm = new FormData();
+          patchForm.append('guardian_id', gId);
+          await api.patch(`/api/academics/students/${sid}/`, patchForm);
+        }
+      } catch (_) { /* ignore patch failure */ }
 
       toast.success('Student added successfully!');
       setAddDialogOpen(false);
@@ -726,7 +812,9 @@ export default function StudentsPage() {
       section_id: '',
       roll_number: '',
       blood_group: '',
-      guardian_id: ''
+      guardian_id: '',
+      guardian_name: '',
+      _photoFile: null
     });
   };
 
@@ -994,7 +1082,7 @@ export default function StudentsPage() {
                 সেকশন নির্বাচন করুন
               </Typography>
               <Grid container spacing={2}>
-                {(contextSections || []).filter(sec => (sec.classroom?.id ?? sec.classroom) === selectedClass)
+                {(contextSections || []).filter(sec => (sec.classroom?.id ?? sec.classroom) === selectedClass && ['ক','খ','গ'].includes(sec.name))
                   .map(sec => (
                     <Grid size={{ xs: 12, sm: 6, md: 4 }} key={sec.id}>
                       <Paper
@@ -1050,61 +1138,62 @@ export default function StudentsPage() {
                     </Grid>
                   ))}
               </Grid>
-            </Box>
-          )}
-          {/* Only show search and list once a section is selected */}
-          {selectedSection && (
-            <TextField
-              placeholder="Search by name or username"
-              value={q}
-              onChange={e => setQ(e.target.value)}
-              sx={{ mb: 2 }}
-              fullWidth
-              InputProps={{
-                endAdornment: (
-                  <Tooltip title="Search by student name, username, or roll number">
-                    <HelpOutlineIcon sx={{ color: 'text.secondary', cursor: 'help' }} />
-                  </Tooltip>
-                )
-              }}
-            />
-          )}
-          {selectedSection && loading && <CardSkeleton count={6} />}
-          {selectedSection && !loading && (contextStudents || []).length === 0 && (
-            <EmptyState
-              icon={SchoolIcon}
-              title="No students in this class"
-              message="Start by adding students to this class"
-              actionText="Add Student"
-              onAction={() => setAddDialogOpen(true)}
-            />
-          )}
-          {selectedSection && !loading && (contextStudents || []).length > 0 && filtered.length === 0 && (
-            <EmptyState
-              title="No matching students"
-              message={`No students found matching "${q}". Try a different search term.`}
-            />
-          )}
-          {selectedSection && !loading && filtered.length > 0 && (
-            <Grid container spacing={3}>
-              {filtered.map(s => (
-                <Grid size={{ xs: 12, sm: 6, md: 6, lg: 4 }} key={s.id}>
-                  <StudentCard
-                    student={{
-                      ...s,
-                      displayName: s.user?.first_name
-                        ? `${s.user.first_name} ${s.user.last_name}`.trim()
-                        : s.user?.username
-                    }}
-                    onUploaded={loadStudents}
-                    onClick={() => navigate(`/school/${id}/student/${s.id}/dashboard`)}
-                    onEdit={() => handleEditStudent(s)}
-                    onDelete={() => handleDeleteStudent(s)}
-                  />
-                </Grid>
-              ))}
-            </Grid>
-          )}
+          </Box>
+        )}
+        
+        {/* Only show search and list once a section is selected */}
+        {selectedSection && (
+          <TextField
+            placeholder="Search by name or username"
+            value={q}
+            onChange={e => setQ(e.target.value)}
+            sx={{ mb: 2 }}
+            fullWidth
+            InputProps={{
+              endAdornment: (
+                <Tooltip title="Search by student name, username, or roll number">
+                  <HelpOutlineIcon sx={{ color: 'text.secondary', cursor: 'help' }} />
+                </Tooltip>
+              )
+            }}
+          />
+        )}
+        {selectedSection && loading && <CardSkeleton count={6} />}
+        {selectedSection && !loading && (contextStudents || []).length === 0 && (
+          <EmptyState
+            icon={SchoolIcon}
+            title="No students in this class"
+            message="Start by adding students to this class"
+            actionText="Add Student"
+            onAction={() => setAddDialogOpen(true)}
+          />
+        )}
+        {selectedSection && !loading && (contextStudents || []).length > 0 && filtered.length === 0 && (
+          <EmptyState
+            title="No matching students"
+            message={`No students found matching "${q}". Try a different search term.`}
+          />
+        )}
+        {selectedSection && !loading && filtered.length > 0 && (
+          <Grid container spacing={3}>
+            {filtered.map(s => (
+              <Grid size={{ xs: 12, sm: 6, md: 6, lg: 4 }} key={s.id}>
+                <StudentCard
+                  student={{
+                    ...s,
+                    displayName: s.user?.first_name
+                      ? `${s.user.first_name} ${s.user.last_name}`.trim()
+                      : s.user?.username
+                  }}
+                  onUploaded={loadStudents}
+                  onClick={() => navigate(`/school/${id}/student/${s.id}/dashboard`)}
+                  onEdit={() => handleEditStudent(s)}
+                  onDelete={() => handleDeleteStudent(s)}
+                />
+              </Grid>
+            ))}
+          </Grid>
+        )}
         </>
       )}
 
@@ -1263,26 +1352,25 @@ export default function StudentsPage() {
             <Grid size={{ xs: 12, sm: 4 }}>
               <TextField
                 select
-                label="সেকশন (ঐচ্ছিক)"
+                label="সেকশন"
                 value={newStudent.section_id}
                 onChange={(e) => setNewStudent({...newStudent, section_id: e.target.value})}
                 fullWidth
                 disabled={!newStudent.classroom_id}
                 error={!!newStudentErrors.section_id}
-                helperText={newStudentErrors.section_id || (newStudent.classroom_id ? '' : 'আগে শ্রেণী নির্বাচন করুন')}
+                helperText={newStudentErrors.section_id || (newStudent.classroom_id ? 'ক/খ/গ সেকশন নির্বাচন করুন' : 'আগে শ্রেণী নির্বাচন করুন')}
               >
-                <MenuItem value="">কোনো সেকশন নেই</MenuItem>
                 {contextSections
                   .filter(s => {
                     if (!newStudent.classroom_id) return true;
                     const classIdNum = Number(newStudent.classroom_id);
                     const secClassId = s.classroom?.id ?? s.classroom; // support object or id
-                    return secClassId === classIdNum;
+                    return secClassId === classIdNum && ['ক','খ','গ'].includes(s.name);
                   })
                   .map(s => (
                     <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>
                   ))}
-              </TextField>
+             </TextField>
             </Grid>
             
             <Grid size={{ xs: 12, sm: 4 }}>
@@ -1326,6 +1414,9 @@ export default function StudentsPage() {
             
             <Grid size={{ xs: 12 }}>
               <Autocomplete
+                freeSolo
+                inputValue={newStudent.guardian_name}
+                onInputChange={(e, input) => setNewStudent({ ...newStudent, guardian_name: input || '', guardian_id: '' })}
                 options={(parents || []).filter(p => String(p.id) !== String(newStudent.guardian_id || ''))}
                 getOptionLabel={(p) => `${p?.user?.first_name || ''} ${p?.user?.last_name || ''} (${p?.user?.username || ''})`.trim()}
                 value={(parents || []).find(p => String(p.id) === String(newStudent.guardian_id)) || null}
@@ -1333,8 +1424,8 @@ export default function StudentsPage() {
                 renderInput={(params) => (
                   <TextField
                     {...params}
-                    label="অভিভাবক/প্যারেন্ট নির্বাচন করুন"
-                    helperText={newStudentErrors.guardian_id || 'বিদ্যমান প্যারেন্ট একাউন্ট লিংক করুন'}
+                    label="অভিভাবক/প্যারেন্ট (নতুন হলে নাম টাইপ করুন)"
+                    helperText={newStudentErrors.guardian_id || 'টাইপ করলে নতুন তৈরি হবে, সিলেক্ট করলে লিংক হবে'}
                     error={!!newStudentErrors.guardian_id}
                     fullWidth
                   />

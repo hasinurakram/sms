@@ -177,7 +177,19 @@ class BaseRoleProfileSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         role = self.role_value or 'student'
-        school = validated_data.pop('school')
+        school = validated_data.pop('school', None)
+        if not school:
+            try:
+                sid = (getattr(self, 'initial_data', {}) or {}).get('school') or (getattr(self, 'initial_data', {}) or {}).get('school_id')
+            except Exception:
+                sid = None
+            if not sid:
+                raise serializers.ValidationError({'school': 'This field is required.'})
+            try:
+                school = School.objects.get(pk=sid)
+            except School.DoesNotExist:
+                raise serializers.ValidationError({'school': 'Invalid school.'})
+            validated_data['school'] = school
         photo = validated_data.pop('photo', None)
         designation = validated_data.pop('designation', '')
         user = self._ensure_user(validated_data)
@@ -189,14 +201,14 @@ class BaseRoleProfileSerializer(serializers.ModelSerializer):
                 pass
         profile, _ = Profile.objects.update_or_create(
             user=user,
-            defaults={
+            defaults={k: v for k, v in {
                 'school': school,
                 'role': role,
                 'designation': designation,
-                'blood_group': validated_data.get('blood_group') if 'blood_group' in validated_data else getattr(Profile, 'blood_group', None),
-                'occupation': validated_data.get('occupation') if 'occupation' in validated_data else getattr(Profile, 'occupation', None),
-                'income': validated_data.get('income') if 'income' in validated_data else getattr(Profile, 'income', None),
-            }
+                'blood_group': validated_data.get('blood_group') if 'blood_group' in validated_data else None,
+                'occupation': validated_data.get('occupation') if 'occupation' in validated_data else None,
+                'income': validated_data.get('income') if 'income' in validated_data else None,
+            }.items() if v is not None}
         )
         return profile
 

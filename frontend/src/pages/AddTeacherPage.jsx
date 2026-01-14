@@ -2,8 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { isAuthenticated } from '../utils/auth';
 import api from '../utils/api';
-import { Box, Paper, Typography, TextField, Stack, Button, Alert, Chip, MenuItem } from '@mui/material';
+import { Box, Paper, Typography, TextField, Stack, Button, Alert, Chip, MenuItem, IconButton, Divider, Autocomplete } from '@mui/material';
+import AddIcon from '@mui/icons-material/Add';
+import DeleteIcon from '@mui/icons-material/Delete';
 import PhotoUpload from '../components/PhotoUpload';
+import { normalizeApiError } from '../utils/errorUtils';
 
 export default function AddTeacherPage() {
   const { id } = useParams();
@@ -26,22 +29,26 @@ export default function AddTeacherPage() {
   const [subjects, setSubjects] = useState([]);
   const [classrooms, setClassrooms] = useState([]);
   const [sections, setSections] = useState([]);
-  const [assignment, setAssignment] = useState({ subject_id: '', classroom_id: '', section_id: '' });
+  const [selectedSubjectIds, setSelectedSubjectIds] = useState([]);
+  const [selectedClassroomIds, setSelectedClassroomIds] = useState([]);
+  const [selectedSectionId, setSelectedSectionId] = useState('');
 
   const [usernameCheck, setUsernameCheck] = useState({ loading: false, available: null, suggestions: [], msg: '' });
   const username = form.username.trim();
 
   useEffect(() => {
-    // Load subjects and classrooms; sections will load when a class is selected
+    // Load subjects, classrooms, and all sections for the school
     const load = async () => {
       try {
-        const [subj, classes] = await Promise.all([
+        const [subj, classes, secs] = await Promise.all([
           api.get(`/api/academics/subjects/?school=${id}`),
-          api.get(`/api/academics/classrooms/?school=${id}`)
+          api.get(`/api/academics/classrooms/?school=${id}`),
+          api.get(`/api/academics/sections/?school=${id}`)
         ]);
         setSubjects(subj.data || []);
         setClassrooms(classes.data || []);
-        setSections([]);
+        const sectionsData = Array.isArray(secs.data) ? secs.data : (secs.data?.results || []);
+        setSections(sectionsData || []);
       } catch (e) {
         console.error("Error loading dropdown data:", e);
       }
@@ -66,14 +73,12 @@ export default function AddTeacherPage() {
     return () => { cancelled = true; clearTimeout(h); };
   }, [username]);
 
-  // Load sections when classroom changes
+  // Reset section when classrooms selection changes
   useEffect(() => {
-    const cls = assignment.classroom_id;
-    if (!cls) { setSections([]); return; }
-    api.get(`/api/academics/sections/?classroom=${cls}`)
-      .then(res => setSections(res.data || []))
-      .catch(err => { console.error('Failed to load sections:', err); setSections([]); });
-  }, [assignment.classroom_id]);
+    if (selectedClassroomIds.length !== 1) {
+      setSelectedSectionId('');
+    }
+  }, [selectedClassroomIds]);
 
   const handleSubmit = async () => {
     if (!isAuthenticated()) {
@@ -105,26 +110,36 @@ export default function AddTeacherPage() {
       if (photoFile) fd.append('photo', photoFile);
 
       const resp = await api.post('/api/users/teachers/', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-      // Optionally create first assignment if subject & classroom selected
       const teacherId = resp.data?.id || resp.data?.teacher?.id || resp.data?.user?.id;
-      if (teacherId && assignment.subject_id && assignment.classroom_id) {
+      // Create combinations: each selected subject x each selected classroom
+      const subjectsToAssign = Array.from(new Set(selectedSubjectIds)).filter(Boolean);
+      const classroomsToAssign = Array.from(new Set(selectedClassroomIds)).filter(Boolean);
+      const combos = [];
+      subjectsToAssign.forEach(sid => {
+        classroomsToAssign.forEach(cid => {
+          combos.push({ subject_id: sid, classroom_id: cid });
+        });
+      });
+      for (const combo of combos) {
         try {
           await api.post('/api/academics/assignments/', {
-            teacher: teacherId,
-            subject: assignment.subject_id,
-            classroom: assignment.classroom_id,
-            section: assignment.section_id || null,
+            teacher_id: teacherId,
+            subject_id: combo.subject_id,
+            classroom_id: combo.classroom_id,
+            section_id: selectedClassroomIds.length === 1 ? (selectedSectionId || null) : null,
           });
         } catch (e) {
-          // non-fatal
+          console.warn('Assignment create failed:', e?.response?.data || e?.message);
         }
       }
       navigate(`/school/${id}/teacher`);
     } catch (e) {
-      const n = e.normalized || { message: 'Failed to add teacher', suggestions: [], fieldErrors: {} };
-      setError(n.message);
+      const n = normalizeApiError(e);
+      setError(n.message || 'Failed to add teacher');
       setFormErrors(n.fieldErrors || {});
-      if (n.suggestions?.length) setUsernameCheck(prev => ({ ...prev, available: false, suggestions: n.suggestions }));
+      if (n.suggestions?.length) {
+        setUsernameCheck(prev => ({ ...prev, available: false, suggestions: n.suggestions }));
+      }
     } finally {
       setSaving(false);
     }
@@ -201,48 +216,39 @@ export default function AddTeacherPage() {
             helperText={formErrors.educational_qualification || 'Optional - শিক্ষাগত যোগ্যতা লিখুন'} 
           />
 
-          <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mt: 2 }}>Optional First Assignment</Typography>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-            <TextField 
-              select 
-              label="Subject" 
-              value={assignment.subject_id} 
-              onChange={e => setAssignment({ ...assignment, subject_id: e.target.value })} 
-              fullWidth
-            >
-              <MenuItem value="">Select Subject</MenuItem>
-              {subjects.map(s => (
-                <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>
-              ))}
-            </TextField>
-            <TextField 
-              select 
-              label="Class" 
-              value={assignment.classroom_id} 
-              onChange={e => setAssignment({ ...assignment, classroom_id: e.target.value })} 
-              fullWidth
-            >
-              <MenuItem value="">Select Class</MenuItem>
-              {classrooms.map(c => (
-                <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
-              ))}
-            </TextField>
-          <TextField 
-            select 
-            label="Section (Optional)" 
-            value={assignment.section_id} 
-            onChange={e => setAssignment({ ...assignment, section_id: e.target.value })} 
-            fullWidth
-            disabled={!assignment.classroom_id}
-          >
-            <MenuItem value="">No Section</MenuItem>
-            {sections
-              .filter(s => String(s.classroom) === String(assignment.classroom_id))
-              .map(s => (
-                <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>
-              ))
-            }
-          </TextField>
+          <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mt: 2 }}>Teaching Assignments</Typography>
+          <Stack spacing={2}>
+            <Autocomplete
+              multiple
+              options={subjects || []}
+              getOptionLabel={(s) => s?.name || ''}
+              value={(subjects || []).filter(s => selectedSubjectIds.includes(s.id))}
+              onChange={(e, vals) => setSelectedSubjectIds(vals.map(v => v.id))}
+              renderInput={(params) => (
+                <TextField {...params} label="Subjects (multiple)" placeholder="Select one or more" />
+              )}
+            />
+            <Autocomplete
+              multiple
+              options={classrooms || []}
+              getOptionLabel={(c) => c?.name || ''}
+              value={(classrooms || []).filter(c => selectedClassroomIds.includes(c.id))}
+              onChange={(e, vals) => setSelectedClassroomIds(vals.map(v => v.id))}
+              renderInput={(params) => (
+                <TextField {...params} label="Classes (multiple)" placeholder="Select one or more" />
+              )}
+            />
+            {selectedClassroomIds.length === 1 && (
+              <Autocomplete
+                options={(sections || []).filter(s => String(s.classroom) === String(selectedClassroomIds[0]))}
+                getOptionLabel={(s) => s?.name || ''}
+                value={(sections || []).find(s => String(s.id) === String(selectedSectionId)) || null}
+                onChange={(e, val) => setSelectedSectionId(val ? val.id : '')}
+                renderInput={(params) => (
+                  <TextField {...params} label="Section (optional, for selected class)" placeholder="Select section" />
+                )}
+              />
+            )}
           </Stack>
 
           <Stack direction="row" spacing={2}>
