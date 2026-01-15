@@ -22,8 +22,11 @@ import {
   Chip,
   Paper,
   Alert,
-  CardActions
+  CardActions,
+  useMediaQuery,
+  Autocomplete
 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import ProtectedButton from '../components/ProtectedButton';
 import PersonIcon from '@mui/icons-material/Person';
 import SchoolIcon from '@mui/icons-material/School';
@@ -40,6 +43,8 @@ import PhotoUpload from '../components/PhotoUpload';
 
 export default function TeachersPage() {
   const { id } = useParams();
+  const theme = useTheme();
+  const isXs = useMediaQuery(theme.breakpoints.down('sm'));
   const [assignments, setAssignments] = useState([]);
   const [teachers, setTeachers] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -58,6 +63,12 @@ export default function TeachersPage() {
   const [selectedTeacher, setSelectedTeacher] = useState(null);
   const [selectedTeacherProfile, setSelectedTeacherProfile] = useState(null);
   const [selectedTeacherAssignments, setSelectedTeacherAssignments] = useState([]);
+  const [selectedTeacherSubjects, setSelectedTeacherSubjects] = useState([]);
+  const [selectedTeacherClasses, setSelectedTeacherClasses] = useState([]);
+  const [editSelectedSubjectIds, setEditSelectedSubjectIds] = useState([]);
+  const [editSelectedClassroomIds, setEditSelectedClassroomIds] = useState([]);
+  const [editSelectedSectionId, setEditSelectedSectionId] = useState('');
+  const [editSections, setEditSections] = useState([]);
   const [editFormData, setEditFormData] = useState({
     first_name: '',
     last_name: '',
@@ -137,6 +148,71 @@ export default function TeachersPage() {
     return undefined;
   };
 
+  const buildAssignments = (assignDataRaw, teacherProfiles) => {
+    const assignData = assignDataRaw || [];
+    const profiles = teacherProfiles || [];
+
+    setTeachers(profiles);
+
+    const userIdToProfile = new Map();
+    const profileIdToProfile = new Map();
+
+    profiles.forEach(p => {
+      if (p.user?.id) {
+        userIdToProfile.set(p.user.id, p);
+      }
+      if (p.id) {
+        profileIdToProfile.set(p.id, p);
+      }
+    });
+
+    const enrichedAssignments = assignData.map(a => {
+      const rawTeacher = a.teacher || {};
+      const userId = rawTeacher.user?.id || null;
+      const teacherId = rawTeacher.id || null;
+
+      let profile = null;
+      if (userId && userIdToProfile.has(userId)) {
+        profile = userIdToProfile.get(userId);
+      } else if (teacherId && userIdToProfile.has(teacherId)) {
+        profile = userIdToProfile.get(teacherId);
+      } else if (teacherId && profileIdToProfile.has(teacherId)) {
+        profile = profileIdToProfile.get(teacherId);
+      }
+
+      if ((userId || teacherId) && !profile) {
+        console.warn('No profile found for teacher', { userId, teacherId, teacher: rawTeacher });
+      }
+
+      return {
+        ...a,
+        teacher: rawTeacher,
+        teacherProfile: profile
+      };
+    });
+
+    const assignedTeacherIds = new Set(
+      enrichedAssignments
+        .map(a => a.teacher?.user?.id || a.teacher?.id)
+        .filter(Boolean)
+    );
+
+    const placeholders = profiles
+      .filter(p => p.user?.id && !assignedTeacherIds.has(p.user.id))
+      .map(p => ({
+        id: `t-${p.id}`,
+        teacher: p.user,
+        teacherProfile: p,
+        subject: null,
+        classroom: null,
+        section: null
+      }));
+
+    const validAssignments = enrichedAssignments.filter(a => !!a.teacher);
+
+    return [...validAssignments, ...placeholders];
+  };
+
   const loadAssignments = () => {
     if (!id) return;
     setLoading(true);
@@ -145,65 +221,43 @@ export default function TeachersPage() {
       api.get(`/api/users/teachers/?school=${id}`)
     ])
       .then(([assignRes, teacherRes]) => {
-        const assignData = assignRes.data || [];
-        const teacherProfiles = teacherRes.data || [];
-        setTeachers(teacherProfiles);
-        
-        // Create a map of user ID to teacher profile for easy lookup
-        const userIdToProfile = new Map();
-        teacherProfiles.forEach(p => {
-          if (p.user?.id) {
-            userIdToProfile.set(p.user.id, p);
-          }
+        const rawAssignments = Array.isArray(assignRes.data)
+          ? assignRes.data
+          : (assignRes.data?.results || []);
+
+        const filteredAssignments = rawAssignments.filter(a => {
+          const schoolId =
+            a.classroom?.school?.id ||
+            a.classroom?.school_id ||
+            a.classroom?.school ||
+            a.school?.id ||
+            a.school_id ||
+            a.school;
+          if (!id) return true;
+          if (!schoolId) return true;
+          return String(schoolId) === String(id);
         });
-        
-        // Add teacherProfile to all assignments
-        const enrichedAssignments = assignData.map(a => {
-          const profile = a.teacher?.id ? userIdToProfile.get(a.teacher.id) : null;
-          if (a.teacher?.id && !profile) {
-            console.warn(`No profile found for teacher user ID ${a.teacher.id}. This teacher may have been deleted.`);
-          }
-          return {
-            ...a,
-            teacherProfile: profile
-          };
+
+        const teacherData = teacherRes.data || [];
+        const teacherProfiles = Array.isArray(teacherData) ? teacherData : (teacherData.results || []);
+        const filteredProfiles = teacherProfiles.filter(p => {
+          const schoolId =
+            p.school?.id ||
+            p.school_id ||
+            p.school ||
+            p.user?.school?.id ||
+            p.user?.school_id ||
+            p.user?.school;
+          if (!id) return true;
+          if (!schoolId) return false;
+          return String(schoolId) === String(id);
         });
-        
-        // Build a set of teacher user IDs that already have assignments
-        const assignedTeacherIds = new Set(enrichedAssignments.map(a => a.teacher?.id).filter(Boolean));
-        
-        // Create placeholder rows for unassigned teachers so they appear in the grid
-        const placeholders = teacherProfiles
-          .filter(p => !assignedTeacherIds.has(p.user?.id))
-          .map(p => ({
-            id: `t-${p.id}`,
-            teacher: p.user,
-            teacherProfile: p,  // Store the full profile for deletion
-            subject: null,
-            classroom: null,
-            section: null
-          }));
-        
-        // Filter out orphaned assignments (teacher deleted but assignment remains)
-        const validAssignments = enrichedAssignments.filter(a => {
-          if (a.teacher?.id && !a.teacherProfile) {
-            console.warn(`Filtering out orphaned assignment for deleted teacher ID ${a.teacher.id}`);
-            return false; // Skip this assignment
-          }
-          return true;
-        });
-        
-        const combined = [...validAssignments, ...placeholders];
+
+        const combined = buildAssignments(filteredAssignments, filteredProfiles);
         setAssignments(combined);
         setLoading(false);
         if (combined.length > 0) {
           toast.success(`Loaded ${combined.length} teacher${combined.length === 1 ? '' : 's'} (including unassigned)`);
-        }
-        
-        // Show warning if orphaned assignments were found
-        const orphanedCount = enrichedAssignments.length - validAssignments.length;
-        if (orphanedCount > 0) {
-          toast.warning(`${orphanedCount} assignment(s) with deleted teachers were hidden. Please clean up the database.`);
         }
       })
       .catch(err => {
@@ -223,6 +277,11 @@ export default function TeachersPage() {
     if (selectedTeacher && editDialogOpen) {
       // Check if data is in the teacher object or in teacher.user
       const userData = selectedTeacher.user || selectedTeacher;
+      // Find profile to get designation
+      let prof = selectedTeacherProfile;
+      if (!prof && Array.isArray(teachers) && userData?.id) {
+        prof = teachers.find(tp => tp.user?.id === userData.id) || null;
+      }
       
       setEditFormData({
         first_name: userData.first_name || '',
@@ -230,75 +289,51 @@ export default function TeachersPage() {
         email: userData.email || '',
         username: userData.username || '',
         phone_number: userData.phone_number || '',
-        educational_qualification: userData.educational_qualification || ''
+        educational_qualification: userData.educational_qualification || '',
+        designation: prof?.designation || ''
       });
     }
   }, [selectedTeacher, editDialogOpen]);
   
-  // Handle updating a teacher profile
   const handleUpdateTeacher = async () => {
     if (!selectedTeacher) {
       toast.error('No teacher selected');
       return;
     }
     
-    console.log('=== Starting teacher update ===');
-    console.log('Selected teacher object:', selectedTeacher);
-    console.log('Edit form data:', editFormData);
-    
     try {
-      const userId = selectedTeacher.id;
-      
+      const userData = selectedTeacher.user || selectedTeacher;
+      const userId = userData.id;
       if (!userId) {
-        console.error('No user ID found. Selected teacher:', selectedTeacher);
         toast.error('Unable to update: User ID not found');
         return;
       }
       
-      // Find the teacher profile that matches this user
-      const teacherProfileRes = await api.get(`/api/users/teachers/?user=${userId}`);
-      const teacherProfiles = teacherProfileRes.data || [];
+      let teacherProfile = selectedTeacherProfile;
+      if (!teacherProfile && Array.isArray(teachers)) {
+        teacherProfile = teachers.find(tp => tp.user?.id === userId) || null;
+      }
       
-      if (teacherProfiles.length === 0) {
-        console.error('No teacher profile found for user ID:', userId);
+      if (!teacherProfile || !teacherProfile.id) {
         toast.error('Teacher profile not found');
         return;
       }
       
-      const teacherProfile = teacherProfiles[0];
-      console.log('Teacher profile found:', teacherProfile);
-      
-      // Update the teacher profile using the writable serializer
-      // The TeacherProfile serializer accepts user fields and photo
       const formData = new FormData();
-      
-      // Add user fields
       formData.append('first_name', editFormData.first_name || '');
       formData.append('last_name', editFormData.last_name || '');
       formData.append('email', editFormData.email || '');
       formData.append('phone_number', editFormData.phone_number || '');
       formData.append('educational_qualification', editFormData.educational_qualification || '');
-      
-      // Don't send username on update - it can't be changed
-      // formData.append('username', editFormData.username || '');
-      
-      // Add photo only if a new one was selected
+      formData.append('designation', editFormData.designation || '');
       if (editFormData._photoFile) {
-        console.log('Adding photo file to form data');
         formData.append('photo', editFormData._photoFile);
       }
       
       const endpoint = `/api/users/teachers/${teacherProfile.id}/`;
-      console.log('Updating teacher profile at:', endpoint);
-      
-      const response = await api.patch(endpoint, formData, {
+      await api.patch(endpoint, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
-      
-      console.log('Update successful:', response.data);
-      console.log('Updated teacher profile:', response.data);
-      console.log('Updated user data:', response.data.user);
-      console.log('Updated photo URL:', response.data.user?.photo_url);
       
       toast.success('Teacher profile updated successfully');
       setEditDialogOpen(false);
@@ -310,55 +345,12 @@ export default function TeachersPage() {
         phone_number: '',
         _photoFile: null
       });
-      
-      // Clear the selected teacher to force fresh data on next load
       setSelectedTeacher(null);
-      
-      // Force a complete refresh with a delay to ensure backend has processed the update
-      // Also clear any browser cache for the images
       setTimeout(() => {
-        // Force reload all data
-        setLoading(true);
-        Promise.all([
-          api.get(`/api/academics/assignments/?classroom__school=${id}`),
-          api.get(`/api/users/teachers/?school=${id}`)
-        ])
-          .then(([assignRes, teacherRes]) => {
-            const assignData = assignRes.data || [];
-            const teacherProfiles = teacherRes.data || [];
-            console.log('Refreshed teacher profiles:', teacherProfiles);
-            setTeachers(teacherProfiles);
-            const assignedTeacherIds = new Set(assignData.map(a => a.teacher?.id).filter(Boolean));
-            const placeholders = teacherProfiles
-              .filter(p => !assignedTeacherIds.has(p.user?.id))
-              .map(p => ({
-                id: `t-${p.id}`,
-                teacher: p.user,
-                subject: null,
-                classroom: null,
-                section: null
-              }));
-            const combined = [...assignData, ...placeholders];
-            setAssignments(combined);
-            setLoading(false);
-            toast.success('Teacher list refreshed');
-          })
-          .catch(err => {
-            console.error('Error refreshing:', err);
-            setLoading(false);
-            // Fallback to simple refresh
-            loadAssignments();
-          });
+        loadAssignments();
       }, 800);
     } catch (error) {
-      console.error('=== Error updating teacher ===');
-      console.error('Error object:', error);
-      console.error('Error response:', error.response);
-      console.error('Error response data:', error.response?.data);
-      console.error('Error status:', error.response?.status);
-      
       let errorMsg = 'Failed to update teacher profile';
-      
       if (error.response?.data) {
         const data = error.response.data;
         if (typeof data === 'string') {
@@ -368,7 +360,6 @@ export default function TeachersPage() {
         } else if (data.message) {
           errorMsg = data.message;
         } else {
-          // Try to extract field errors
           const fieldErrors = Object.entries(data)
             .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : value}`)
             .join('; ');
@@ -379,77 +370,73 @@ export default function TeachersPage() {
       } else if (error.message) {
         errorMsg = error.message;
       }
-      
       toast.error(errorMsg);
     }
   };
   
-  // Handle deleting a teacher profile
   const handleDeleteTeacher = async () => {
-    if (!selectedTeacher?.id) return;
+    if (!selectedTeacher) return;
     
-    setSaving(true); // Show loading state
+    setSaving(true);
     
     try {
-      console.log('=== Delete Teacher Debug ===');
-      console.log('Selected teacher (user):', selectedTeacher);
-      console.log('Selected teacher profile:', selectedTeacherProfile);
+      const userData = selectedTeacher.user || selectedTeacher;
+      const userId = userData?.id;
       
       let teacherProfile = selectedTeacherProfile;
+      if (!teacherProfile && userId && Array.isArray(teachers)) {
+        teacherProfile = teachers.find(tp => tp.user?.id === userId) || null;
+      }
       
-      // If we don't have the profile, try to find it
-      if (!teacherProfile) {
-        console.log('No profile in state, fetching from API...');
-        const response = await api.get(`/api/users/teachers/?school=${id}`);
-        const allProfiles = response.data || [];
-        console.log('All teacher profiles for school:', allProfiles);
-        
-        // Find the profile that matches this user
-        teacherProfile = allProfiles.find(t => t.user?.id === selectedTeacher.id);
-        
-        if (!teacherProfile) {
-          console.error('=== Profile Not Found ===');
-          console.error('Looking for user ID:', selectedTeacher.id);
-          console.error('Available profiles:', allProfiles.map(p => ({
-            profileId: p.id,
-            userId: p.user?.id,
-            username: p.user?.username,
-            role: p.role
-          })));
-          
-          toast.error('Teacher profile not found. The teacher may not have a profile in the system.');
-          setSaving(false);
-          return;
+      let primaryEndpoint = null;
+      if (teacherProfile?.id) {
+        primaryEndpoint = `/api/users/teachers/${teacherProfile.id}/`;
+      } else if (userId) {
+        primaryEndpoint = `/api/users/${userId}/`;
+      }
+      
+      if (!primaryEndpoint) {
+        setSaving(false);
+        toast.error('Unable to delete: teacher identifiers not found');
+        return;
+      }
+      
+      let primaryFailed = false;
+      try {
+        await api.delete(primaryEndpoint);
+      } catch (errPrimary) {
+        const status = errPrimary?.response?.status;
+        if (status && status !== 404) {
+          primaryFailed = true;
         }
       }
       
-      console.log('Using teacher profile:', teacherProfile);
-      console.log('Profile ID:', teacherProfile.id);
-      
-      // Delete the teacher profile (this will cascade delete the user)
-      const endpoint = `/api/users/teachers/${teacherProfile.id}/`;
-      console.log('DELETE endpoint:', endpoint);
-      
-      const deleteResponse = await api.delete(endpoint);
-      console.log('Delete response status:', deleteResponse.status);
-      
-      if (deleteResponse.status === 204 || deleteResponse.status === 200) {
-        toast.success('Teacher deleted successfully');
-        setDeleteDialogOpen(false);
-        setSelectedTeacher(null);
-        setSelectedTeacherProfile(null);
+      if (primaryFailed) {
         setSaving(false);
-        loadAssignments(); // Refresh the data
+        toast.error('Failed to delete teacher');
+        return;
       }
-    } catch (error) {
-      console.error('=== Delete Error ===');
-      console.error('Error:', error);
-      console.error('Error response:', error.response);
-      console.error('Error data:', error.response?.data);
       
+      if (userId && primaryEndpoint.indexOf(`/api/users/${userId}/`) === -1) {
+        try {
+          await api.delete(`/api/users/${userId}/`);
+        } catch (errUser) {
+          const st = errUser?.response?.status;
+          if (st && st !== 404) {
+            console.error('Secondary user delete error:', errUser);
+          }
+        }
+      }
+      
+      toast.success('Teacher deleted successfully');
+      setDeleteDialogOpen(false);
+      setSelectedTeacher(null);
+      setSelectedTeacherProfile(null);
+      setSaving(false);
+      loadAssignments();
+    } catch (error) {
       setSaving(false);
       let errorMsg = 'Failed to delete teacher';
-      
       if (error.response?.status === 404) {
         errorMsg = 'Teacher not found. It may have already been deleted. Refreshing the list...';
         setTimeout(() => {
@@ -465,7 +452,6 @@ export default function TeachersPage() {
       } else if (error.message) {
         errorMsg = error.message;
       }
-      
       toast.error(errorMsg);
     }
   };
@@ -501,6 +487,21 @@ export default function TeachersPage() {
       .then(res => setSections(res.data || []))
       .catch(err => { console.error('Failed to load sections:', err); setSections([]); });
   }, [newTeacher.classroom_id]);
+
+  useEffect(() => {
+    if (editSelectedClassroomIds.length !== 1) {
+      setEditSections([]);
+      setEditSelectedSectionId('');
+      return;
+    }
+    const cls = editSelectedClassroomIds[0];
+    api.get(`/api/academics/sections/?classroom=${cls}`)
+      .then(res => {
+        const data = Array.isArray(res.data) ? res.data : res.data?.results || [];
+        setEditSections(data || []);
+      })
+      .catch(err => { console.error('Failed to load sections:', err); setEditSections([]); });
+  }, [editSelectedClassroomIds]);
 
   const handleAddTeacher = async () => {
     // Validation & auto-generate
@@ -666,7 +667,7 @@ export default function TeachersPage() {
     const grouped = [];
     const byUser = new Map();
     items.forEach(a => {
-      const uid = a.teacher?.id;
+      const uid = a.teacher?.user?.id || a.teacher?.id;
       if (!uid) return;
       let g = byUser.get(uid);
       if (!g) {
@@ -698,6 +699,29 @@ export default function TeachersPage() {
 
   const aggregated = groupAssignments(assignments);
 
+  const normalizeClassBase = (name) => {
+    const s = String(name || '').toLowerCase();
+    return s.replace(/\s*শ্রেণি\s*$/i, '').trim();
+  };
+  const classOrder = ['প্রথম','দ্বিতীয়','দ্বিতীয়','তৃতীয়','তৃতীয়','চতুর্থ','পঞ্চম','ষষ্ঠ','সপ্তম','অষ্টম','নবম','দশম','একাদশ','দ্বাদশ'];
+  const classIndex = (name) => {
+    const base = normalizeClassBase(name);
+    const idx = classOrder.indexOf(base);
+    return idx >= 0 ? idx : 999;
+  };
+  const formatClassRange = (classesSet) => {
+    const arr = Array.from(classesSet || []);
+    if (!arr.length) return '';
+    const sorted = arr.slice().sort((a, b) => classIndex(a) - classIndex(b));
+    if (sorted.length >= 2) {
+      const first = normalizeClassBase(sorted[0]);
+      const last = normalizeClassBase(sorted[sorted.length - 1]);
+      return `${first}-${last} শ্রেণি`;
+    }
+    const single = normalizeClassBase(sorted[0]);
+    return `${single} শ্রেণি`;
+  };
+
   const filtered = aggregated
     .filter(g => {
       const teacherName = g.teacher?.username || '';
@@ -709,8 +733,8 @@ export default function TeachersPage() {
              classJoined.toLowerCase().includes(q);
     })
     .sort((a, b) => {
-      const teacherIdA = a.teacher?.id || 0;
-      const teacherIdB = b.teacher?.id || 0;
+      const teacherIdA = a.teacher?.user?.id || a.teacher?.id || 0;
+      const teacherIdB = b.teacher?.user?.id || a.teacher?.id || 0;
       return teacherIdA - teacherIdB;
     });
 
@@ -811,76 +835,87 @@ export default function TeachersPage() {
           {filtered.map(g => {
             const a = g; // aggregated item
             const qualification = a.teacher?.educational_qualification || '';
+            const qualificationText = qualification ? qualification.replace(/\s*,\s*/g, ' ও ') : '';
+            const classTextRaw = formatClassRange(a.classes) || Array.from(a.classes).join(', ');
+            const hasHyphen = classTextRaw.includes('-');
+            const classParts = hasHyphen ? classTextRaw.split('-').map(s => s.trim()) : [classTextRaw, ''];
             // Debug log
             console.log('Teacher data:', a.teacher);
             console.log('Educational qualification:', qualification);
             
             return (
-            <Grid size={{ xs: 12, sm: 6, md: 4 }} key={a.id}>
-              <Card sx={{ borderRadius: 2, boxShadow: 3, transition: 'transform 0.2s', '&:hover': { transform: 'translateY(-4px)', boxShadow: 6 } }}>
+            <Grid item xs={12} sm={6} md={4} key={a.id}>
+              <Card sx={{ borderRadius: 2, boxShadow: { xs: 2, sm: 3 }, transition: 'transform 0.2s', '&:hover': { transform: 'translateY(-4px)', boxShadow: 6 }, p: { xs: 1, sm: 2 } }}>
                 <CardHeader
                       onClick={async () => {
                         // Load detailed data for this teacher (assignments, etc.)
-                        const teacherId = a.teacher?.id;
-                        if (!teacherId) return;
-                        try {
-                          const res = await api.get(`/api/academics/assignments/?teacher=${teacherId}`);
-                          setSelectedTeacherAssignments(res.data || []);
-                        } catch (e) {
-                          setSelectedTeacherAssignments([]);
-                        }
                         setSelectedTeacher(a.teacher);
+                        setSelectedTeacherProfile(a.teacherProfile || null);
+                        setSelectedTeacherSubjects(Array.from(a.subjects || []));
+                        setSelectedTeacherClasses(Array.from(a.classes || []));
                         setDetailOpen(true);
                       }}
                       sx={{ cursor: 'pointer' }}
                       avatar={
-                        <Avatar src={getPhotoUrl(a.teacher, a.teacherProfile)}>
+                        <Avatar src={getPhotoUrl(a.teacher, a.teacherProfile)} sx={{ width: 64, height: 64 }}>
                           {!getPhotoUrl(a.teacher, a.teacherProfile) ? (a.teacher?.first_name?.[0] || a.teacher?.username?.[0] || '?') : null}
                         </Avatar>
                       }
                       title={
-                        <Box>
-                          <Typography variant="h6">
-                            {`${a.teacher?.first_name || ''} ${a.teacher?.last_name || ''}`.trim() || a.teacher?.username || 'Unknown Teacher'}
-                          </Typography>
-                          {qualification && (
-                            <Typography variant="body2" sx={{ fontStyle: 'italic', color: 'text.secondary', mt: 0.5 }}>
-                              {qualification}
-                            </Typography>
-                          )}
-                        </Box>
+                        <Typography variant="h6" sx={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+                          {`${a.teacher?.first_name || ''} ${a.teacher?.last_name || ''}`.trim() || a.teacher?.username || 'Unknown Teacher'}
+                        </Typography>
                       }
-                      subheader={`${Array.from(a.subjects).join(', ') || 'No subjects'} — ${Array.from(a.classes).join(', ') || 'No classes'}`}
-                      titleTypographyProps={{ variant: 'h6' }}
+                      subheader={null}
+                      titleTypographyProps={{ variant: 'h5' }}
                     />
 
                 <CardContent onClick={async () => {
                   // Load detailed data for this teacher (assignments, etc.)
-                  const teacherId = a.teacher?.id;
-                  if (!teacherId) return;
-                  try {
-                    const res = await api.get(`/api/academics/assignments/?teacher=${teacherId}`);
-                    setSelectedTeacherAssignments(res.data || []);
-                  } catch (e) {
-                    setSelectedTeacherAssignments([]);
-                  }
                   setSelectedTeacher(a.teacher);
+                  setSelectedTeacherProfile(a.teacherProfile || null);
+                  setSelectedTeacherSubjects(Array.from(a.subjects || []));
+                  setSelectedTeacherClasses(Array.from(a.classes || []));
                   setDetailOpen(true);
                 }} sx={{ cursor: 'pointer' }}>
-                  <Stack spacing={1}>
-                    <Stack direction="row" spacing={1} flexWrap="wrap">
-                      {Array.from(a.subjects).map((name, idx) => (
-                        <Chip key={`sub-${idx}`} label={name} size="small" />
-                      ))}
-                    </Stack>
-                    <Typography variant="body2" color="textSecondary">
+                  <Stack spacing={1.25}>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                      {a.teacherProfile?.designation && (
+                        <Typography variant="subtitle1" color="primary" sx={{ fontWeight: 700 }}>
+                          {a.teacherProfile.designation}
+                        </Typography>
+                      )}
+                      <Typography variant="body1" color="secondary" sx={{ fontWeight: 600 }}>
+                        {qualificationText || 'এম.এস.এস. ও এম.এড.'}
+                      </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+                      {Array.from(a.subjects).length > 0
+                        ? Array.from(a.subjects).map((s, i) => (
+                            <Chip
+                              key={`${s}-${i}`}
+                              label={s}
+                              color={['primary','secondary','success','warning','info','error'][i % 6]}
+                              size="medium"
+                              sx={{ '& .MuiChip-label': { fontSize: '0.95rem', fontWeight: 600 } }}
+                            />
+                          ))
+                        : <Chip label="No subjects" size="medium" sx={{ '& .MuiChip-label': { fontSize: '0.9rem' } }} />}
+                    </Box>
+                    <Typography variant="body1" sx={{ wordBreak: 'break-word', overflowWrap: 'anywhere', fontWeight: 600 }}>
+                      {hasHyphen ? (
+                        <>
+                          <Box component="span" sx={{ color: 'primary.main' }}>{classParts[0]}</Box>
+                          <Box component="span" sx={{ color: 'primary.main' }}>{' - '}</Box>
+                          <Box component="span" sx={{ color: 'secondary.main' }}>{classParts[1]}</Box>
+                        </>
+                      ) : (
+                        <Box component="span" sx={{ color: 'info.main' }}>{classTextRaw}</Box>
+                      )}
+                    </Typography>
+                    <Typography variant="body1" color="textSecondary">
                       <strong>Mobile:</strong> {a.teacher?.phone_number || a.teacher?.mobile_number || 'Not available'}
                     </Typography>
-                    <Stack direction="row" spacing={1} flexWrap="wrap">
-                      {Array.from(a.classes).map((name, idx) => (
-                        <Chip key={`cls-${idx}`} label={name} size="small" color="secondary" />
-                      ))}
-                    </Stack>
                   </Stack>
                 </CardContent>
                 
@@ -891,6 +926,20 @@ export default function TeachersPage() {
                     onClick={(e) => {
                       e.stopPropagation();
                       setSelectedTeacher(a.teacher);
+                      setSelectedTeacherProfile(a.teacherProfile || null);
+                      setEditSelectedSubjectIds(
+                        Array.from(a.subjects || []).map(name => {
+                          const s = (subjects || []).find(x => x.name === name);
+                          return s?.id;
+                        }).filter(Boolean)
+                      );
+                      setEditSelectedClassroomIds(
+                        Array.from(a.classes || []).map(name => {
+                          const c = (classrooms || []).find(x => x.name === name);
+                          return c?.id;
+                        }).filter(Boolean)
+                      );
+                      setEditSelectedSectionId('');
                       setEditDialogOpen(true);
                     }}
                     aria-label="edit"
@@ -927,7 +976,7 @@ export default function TeachersPage() {
         </DialogTitle>
         <DialogContent dividers>
           <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 2 }}>
-            <Avatar src={getPhotoUrl(selectedTeacher)} sx={{ width: 56, height: 56 }}>
+            <Avatar src={getPhotoUrl(selectedTeacher)} sx={{ width: 96, height: 96 }}>
               {!getPhotoUrl(selectedTeacher) ? (selectedTeacher?.first_name?.[0] || selectedTeacher?.username?.[0] || '?') : null}
             </Avatar>
             <Box>
@@ -935,20 +984,52 @@ export default function TeachersPage() {
               <Typography variant="body2" color="text.secondary">{selectedTeacher?.email || ''}</Typography>
             </Box>
           </Stack>
-          <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>Assignments</Typography>
-          {selectedTeacherAssignments.length === 0 ? (
-            <Alert severity="info">No assignments found.</Alert>
-          ) : (
-            <Stack spacing={1}>
-              {selectedTeacherAssignments.map(x => (
-                <Paper key={x.id} sx={{ p: 1.5 }}>
-                  <Typography>
-                    {x.subject?.name || 'Subject'} — {x.classroom?.name || 'Class'}{x.section ? ` (${x.section.name})` : ''}
-                  </Typography>
-                </Paper>
-              ))}
-            </Stack>
-          )}
+          <Stack spacing={1.5}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+              {selectedTeacherProfile?.designation && (
+                <Typography variant="subtitle1" color="primary" sx={{ fontWeight: 700 }}>
+                  {selectedTeacherProfile.designation}
+                </Typography>
+              )}
+              <Typography variant="body1" color="secondary" sx={{ fontWeight: 600 }}>
+                {(selectedTeacher?.educational_qualification || '').replace(/\s*,\s*/g, ' ও ') || 'এম.এস.এস. ও এম.এড.'}
+              </Typography>
+            </Box>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+              {selectedTeacherSubjects.length > 0
+                ? selectedTeacherSubjects.map((s, i) => (
+                    <Chip
+                      key={`${s}-${i}`}
+                      label={s}
+                      color={['primary','secondary','success','warning','info','error'][i % 6]}
+                      size="medium"
+                      sx={{ '& .MuiChip-label': { fontSize: '0.95rem', fontWeight: 600 } }}
+                    />
+                  ))
+                : <Chip label="No subjects" size="medium" sx={{ '& .MuiChip-label': { fontSize: '0.9rem' } }} />}
+            </Box>
+            {(() => {
+              const classTextRaw = formatClassRange(new Set(selectedTeacherClasses)) || selectedTeacherClasses.join(', ');
+              const hasHyphen = classTextRaw.includes('-');
+              const parts = hasHyphen ? classTextRaw.split('-').map(s => s.trim()) : [classTextRaw, ''];
+              return (
+                <Typography variant="body1" sx={{ wordBreak: 'break-word', overflowWrap: 'anywhere', fontWeight: 600 }}>
+                  {hasHyphen ? (
+                    <>
+                      <Box component="span" sx={{ color: 'primary.main' }}>{parts[0]}</Box>
+                      <Box component="span" sx={{ color: 'primary.main' }}>{' - '}</Box>
+                      <Box component="span" sx={{ color: 'secondary.main' }}>{parts[1]}</Box>
+                    </>
+                  ) : (
+                    <Box component="span" sx={{ color: 'info.main' }}>{classTextRaw}</Box>
+                  )}
+                </Typography>
+              );
+            })()}
+            <Typography variant="body1" color="textSecondary">
+              <strong>Mobile:</strong> {selectedTeacher?.phone_number || selectedTeacher?.mobile_number || 'Not available'}
+            </Typography>
+          </Stack>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDetailOpen(false)}>Close</Button>
@@ -993,6 +1074,12 @@ export default function TeachersPage() {
               onChange={(e) => setEditFormData({...editFormData, email: e.target.value})}
             />
             <TextField
+              label="Designation"
+              fullWidth
+              value={editFormData.designation || ''}
+              onChange={(e) => setEditFormData({...editFormData, designation: e.target.value})}
+            />
+            <TextField
               label="Username"
               fullWidth
               value={editFormData.username}
@@ -1014,6 +1101,38 @@ export default function TeachersPage() {
               placeholder="e.g., B.A., M.A., B.Ed., এম.এ., বি.এড."
               helperText="Optional - শিক্ষাগত যোগ্যতা লিখুন"
             />
+            <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>Teaching Assignments</Typography>
+            <Autocomplete
+              multiple
+              options={subjects || []}
+              getOptionLabel={(s) => s?.name || ''}
+              value={(subjects || []).filter(s => editSelectedSubjectIds.includes(s.id))}
+              onChange={(e, vals) => setEditSelectedSubjectIds(vals.map(v => v.id))}
+              renderInput={(params) => (
+                <TextField {...params} label="Subjects (multiple)" placeholder="Select one or more" />
+              )}
+            />
+            <Autocomplete
+              multiple
+              options={classrooms || []}
+              getOptionLabel={(c) => c?.name || ''}
+              value={(classrooms || []).filter(c => editSelectedClassroomIds.includes(c.id))}
+              onChange={(e, vals) => setEditSelectedClassroomIds(vals.map(v => v.id))}
+              renderInput={(params) => (
+                <TextField {...params} label="Classes (multiple)" placeholder="Select one or more" />
+              )}
+            />
+            {editSelectedClassroomIds.length === 1 && (
+              <Autocomplete
+                options={(editSections || [])}
+                getOptionLabel={(s) => s?.name || ''}
+                value={(editSections || []).find(s => String(s.id) === String(editSelectedSectionId)) || null}
+                onChange={(e, val) => setEditSelectedSectionId(val ? val.id : '')}
+                renderInput={(params) => (
+                  <TextField {...params} label="Section (optional, for selected class)" placeholder="Select section" />
+                )}
+              />
+            )}
           </Stack>
         </DialogContent>
         <DialogActions>

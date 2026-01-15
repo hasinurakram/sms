@@ -19,7 +19,8 @@ export default function AddTeacherPage() {
     last_name: '',
     email: '',
     phone_number: '',
-    educational_qualification: ''
+    educational_qualification: '',
+    designation: ''
   });
   const [photoFile, setPhotoFile] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -107,6 +108,7 @@ export default function AddTeacherPage() {
       fd.append('email', form.email || '');
       fd.append('phone_number', form.phone_number || '');
       fd.append('educational_qualification', form.educational_qualification || '');
+      fd.append('designation', form.designation || '');
       if (photoFile) fd.append('photo', photoFile);
 
       const resp = await api.post('/api/users/teachers/', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
@@ -214,6 +216,15 @@ export default function AddTeacherPage() {
             placeholder="e.g., B.A., M.A., B.Ed., এম.এ., বি.এড."
             error={!!formErrors.educational_qualification} 
             helperText={formErrors.educational_qualification || 'Optional - শিক্ষাগত যোগ্যতা লিখুন'} 
+          />
+          
+          <TextField 
+            label="পদবী (Designation)" 
+            value={form.designation} 
+            onChange={e => setForm({ ...form, designation: e.target.value })} 
+            placeholder="e.g., Assistant Teacher, Lecturer, Demonstrator"
+            error={!!formErrors.designation} 
+            helperText={formErrors.designation || 'Optional - শিক্ষকের পদবী'} 
           />
 
           <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mt: 2 }}>Teaching Assignments</Typography>

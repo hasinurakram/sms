@@ -37,7 +37,6 @@ export default function TeacherCard({ teacher, onPhotoUploaded }) {
                    (teacher.user ? teacher.user.username : '') || 
                    'Unknown';
   
-  // Handle photo upload
   const handlePhotoChange = async (file) => {
     if (!isAuthenticated()) {
       navigate('/login');
@@ -49,14 +48,12 @@ export default function TeacherCard({ teacher, onPhotoUploaded }) {
     formData.append('photo', file);
     
     try {
-      // Get the teacher profile ID
       const teacherId = teacher.id || teacher.user?.id;
       if (!teacherId) {
         toast.error('Teacher ID not found');
         return;
       }
       
-      // Upload to teacher profile endpoint
       await api.patch(`/api/users/teachers/${teacherId}/`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
