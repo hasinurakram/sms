@@ -7,7 +7,16 @@ import api from '../utils/api';
 
 export default function IDCard({ type = 'student', data, school, overridePhone, signatureUrl: propSignatureUrl }) {
   const defaultSignatureUrl = '/images/signatures/signature.png';
-  const signatureUrl = propSignatureUrl || defaultSignatureUrl;
+  const signatureUrl = (() => {
+    if (propSignatureUrl) return propSignatureUrl;
+    try {
+      if (school?.id && String(school.id) === '19') {
+        const base = (api?.defaults?.baseURL || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/+$/,'');
+        return `${base}/media/BHS/signature.png`;
+      }
+    } catch (_) {}
+    return defaultSignatureUrl;
+  })();
   const handlePrintSingle = () => {
     const printWindow = window.open('', '_blank');
     const cardElement = document.getElementById(`id-card-${data.id}`);

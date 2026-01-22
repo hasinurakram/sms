@@ -23,7 +23,15 @@ export default function AdmissionCard({ data, school, exam }) {
 
   const schoolLogo = processPhotoUrl(school?.logo);
   const userPhoto = processPhotoUrl(user.photo_url || user.photo || data.photo);
-  const signatureUrl = '/images/signatures/signature.png';
+  const signatureUrl = (() => {
+    try {
+      if (school?.id && String(school.id) === '19') {
+        const base = (api?.defaults?.baseURL || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/+$/,'');
+        return `${base}/media/BHS/signature.png`;
+      }
+    } catch (_) {}
+    return '/images/signatures/signature.png';
+  })();
 
   // QR Code data
   const qrData = JSON.stringify({

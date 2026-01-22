@@ -356,6 +356,7 @@ const SchoolDashboard = () => {
                   let exam_due_total = 0;
 
                   for (const a of (assignments || [])) {
+                    const currentMonthNo = new Date().getMonth() + 1;
                     const aid = String(a.id || a._id || a.assignment_id || a.assignment || '');
                     if (!aid) continue;
                     const feeObj = a.fee_structure || a.fee || {};
@@ -366,9 +367,9 @@ const SchoolDashboard = () => {
                     base = Number(base || 0);
                     const discountAmt = Number(a.discount_amount || 0) || 0;
                     const discountPct = Number(a.discount_percentage ?? a.discount_percent ?? a.discount ?? 0) || 0;
-                    const gross = Math.max(0, base - discountAmt - (base * discountPct / 100));
+                    let gross = Math.max(0, base - discountAmt - (base * discountPct / 100));
                     const paid = Number(paidByAssign.get(aid) || 0);
-                    const due = Math.max(0, gross - paid);
+                    let due = Math.max(0, gross - paid);
                     if (due <= 0) continue;
 
                     // Resolve class
@@ -381,6 +382,35 @@ const SchoolDashboard = () => {
                     // Resolve type by frequency
                     const freq = String((sObj && sObj.frequency) || a.frequency || a.fee_frequency || '').toLowerCase();
                     const rtype = freq === 'monthly' ? 'tuition' : (freq === 'one_time' ? 'exam' : 'other');
+
+                    try {
+                      const bnMap = { 'প্রথম': 1, 'দ্বিতীয়': 2, 'দ্বিতীয়': 2, 'তৃতীয়': 3, 'তৃতীয়': 3, 'চতুর্থ': 4, 'পঞ্চম': 5, 'ষষ্ঠ': 6, 'সপ্তম': 7, 'অষ্টম': 8, 'নবম': 9, 'দশম': 10 };
+                      let classOrder = 0;
+                      for (const k in bnMap) { if (String(className).includes(k)) { classOrder = bnMap[k]; break; } }
+                      if (!classOrder) {
+                        const m = String(className).match(/\d+/); if (m) classOrder = parseInt(m[0], 10);
+                      }
+                      const monthlyFixed = classOrder >= 1 && classOrder <= 5 ? 250 : (classOrder >= 6 && classOrder <= 10 ? 150 : 0);
+                      const monthNo = Number(sObj.month || sObj.month_no || sObj.month_number || a.month || 0) || 0;
+                      const nameStr = String(sObj.name || sObj.title || sObj.label || '').toLowerCase();
+                      const isHalf = /half|mid|অর্ধ/.test(nameStr);
+                      const isAnnual = /annual|final|বার্ষিক/.test(nameStr);
+                      const schoolIdNum = Number(id || 0);
+                      if (schoolIdNum === 19) {
+                        if (rtype === 'tuition') {
+                          if (monthNo && monthNo > currentMonthNo) continue;
+                          gross = monthlyFixed || gross;
+                          due = Math.max(0, gross - paid);
+                          if (due <= 0) continue;
+                        } else if (rtype === 'exam') {
+                          if (currentMonthNo <= 6 && !isHalf) continue;
+                          if (currentMonthNo > 6 && !isAnnual) continue;
+                          gross = 500;
+                          due = Math.max(0, gross - paid);
+                          if (due <= 0) continue;
+                        }
+                      }
+                    } catch (_) {}
 
                     const entry = classMap.get(className) || { tuition_due: 0, exam_due: 0, total_due: 0 };
                     if (rtype === 'tuition') {

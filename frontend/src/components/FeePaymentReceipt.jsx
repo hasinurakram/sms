@@ -902,7 +902,7 @@ const FeePaymentReceipt = () => {
               }}
             />
             <img 
-              src="/images/signatures/signature.png" 
+              src={(schoolId && String(schoolId) === '19') ? `${(api?.defaults?.baseURL || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/+$/,'')}/media/BHS/signature.png` : '/images/signatures/signature.png'} 
               alt="Head Master Signature"
               style={{ 
                 width: '100%', 

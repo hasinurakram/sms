@@ -112,7 +112,15 @@ export default function ResultCard({ studentData, results, overallResult, examin
       const val = typeof raw === 'string' ? raw : (raw || '');
       if (!val) return '';
       if (/^https?:\/\//i.test(val)) return val;
-      const base = (api?.defaults?.baseURL || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/$/, '');
+      let base = (process.env.REACT_APP_API_URL || api?.defaults?.baseURL || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/$/, '');
+      if (typeof window !== 'undefined') {
+        const origin = window.location.origin.replace(/\/$/, '');
+        const isFrontendDev = /:3000$/.test(origin);
+        const isSameAsOrigin = base === origin;
+        if (isFrontendDev && isSameAsOrigin) {
+          base = 'http://127.0.0.1:8000';
+        }
+      }
       let normalized = val.replace(/\\/g, '/');
       if (/(^|[\\/])media[\\/]/i.test(val)) {
         const rel = String(val).replace(/^.*?[\\/](media[\\/].*)$/i, '$1').replace(/\\/g, '/');
@@ -138,8 +146,7 @@ export default function ResultCard({ studentData, results, overallResult, examin
       return resolveMediaUrl(schoolLogo);
     }
     
-    // Fallback to the direct path (relative to public folder)
-    return '/media/school_logos/logo_CBwqhuz.png';
+    return '';
   })();
 
   // Resolve student photo URL similar to StudentCard
@@ -416,13 +423,7 @@ export default function ResultCard({ studentData, results, overallResult, examin
             alt={school?.name || 'School Logo'}
             width="100%"
             height="100%"
-            fallback={
-              <img
-                src={fallbackLogo}
-                alt="School Logo"
-                style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }}
-              />
-            }
+            fallback={<></>}
           />
         </Box>
 
@@ -447,10 +448,7 @@ export default function ResultCard({ studentData, results, overallResult, examin
         </Box>
         
         <Typography variant="h4" sx={{ fontWeight: 'bold', color: '#1976d2', mb: 0.5, fontSize: { xs: '1.1rem', sm: '1.6rem' } }}>
-          {(() => {
-            console.log('School data in ResultCard:', { school, student, examination });
-            return school?.name || student?.school_name || examination?.school_name || 'School Name';
-          })()}
+          {school?.name || ''}
         </Typography>
         {/* Address Removed */}
         <Typography variant="h5" sx={{ mt: 1, fontWeight: 'bold', color: '#424242', fontSize: { xs: '0.95rem', sm: '1.3rem' } }}>
@@ -705,9 +703,10 @@ export default function ResultCard({ studentData, results, overallResult, examin
                 onError={(e) => { e.target.style.display = 'none'; }}
               />
               <img
-                src="/images/signatures/signature.png"
+                src={(school?.id && String(school.id) === '19') ? resolveMediaUrl('BHS/signature.png') : ''}
                 alt="Headmaster's Signature"
                 style={{
+                  display: (school?.id && String(school.id) === '19') ? 'block' : 'none',
                   maxHeight: '100%',
                   maxWidth: '100%',
                   objectFit: 'contain',

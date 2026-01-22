@@ -101,6 +101,7 @@ export default function StudentCard({ student, onUploaded, onEdit, onDelete, onC
               {sectionName && <Typography variant="body2">সেকশন: {sectionName}</Typography>}
               <Typography variant="body2">রক্তের গ্রুপ: {student.blood_group || 'N/A'}</Typography>
               {guardianName && <Typography variant="body2">অভিভাবক: {guardianName}</Typography>}
+              <Typography variant="body2">ফোন: {student.user?.phone_number || student.phone_number || 'N/A'}</Typography>
             </Box>
           </Box>
         </Box>

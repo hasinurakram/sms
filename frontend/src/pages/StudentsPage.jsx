@@ -58,6 +58,7 @@ import EmptyState from '../components/EmptyState';
 import { CardSkeleton } from '../components/LoadingSkeleton';
 import { useToast } from '../components/Toast';
 import PhotoUpload from '../components/PhotoUpload';
+import { scopedGet } from '../utils/schoolApi';
 
 export default function StudentsPage() {
   const { id } = useParams();
@@ -235,6 +236,55 @@ export default function StudentsPage() {
     guardian_name: ''
   });
   const [newStudentErrors, setNewStudentErrors] = useState({});
+  const [addFormSections, setAddFormSections] = useState([]);
+  const [addFormSectionsLoading, setAddFormSectionsLoading] = useState(false);
+
+  // Determine if the selected classroom requires sections (only for class 6–10)
+  const requiresSection = useMemo(() => {
+    try {
+      const clsId = newStudent.classroom_id ? Number(newStudent.classroom_id) : null;
+      if (!clsId) return false;
+      const clsObj = (contextClassrooms || []).find(c => Number(c.id) === clsId);
+      const name = String(clsObj?.name || '').toLowerCase();
+      return /ষষ্ঠ|six|\b6\b|সপ্তম|seven|\b7\b|অষ্টম|eight|\b8\b|নবম|nine|\b9\b|দশম|ten|\b10\b/.test(name);
+    } catch (_) { return false; }
+  }, [newStudent.classroom_id, contextClassrooms]);
+
+  // Determine if the currently selected class (in the main page) requires sections (only for class 6–10)
+  const requiresSectionForSelectedClass = useMemo(() => {
+    try {
+      if (!selectedClass) return false;
+      const clsObj = (contextClassrooms || []).find(c => Number(c.id) === Number(selectedClass));
+      const name = String(clsObj?.name || '').toLowerCase();
+      return /ষষ্ঠ|six|\b6\b|সপ্তম|seven|\b7\b|অষ্টম|eight|\b8\b|নবম|nine|\b9\b|দশম|ten|\b10\b/.test(name);
+    } catch (_) { return false; }
+  }, [selectedClass, contextClassrooms]);
+
+  // Load sections for the selected classroom specifically for the Add Student form
+  useEffect(() => {
+    const cls = newStudent.classroom_id ? Number(newStudent.classroom_id) : null;
+    if (!id || !cls || !requiresSection) {
+      setAddFormSections([]);
+      return;
+    }
+    let cancelled = false;
+    setAddFormSectionsLoading(true);
+    scopedGet('/api/academics/sections/', id, { classroom: cls }, { timeout: 15000 })
+      .then(res => {
+        if (cancelled) return;
+        const data = Array.isArray(res.data) ? res.data : (res.data?.results || []);
+        const onlyBengali = data.filter(s => ['ক','খ','গ'].includes(s.name));
+        setAddFormSections(onlyBengali);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setAddFormSections([]);
+      })
+      .finally(() => {
+        if (!cancelled) setAddFormSectionsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [id, newStudent.classroom_id]);
 
   const loadStudents = async (showToast = true) => {
     if (!id) return;
@@ -339,7 +389,8 @@ export default function StudentsPage() {
         roll_number: selectedStudent.roll_number || '',
         blood_group: selectedStudent.blood_group || '',
         guardian_id: selectedStudent.guardian?.id || '',
-        profile_picture: selectedStudent.user?.photo_url || ''
+        profile_picture: selectedStudent.user?.photo_url || '',
+        guardian_name: ''
       });
       setPhotoFile(null); // Reset photo file when dialog opens
     }
@@ -354,6 +405,36 @@ export default function StudentsPage() {
     
     try {
       setLoading(true);
+      let guardianIdToUse = editFormData.guardian_id || '';
+      const typedGuardianName = String(editFormData.guardian_name || '').trim();
+      if (!guardianIdToUse && typedGuardianName.length > 1) {
+        try {
+          const normalize = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+          const typedNorm = normalize(typedGuardianName);
+          const matched = (parents || []).find(p => {
+            const full = normalize(`${p?.user?.first_name || ''} ${p?.user?.last_name || ''}`.trim() || p?.user?.first_name || '');
+            return full && full === typedNorm;
+          });
+          if (matched?.id) {
+            guardianIdToUse = matched.id;
+          } else {
+            const parentBase = (typedGuardianName || editFormData.phone_number || 'parent').toLowerCase().replace(/[^a-z0-9]/g, '');
+            const parentUsername = await ensureAvailableUsername(parentBase);
+            const parentForm = new FormData();
+            parentForm.append('school_id', id);
+            parentForm.append('username', parentUsername);
+            parentForm.append('password', '123456');
+            parentForm.append('first_name', typedGuardianName);
+            if (editFormData.phone_number) parentForm.append('phone_number', editFormData.phone_number);
+            parentForm.append('role', 'parent');
+            parentForm.append('is_active', 'true');
+            const resp = await api.post('/api/users/parents/', parentForm, {
+              headers: { 'Content-Type': 'multipart/form-data', 'X-Requested-With': 'XMLHttpRequest' }
+            });
+            guardianIdToUse = resp.data?.user?.id || '';
+          }
+        } catch (_) { /* ignore */ }
+      }
       
       // Update student profile information (classroom, section, roll, guardian)
       // Send null for empty values instead of empty strings
@@ -362,7 +443,7 @@ export default function StudentsPage() {
         section_id: editFormData.section_id || null,
         roll_number: editFormData.roll_number || '',
         blood_group: editFormData.blood_group || '',
-        guardian_id: editFormData.guardian_id || null,
+        guardian_id: guardianIdToUse || null,
         first_name: editFormData.first_name || '',
         last_name: editFormData.last_name || '',
         email: editFormData.email || '',
@@ -491,11 +572,17 @@ export default function StudentsPage() {
     if (!addDialogOpen) return;
     const cls = selectedClass || newStudent.classroom_id || '';
     let sec = selectedSection || newStudent.section_id || '';
-    if (cls && !sec) {
+    // Only assign a section automatically for classes that require sections (6–10)
+    const clsObj = (contextClassrooms || []).find(c => Number(c.id) === Number(cls));
+    const name = String(clsObj?.name || '').toLowerCase();
+    const req = /ষষ্ঠ|six|\b6\b|সপ্তম|seven|\b7\b|অষ্টম|eight|\b8\b|নবম|nine|\b9\b|দশম|ten|\b10\b/.test(name);
+    if (req && cls && !sec) {
       const list = (contextSections || []).filter(s => (s.classroom?.id ?? s.classroom) === Number(cls));
       const order = ['ক','খ','গ'];
       const prioritized = order.map(nm => (list.find(s => s.name === nm) || null)?.id).find(Boolean);
       sec = prioritized || (list[0]?.id || '');
+    } else if (!req) {
+      sec = '';
     }
     setNewStudent(ns => ({
       ...ns,
@@ -873,8 +960,13 @@ export default function StudentsPage() {
       return false;
     }
     // Next, filter by selected section if any
-    if (selectedSection && (s.section?.id ?? s.section) !== selectedSection) {
-      return false;
+    if (selectedSection) {
+      if (selectedSection === 'UNASSIGNED') {
+        const sid = s.section?.id ?? s.section;
+        if (sid) return false;
+      } else {
+        if ((s.section?.id ?? s.section) !== selectedSection) return false;
+      }
     }
     // Then filter by search term
     if (!q) return true;
@@ -1076,7 +1168,7 @@ export default function StudentsPage() {
       {selectedClass && (
         <>
           {/* If section not selected yet, show section selection grid */}
-          {!selectedSection && (
+          {requiresSectionForSelectedClass && !selectedSection && (
             <Box sx={{ mb: 2 }}>
               <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 1 }}>
                 সেকশন নির্বাচন করুন
@@ -1137,12 +1229,64 @@ export default function StudentsPage() {
                       </Paper>
                     </Grid>
                   ))}
+                  <Grid size={{ xs: 12, sm: 6, md: 4 }} key="unassigned">
+                    <Paper
+                      elevation={3}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setSelectedSection('UNASSIGNED')}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { setSelectedSection('UNASSIGNED'); } }}
+                      sx={{ 
+                        p: 3, 
+                        textAlign: 'center', 
+                        cursor: 'pointer', 
+                        borderRadius: 3, 
+                        minHeight: 160,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: 'linear-gradient(135deg, #fdfbfb 0%, #ebedee 100%)',
+                        transition: 'all 0.25s ease',
+                        outline: 'none',
+                        '&:hover': { boxShadow: 8, transform: 'translateY(-4px)' },
+                        '&:focus-visible': { boxShadow: 8, border: '2px solid', borderColor: 'primary.main' }
+                      }}
+                    >
+                      <Stack alignItems="center" spacing={1.5}>
+                        <Box sx={{
+                          width: 56,
+                          height: 56,
+                          borderRadius: '50%',
+                          bgcolor: 'warning.light',
+                          color: 'warning.contrastText',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center'
+                        }}>
+                          <SchoolIcon />
+                        </Box>
+                        <Typography variant="h5" sx={{ fontWeight: 'bold', color: 'warning.main' }}>
+                          সেকশন নেই
+                        </Typography>
+                        <Chip 
+                          icon={<PersonIcon />}
+                          label={`মোট ${toBn(getStudentCountForSection('UNASSIGNED'))} জন শিক্ষার্থী`}
+                          color="warning"
+                          variant="outlined"
+                          sx={{ fontWeight: 700 }}
+                        />
+                        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                          দেখতে ট্যাপ করুন
+                        </Typography>
+                      </Stack>
+                    </Paper>
+                  </Grid>
               </Grid>
-          </Box>
-        )}
+            </Box>
+          )}
         
-        {/* Only show search and list once a section is selected */}
-        {selectedSection && (
+          {/* Show search and list: for 6–10 require a section; for 1–5 show directly */}
+          {((requiresSectionForSelectedClass && selectedSection) || (!requiresSectionForSelectedClass)) && (
           <TextField
             placeholder="Search by name or username"
             value={q}
@@ -1158,8 +1302,8 @@ export default function StudentsPage() {
             }}
           />
         )}
-        {selectedSection && loading && <CardSkeleton count={6} />}
-        {selectedSection && !loading && (contextStudents || []).length === 0 && (
+          {((requiresSectionForSelectedClass && selectedSection) || (!requiresSectionForSelectedClass)) && loading && <CardSkeleton count={6} />}
+          {((requiresSectionForSelectedClass && selectedSection) || (!requiresSectionForSelectedClass)) && !loading && (contextStudents || []).length === 0 && (
           <EmptyState
             icon={SchoolIcon}
             title="No students in this class"
@@ -1168,13 +1312,13 @@ export default function StudentsPage() {
             onAction={() => setAddDialogOpen(true)}
           />
         )}
-        {selectedSection && !loading && (contextStudents || []).length > 0 && filtered.length === 0 && (
+          {((requiresSectionForSelectedClass && selectedSection) || (!requiresSectionForSelectedClass)) && !loading && (contextStudents || []).length > 0 && filtered.length === 0 && (
           <EmptyState
             title="No matching students"
             message={`No students found matching "${q}". Try a different search term.`}
           />
         )}
-        {selectedSection && !loading && filtered.length > 0 && (
+          {((requiresSectionForSelectedClass && selectedSection) || (!requiresSectionForSelectedClass)) && !loading && filtered.length > 0 && (
           <Grid container spacing={3}>
             {filtered.map(s => (
               <Grid size={{ xs: 12, sm: 6, md: 6, lg: 4 }} key={s.id}>
@@ -1337,7 +1481,7 @@ export default function StudentsPage() {
                 select
                 label="শ্রেণী (ঐচ্ছিক)"
                 value={newStudent.classroom_id}
-                onChange={(e) => setNewStudent({...newStudent, classroom_id: e.target.value})}
+                onChange={(e) => setNewStudent({...newStudent, classroom_id: e.target.value, section_id: ''})}
                 fullWidth
                 error={!!newStudentErrors.classroom_id}
                 helperText={newStudentErrors.classroom_id || ''}
@@ -1353,24 +1497,41 @@ export default function StudentsPage() {
               <TextField
                 select
                 label="সেকশন"
-                value={newStudent.section_id}
+                value={(() => {
+                  const fallbackOptions = contextSections.filter(s => {
+                    if (!newStudent.classroom_id) return false;
+                    const classIdNum = Number(newStudent.classroom_id);
+                    const secClassId = s.classroom?.id ?? s.classroom;
+                    return secClassId === classIdNum && ['ক','খ','গ'].includes(s.name);
+                  });
+                  const sectionOptions = (addFormSections.length > 0 ? addFormSections : fallbackOptions);
+                  const hasCurrent = sectionOptions.some(s => String(s.id) === String(newStudent.section_id));
+                  return hasCurrent ? newStudent.section_id : '';
+                })()}
                 onChange={(e) => setNewStudent({...newStudent, section_id: e.target.value})}
                 fullWidth
-                disabled={!newStudent.classroom_id}
+                disabled={!newStudent.classroom_id || !requiresSection}
                 error={!!newStudentErrors.section_id}
-                helperText={newStudentErrors.section_id || (newStudent.classroom_id ? 'ক/খ/গ সেকশন নির্বাচন করুন' : 'আগে শ্রেণী নির্বাচন করুন')}
+                helperText={
+                  newStudentErrors.section_id
+                  || (!newStudent.classroom_id ? 'আগে শ্রেণী নির্বাচন করুন'
+                    : (!requiresSection ? 'এই শ্রেণিতে সেকশন নেই'
+                      : (addFormSectionsLoading ? 'সেকশন লোড হচ্ছে...' : 'ক/খ/গ সেকশন নির্বাচন করুন')))
+                }
               >
-                {contextSections
-                  .filter(s => {
-                    if (!newStudent.classroom_id) return true;
-                    const classIdNum = Number(newStudent.classroom_id);
-                    const secClassId = s.classroom?.id ?? s.classroom; // support object or id
-                    return secClassId === classIdNum && ['ক','খ','গ'].includes(s.name);
-                  })
+                {(requiresSection
+                  ? (addFormSections.length > 0 ? addFormSections : contextSections
+                    .filter(s => {
+                      if (!newStudent.classroom_id) return false;
+                      const classIdNum = Number(newStudent.classroom_id);
+                      const secClassId = s.classroom?.id ?? s.classroom; // support object or id
+                      return secClassId === classIdNum && ['ক','খ','গ'].includes(s.name);
+                    }))
+                  : [])
                   .map(s => (
                     <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>
                   ))}
-             </TextField>
+              </TextField>
             </Grid>
             
             <Grid size={{ xs: 12, sm: 4 }}>
@@ -1639,11 +1800,13 @@ export default function StudentsPage() {
                     getOptionLabel={(p) => `${p?.user?.first_name || ''} ${p?.user?.last_name || ''} (${p?.user?.username || ''})`.trim()}
                     value={(parents || []).find(p => String(p.id) === String(editFormData.guardian_id)) || null}
                     onChange={(e, val) => setEditFormData({ ...editFormData, guardian_id: val ? val.id : '' })}
+                    inputValue={editFormData.guardian_name || ''}
+                    onInputChange={(e, input) => setEditFormData({ ...editFormData, guardian_name: input || '', guardian_id: '' })}
                     renderInput={(params) => (
                       <TextField
                         {...params}
-                        label="Select Parent/Guardian"
-                        helperText="Link to existing parent account"
+                        label="Parent/Guardian (টাইপ করলে নতুন তৈরি হবে)"
+                        helperText="টাইপ করলে নতুন তৈরি হবে, সিলেক্ট করলে লিংক হবে"
                         fullWidth
                       />
                     )}

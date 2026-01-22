@@ -170,6 +170,12 @@ export default function ResultCardGenerator() {
       });
   };
 
+  useEffect(() => {
+    if (id) {
+      loadSchool();
+    }
+  }, [id]);
+
 
 
   const handleClassChange = (classIdRaw) => {
@@ -1073,7 +1079,7 @@ export default function ResultCardGenerator() {
             results={results}
             overallResult={overallResult}
             examination={examination}
-            school={school || { name: studentData?.student?.school_name || examination?.school_name || 'ভাটরা উচ্চ বিদ্যালয়' }}
+            school={school || {}}
           />
         </>
       ) : (

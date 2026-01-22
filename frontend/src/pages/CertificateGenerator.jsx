@@ -486,13 +486,16 @@ const Certificate = ({ data, school, session }) => {
             src={processPhotoUrl(school.logo)} 
             alt={school.name}
             style={{ 
-              width: '120vw',
-              height: '120vh',
-              objectFit: 'scale-down',
+              width: '95%',
+              height: '95%',
+              maxWidth: '100%',
+              maxHeight: '100%',
+              objectFit: 'contain',
               position: 'absolute',
               top: '50%',
               left: '50%',
-              transform: 'translate(-50%, -50%)'
+              transform: 'translate(-50%, -50%) rotate(90deg)',
+              transformOrigin: 'center center'
             }}
           />
         </Box>
@@ -644,7 +647,7 @@ const Certificate = ({ data, school, session }) => {
           <Box sx={{ mb: 1 }}>
             <img 
               className="signature-img"
-              src="/images/signatures/signature.png" 
+              src={(school?.id && String(school.id) === '19') ? `${(api?.defaults?.baseURL || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/+$/,'')}/media/BHS/signature.png` : '/images/signatures/signature.png'} 
               alt="Head Master's Signature"
               style={{ 
                 width: '150px',
@@ -727,12 +730,6 @@ export default function CertificateGenerator() {
     (async () => {
       try {
         const rect = certificateElement.getBoundingClientRect();
-        const wm = certificateElement.querySelector('.watermark');
-        const container = certificateElement.querySelector('.certificate-container');
-        const prevWMOpacity = wm ? wm.style.opacity : null;
-        const prevShadow = container ? container.style.boxShadow : null;
-        if (wm) wm.style.opacity = '0';
-        if (container) container.style.boxShadow = 'none';
         const canvas = await html2canvas(certificateElement, {
           scale: Math.min(3, window.devicePixelRatio || 2),
           useCORS: true,
@@ -744,8 +741,6 @@ export default function CertificateGenerator() {
           windowWidth: Math.ceil(rect.width),
           windowHeight: Math.ceil(rect.height)
         });
-        if (wm && prevWMOpacity !== null) wm.style.opacity = prevWMOpacity;
-        if (container && prevShadow !== null) container.style.boxShadow = prevShadow;
         const imgData = canvas.toDataURL('image/jpeg', 0.95);
         const printWindow = window.open('', '_blank');
         if (!printWindow) return;
@@ -757,9 +752,9 @@ export default function CertificateGenerator() {
               <style>
                 @page { size: A4; margin: 0; }
                 html, body { height: 100%; }
-                body { margin: 0; background: #fff8dc; }
-                .sheet { width: 210mm; height: 297mm; display: flex; align-items: center; justify-content: center; }
-                img { max-height: 285mm; max-width: 200mm; width: auto; height: auto; display: block; }
+                body { margin: 0; background: #ffffff; }
+                .sheet { width: 210mm; height: 297mm; display: flex; align-items: center; justify-content: center; background: #ffffff; overflow: hidden; }
+                img { width: 200mm; height: auto; max-height: 277mm; display: block; margin: 0 auto; }
               </style>
             </head>
             <body>
@@ -1018,7 +1013,7 @@ export default function CertificateGenerator() {
             <Button
               variant="contained"
               startIcon={<PrintIcon />}
-              onClick={handlePrint}
+              onClick={handlePrintCertificate}
               sx={{ 
                 bgcolor: 'rgba(255,255,255,0.2)', 
                 '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' },

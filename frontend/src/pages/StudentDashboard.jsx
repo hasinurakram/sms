@@ -764,6 +764,79 @@ class StudentDashboard extends React.Component {
             due: acc.due + r.due
           }), { amount: 0, paid: 0, due: 0 });
 
+          try {
+            const schoolIdNum = Number(this.state.schoolInfo?.id || this.props.params.id || 0);
+            if (schoolIdNum === 19) {
+              const currentMonthNo = Number(dayjs().format('M'));
+              const monthsBn = ['জানুয়ারী','ফেব্রুয়ারী','মার্চ','এপ্রিল','মে','জুন','জুলাই','আগষ্ট','সেপ্টেম্বর','অক্টোবর','নভেম্বর','ডিসেম্বর'];
+              const className = this.state.student?.classroom?.name || '';
+              const bnMap = { 'প্রথম': 1, 'দ্বিতীয়': 2, 'দ্বিতীয়': 2, 'তৃতীয়': 3, 'তৃতীয়': 3, 'চতুর্থ': 4, 'পঞ্চম': 5, 'ষষ্ঠ': 6, 'সপ্তম': 7, 'অষ্টম': 8, 'নবম': 9, 'দশম': 10 };
+              let classOrder = 0;
+              for (const k in bnMap) { if (className.includes(k)) { classOrder = bnMap[k]; break; } }
+              if (!classOrder) {
+                const m = className.match(/\d+/); if (m) classOrder = parseInt(m[0], 10);
+              }
+              const monthlyFixed = classOrder >= 1 && classOrder <= 5 ? 250 : (classOrder >= 6 && classOrder <= 10 ? 150 : 0);
+              const isMonthlyRow = (nm) => typeof nm === 'string' && nm.startsWith('মাসিক বেতন');
+              const monthFromLabel = (nm) => {
+                const rx = /মাসিক বেতন\((.+)\)/; const mm = nm.match(rx); if (!mm) return null;
+                const idx = monthsBn.indexOf(mm[1]); return idx >= 0 ? (idx + 1) : null;
+              };
+              const isExamHalf = (nm) => typeof nm === 'string' && nm.includes('পরীক্ষার ফি(অর্ধ-বার্ষিকী)');
+              const isExamAnnual = (nm) => typeof nm === 'string' && nm.includes('পরীক্ষার ফি(বার্ষিক)');
+              rows = rows.filter(r => {
+                if (isMonthlyRow(r.name)) {
+                  const mno = monthFromLabel(r.name);
+                  return mno == null ? true : (mno <= currentMonthNo);
+                }
+                if (typeof r.name === 'string' && r.name.startsWith('পরীক্ষার ফি')) {
+                  if (currentMonthNo <= 6) return isExamHalf(r.name);
+                  return isExamAnnual(r.name);
+                }
+                return true;
+              }).map(r => {
+                if (isMonthlyRow(r.name)) {
+                  const paid = Number(r.paid || 0);
+                  const amount = Number(monthlyFixed || 0);
+                  const due = Math.max(0, amount - paid);
+                  return { ...r, amount, due };
+                }
+                if (typeof r.name === 'string' && r.name.startsWith('পরীক্ষার ফি')) {
+                  const paid = Number(r.paid || 0);
+                  const amount = 500;
+                  const due = Math.max(0, amount - paid);
+                  return { ...r, amount, due };
+                }
+                return r;
+              });
+              try {
+                const isMonthlyName = (nm) => typeof nm === 'string' && nm.startsWith('মাসিক বেতন');
+                const isExamName = (nm) => typeof nm === 'string' && nm.startsWith('পরীক্ষার ফি');
+                const groupedPaid = new Map(); // name -> sum of paid
+                const groupedRows = new Map();  // name -> representative row (amount will be set below)
+                for (const r of rows) {
+                  const key = String(r.name || r.fee_type || 'ফি');
+                  groupedPaid.set(key, (groupedPaid.get(key) || 0) + Number(r.paid || 0));
+                  if (!groupedRows.has(key)) groupedRows.set(key, { ...r });
+                }
+                rows = Array.from(groupedRows.entries()).map(([key, baseRow]) => {
+                  const totalPaid = Number(groupedPaid.get(key) || 0);
+                  let amount = Number(baseRow.amount || 0);
+                  if (isMonthlyName(key)) amount = Number(monthlyFixed || 0);
+                  else if (isExamName(key)) amount = 500;
+                  const paid = Math.min(totalPaid, amount);
+                  const due = Math.max(0, amount - paid);
+                  return { ...baseRow, amount, paid, due };
+                });
+              } catch (_) {}
+              totals = rows.reduce((acc, r) => ({
+                amount: acc.amount + Number(r.amount || 0),
+                paid: acc.paid + Number(r.paid || 0),
+                due: acc.due + Number(r.due || 0)
+              }), { amount: 0, paid: 0, due: 0 });
+            }
+          } catch (_) {}
+
           // Totals-only payment fallback: if using structure-derived rows (no real assignments),
           // reflect total student payments even if not linked to assignments.
           if (usedFallbackAssignments) {

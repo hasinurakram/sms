@@ -42,10 +42,28 @@ const StatCard = ({ title, value, icon, color = '#1976d2', onClick }) => {
       <CardContent>
         <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={2}>
           <Box>
-            <Typography variant="overline" sx={{ opacity: 0.9 }}>
+            <Typography 
+              variant="subtitle2" 
+              sx={{ 
+                color: 'rgba(255,255,255,0.95)',
+                fontWeight: 700,
+                letterSpacing: 0.3,
+                textTransform: 'none',
+                mb: 0.5,
+                textShadow: '0 1px 2px rgba(0,0,0,0.3)'
+              }}
+            >
               {title}
             </Typography>
-            <Typography variant="h4" sx={{ fontWeight: 'bold', lineHeight: 1.2 }}>
+            <Typography 
+              variant="h4" 
+              sx={{ 
+                fontWeight: 'bold', 
+                lineHeight: 1.2,
+                color: 'white',
+                textShadow: '0 1px 2px rgba(0,0,0,0.25)'
+              }}
+            >
               {value}
             </Typography>
           </Box>

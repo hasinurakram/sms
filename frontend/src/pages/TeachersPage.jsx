@@ -88,7 +88,8 @@ export default function TeachersPage() {
     phone_number: '',
     subject_id: '',
     classroom_id: '',
-    section_id: ''
+    section_id: '',
+    _photoFile: null
   });
   const [newTeacherErrors, setNewTeacherErrors] = useState({});
 
@@ -208,7 +209,7 @@ export default function TeachersPage() {
         section: null
       }));
 
-    const validAssignments = enrichedAssignments.filter(a => !!a.teacher);
+    const validAssignments = enrichedAssignments.filter(a => !!a.teacher && !!a.teacherProfile);
 
     return [...validAssignments, ...placeholders];
   };
@@ -388,6 +389,31 @@ export default function TeachersPage() {
         teacherProfile = teachers.find(tp => tp.user?.id === userId) || null;
       }
       
+      try {
+        const resp = await api.get(`/api/academics/assignments/?classroom__school=${id}`);
+        const raw = Array.isArray(resp.data) ? resp.data : (resp.data?.results || []);
+        const tpid = teacherProfile?.id;
+        const target = raw.filter(a => {
+          const tid = a?.teacher?.id;
+          const tuid = a?.teacher?.user?.id;
+          if (tpid && String(tid) === String(tpid)) return true;
+          if (userId && String(tuid) === String(userId)) return true;
+          return false;
+        });
+        for (const a of target) {
+          if (a?.id) {
+            try {
+              await api.delete(`/api/academics/assignments/${a.id}/`);
+            } catch (e) {
+              const st = e?.response?.status;
+              if (st && st !== 404) {
+                console.error('Assignment delete error', e);
+              }
+            }
+          }
+        }
+      } catch (_) {}
+      
       let primaryEndpoint = null;
       if (teacherProfile?.id) {
         primaryEndpoint = `/api/users/teachers/${teacherProfile.id}/`;
@@ -399,6 +425,12 @@ export default function TeachersPage() {
         setSaving(false);
         toast.error('Unable to delete: teacher identifiers not found');
         return;
+      }
+      
+      if (primaryEndpoint.startsWith('/api/users/teachers/') && id) {
+        primaryEndpoint = primaryEndpoint.includes('?')
+          ? `${primaryEndpoint}&school=${id}`
+          : `${primaryEndpoint}?school=${id}`;
       }
       
       let primaryFailed = false;
@@ -542,6 +574,9 @@ export default function TeachersPage() {
         fd.append('last_name', newTeacher.last_name || '');
         fd.append('email', newTeacher.email || '');
         fd.append('phone_number', newTeacher.phone_number || '');
+        if (newTeacher._photoFile) {
+          fd.append('photo', newTeacher._photoFile);
+        }
         const teacherRes = await api.post('/api/users/teachers/', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
         teacherId = teacherRes.data?.id || teacherRes.data?.teacher?.id || teacherRes.data?.user?.id || null;
       } catch (e) {
@@ -593,7 +628,8 @@ export default function TeachersPage() {
       phone_number: '',
       subject_id: '',
       classroom_id: '',
-      section_id: ''
+      section_id: '',
+      _photoFile: null
     });
   };
 
@@ -1190,6 +1226,16 @@ export default function TeachersPage() {
         
         <DialogContent dividers>
           <Grid container spacing={2}>
+            <Grid size={{ xs: 12 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>
+                🖼️ Profile Photo
+              </Typography>
+              <PhotoUpload
+                currentPhoto={null}
+                onPhotoChange={(file) => setNewTeacher(nt => ({ ...nt, _photoFile: file }))}
+                userName={`${newTeacher.first_name || ''} ${newTeacher.last_name || ''}`.trim() || newTeacher.username || 'Teacher'}
+              />
+            </Grid>
             {/* Account Information */}
             <Grid size={{ xs: 12 }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 1 }}>
