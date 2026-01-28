@@ -36,6 +36,7 @@ import {
   Person as PersonIcon,
   Close as CloseIcon
 } from '@mui/icons-material';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
@@ -209,48 +210,40 @@ const FeesPage = () => {
   
   // Function to set class-wise fees as per user requirements
   const setupClassWiseFees = async () => {
-    if (!isAuthenticated()) {
-      navigate('/login');
-      return;
-    }
-    // Log available classrooms to see actual IDs
-    console.log('Available classrooms:');
-    classes.forEach(c => console.log(`ID: ${c.id}, Name: ${c.name}`));
-    
-    const classFees = {
-      106: { monthly: 150, session: 1200, assessment: 360 },    // ষষ্ঠ শ্রেণি (ID: 106)
-      107: { monthly: 180, session: 1200, assessment: 380 },    // সপ্তম শ্রেণি (ID: 107)
-      108: { monthly: 200, session: 1200, assessment: 400 },    // অষ্টম শ্রেণি (ID: 108)
-      110: { monthly: 250, session: 1300, assessment: 500 },    // নবম শ্রেণি (ID: 110)
-      111: { monthly: 0, session: 250, assessment: 500 }         // দশম শ্রেণি (ID: 111)
-    };
-    
-    console.log('Setting up class-wise fees...');
-    console.log('Class-wise fee structure:');
-    console.log('ষষ্ঠ শ্রেণী: মাসিক বেতন ৳150, সেশন ফি ৳1200, মূল্যায়ন ফি ৳360');
-    console.log('সপ্তম শ্রেণী: মাসিক বেতন ৳180, সেশন ফি ৳1200, মূল্যায়ন ফি ৳380');
-    console.log('অষ্টম শ্রেণী: মাসিক বেতন ৳200, সেশন ফি ৳1200, মূল্যায়ন ফি ৳400');
-    console.log('নবম শ্রেণী: মাসিক বেতন ৳250, সেশন ফি ৳1300, মূল্যায়ন ফি ৳500');
-    console.log('দশম শ্রেণী: মাসিক বেতন নেই, সেশন ফি ৳250, মূল্যায়ন ফি ৳500');
-    
-    for (const [classId, fees] of Object.entries(classFees)) {
-      console.log(`Setting fees for class ${classId}:`, fees);
-      
-      // Call the helper function for each class
-      const result = await setClassWiseFees(classId, fees.monthly, fees.session, fees.assessment);
-      
-      if (result.success) {
-        console.log(`✅ Class ${classId} fees set successfully`);
-      } else {
-        console.error(`❌ Error setting fees for class ${classId}:`, result.message);
+    try {
+      if (!isAuthenticated()) {
+        navigate('/login');
+        return;
       }
-      
-      // Small delay to avoid overwhelming the API
-      await new Promise(resolve => setTimeout(resolve, 500));
+      if (!selectedClass) {
+        setSnackbar({ open: true, message: 'শ্রেণী নির্বাচন করুন', severity: 'error' });
+        return;
+      }
+      const cid = String(selectedClass);
+      const derived = deriveClassPlan(cid) || {};
+      const monthly = Number(derived.monthlyAmount ?? planForm.monthlyAmount ?? 0) || 0;
+      const session = Number(derived.sessionAmount ?? planForm.sessionAmount ?? 0) || 0;
+      const assessment = Number(derived.assessmentAmount ?? planForm.assessmentAmount ?? 0) || 0;
+      if (monthly <= 0 && session <= 0 && assessment <= 0) {
+        setSnackbar({ open: true, message: 'কমপক্ষে মাসিক/সেশন/মূল্যায়নের একটির পরিমাণ দিন', severity: 'warning' });
+        return;
+      }
+      const result = await setClassWiseFees(selectedClass, monthly, session, assessment);
+      if (!result.success) {
+        setSnackbar({ open: true, message: 'ক্লাসের ফি সেট করতে সমস্যা হয়েছে', severity: 'error' });
+        return;
+      }
+      await fetchFeeStructures(String(selectedClass));
+      try { await generateClassSlips(); } catch (_) {}
+      if (selectedLedgerStudentId) {
+        await ensureStudentAssignments(String(selectedLedgerStudentId));
+        await fetchStudentLedger(String(selectedLedgerStudentId));
+      }
+      setSnackbar({ open: true, message: 'নির্বাচিত ক্লাসের ফি সফলভাবে সেট হয়েছে!', severity: 'success' });
+    } catch (e) {
+      console.error('setupClassWiseFees error:', e.response?.data || e.message);
+      setSnackbar({ open: true, message: 'ক্লাস ভিত্তিক ফি সেট করতে সমস্যা হয়েছে', severity: 'error' });
     }
-    
-    console.log('🎉 Class-wise fees setup completed!');
-    setSnackbar({ open: true, message: 'সকল ক্লাসের ফি সফলভাবে সেট হয়েছে!', severity: 'success' });
   };
   
   // Class Fee Plan dialog state
@@ -728,46 +721,36 @@ const FeesPage = () => {
       });
       if (monthVals.some(v => v > 0)) {
         const monthlyExisting = existingList.filter(x => String(x.frequency || '').toLowerCase() === 'monthly');
-        const toUpdateMonthly = monthlyExisting.slice(0, 12);
-        const toDeleteMonthly = monthlyExisting.slice(12);
-        const updResults = await runThrottled(toUpdateMonthly, 4, (it, idx) => {
-          const i = toUpdateMonthly.indexOf(it);
-          const amt = monthVals[i] || 0;
-          const name = ['জানুয়ারী','ফেব্রুয়ারী','মার্চ','এপ্রিল','মে','জুন','জুলাই','আগষ্ট','সেপ্টেম্বর','অক্টোবর','নভেম্বর','ডিসেম্বর'][i] + ' মাসের বেতন';
-          return api.patch(`/api/fees/fees/${it.id}/`, { amount: amt, name, title: name });
+        if (monthlyExisting.length > 0) {
+          const delAll = await runThrottled(monthlyExisting, 4, (it) => api.delete(`/api/fees/fees/${it.id}/`));
+          for (const r of delAll) { if (r.status === 'fulfilled') createdCount += 1; else failedCount += 1; }
+        }
+        const createItems = Array.from({ length: 12 }).map((_, idx) => idx);
+        const tuitionResults = await runThrottled(createItems, 4, (mi) => {
+          const amt = monthVals[mi] || 0;
+          const name = ['জানুয়ারী','ফেব্রুয়ারী','মার্চ','এপ্রিল','মে','জুন','জুলাই','আগষ্ট','সেপ্টেম্বর','অক্টোবর','নভেম্বর','ডিসেম্বর'][mi] + ' মাসের বেতন';
+          const payload = {
+            school_id: schoolIdNum,
+            school: schoolIdNum,
+            classroom: classIdNum,
+            classroom_id: classIdNum,
+            class_id: classIdNum,
+            class: classIdNum,
+            amount: Number(amt),
+            frequency: 'monthly',
+            month: mi + 1,
+            due_day: 10,
+            late_fee_amount: 0,
+            late_fee_after_days: 7,
+            is_active: true,
+            academic_year: academicYear,
+            name,
+            title: name,
+          };
+          return postWithTimeout('/api/fees/fees/', payload, 30000);
         });
-        for (const r of updResults) { if (r.status === 'fulfilled') createdCount += 1; else failedCount += 1; }
-        const delResults = await runThrottled(toDeleteMonthly, 3, (it) => api.delete(`/api/fees/fees/${it.id}/`));
-        for (const r of delResults) { if (r.status === 'fulfilled') createdCount += 1; else failedCount += 1; }
-        const needCreate = Math.max(0, 12 - toUpdateMonthly.length);
-        if (needCreate > 0) {
-          const startIdx = toUpdateMonthly.length;
-          const createItems = Array.from({ length: needCreate }).map((_, idx) => startIdx + idx);
-          const tuitionResults = await runThrottled(createItems, 4, (mi) => {
-            const amt = monthVals[mi] || 0;
-            const name = ['জানুয়ারী','ফেব্রুয়ারী','মার্চ','এপ্রিল','মে','জুন','জুলাই','আগষ্ট','সেপ্টেম্বর','অক্টোবর','নভেম্বর','ডিসেম্বর'][mi] + ' মাসের বেতন';
-            const payload = {
-              school_id: schoolIdNum,
-              school: schoolIdNum,
-              classroom: classIdNum,
-              classroom_id: classIdNum,
-              class_id: classIdNum,
-              class: classIdNum,
-              amount: Number(amt),
-              frequency: 'monthly',
-              due_day: 10,
-              late_fee_amount: 0,
-              late_fee_after_days: 7,
-              is_active: true,
-              academic_year: academicYear,
-              name,
-              title: name,
-            };
-            return postWithTimeout('/api/fees/fees/', payload, 30000);
-          });
-          for (const r of tuitionResults) {
-            if (r.status === 'fulfilled' && (r.value?.status === 201 || r.value?.status === 200)) createdCount += 1; else failedCount += 1;
-          }
+        for (const r of tuitionResults) {
+          if (r.status === 'fulfilled' && (r.value?.status === 201 || r.value?.status === 200)) createdCount += 1; else failedCount += 1;
         }
       }
 
@@ -1095,14 +1078,26 @@ const FeesPage = () => {
       // 3) Create missing assignments for remaining structures
       const missing = classStructures.filter(s => !assignedIds.has(String(s.id)));
       if (missing.length > 0) {
-        const today = new Date().toISOString().split('T')[0];
+        const now = new Date();
+        const year = now.getFullYear();
+        const today = now.toISOString().split('T')[0];
         for (const s of missing) {
+          const freq = String(s.frequency || '').toLowerCase();
+          const sName = String(s.name || '').toLowerCase();
+          let dueDate = today;
+          if (freq === 'one_time') {
+            if (/(অর্ধ|half|mid)/.test(sName)) {
+              dueDate = `${year}-04-01`;
+            } else if (/(বার্ষিক|annual|final|year)/.test(sName)) {
+              dueDate = `${year}-11-01`;
+            }
+          }
           const base = {
             student_id: studentId,
             student: studentId,
             fee_structure_id: s.id,
             amount: Number(s.amount ?? s.default_amount ?? 0),
-            due_date: today,
+            due_date: dueDate,
             status: 'unpaid',
             school: schoolId,
           };
@@ -1111,6 +1106,51 @@ const FeesPage = () => {
           }
         }
       }
+      // 4) Align existing assignments' amounts with latest structure (remove custom_amount overrides)
+      try {
+        const structMap2 = new Map(classStructures.map(s => [String(s.id), s]));
+        const toAlign = (assignments || []).filter(a => {
+          const sid = String(a.fee_structure_id || a.fee_structure?.id || a.fee_structure || '');
+          return structMap2.has(sid);
+        });
+        for (const a of toAlign) {
+          const sid = String(a.fee_structure_id || a.fee_structure?.id || a.fee_structure || '');
+          const s = structMap2.get(sid);
+          const desired = Number(s?.amount ?? s?.default_amount ?? 0) || 0;
+          const current = Number(a.custom_amount ?? a.amount ?? 0) || 0;
+          const needPatch = (a.custom_amount != null) || (Math.abs(current - desired) > 0.0001);
+          if (needPatch && (a.id || a._id)) {
+            const id = a.id || a._id;
+            try { await api.patch(`/api/fees/assignments/${id}/`, { amount: desired, custom_amount: null }); } catch (_) {}
+          }
+        }
+      } catch (_) {}
+      
+      try {
+        const now = new Date();
+        const year = now.getFullYear();
+        const structMap2 = new Map(classStructures.map(s => [String(s.id), s]));
+        for (const a of assignments || []) {
+          const sid = String(a.fee_structure_id || a.fee_structure?.id || a.fee_structure || '');
+          const s = structMap2.get(sid);
+          if (!s) continue;
+          const freq = String(s.frequency || '').toLowerCase();
+          if (freq !== 'one_time') continue;
+          const sName = String(s.name || '').toLowerCase();
+          let targetDue = null;
+          if (/(অর্ধ|half|mid)/.test(sName)) {
+            targetDue = `${year}-04-01`;
+          } else if (/(বার্ষিক|annual|final|year)/.test(sName)) {
+            targetDue = `${year}-11-01`;
+          }
+          if (!targetDue) continue;
+          const currentDue = a.due_date || '';
+          if (String(currentDue) !== String(targetDue) && (a.id || a._id)) {
+            const id = a.id || a._id;
+            try { await api.patch(`/api/fees/assignments/${id}/`, { due_date: targetDue }); } catch (_) {}
+          }
+        }
+      } catch (_) {}
       
     } catch (e) {
       console.warn('ensureStudentAssignments failed:', e.response?.data || e.message);
@@ -1178,6 +1218,8 @@ const FeesPage = () => {
         const sid = a.student_id ?? a.studentId ?? a.student?.id ?? a.student;
         return sid ? String(sid) === sidStr : false;
       });
+      const schoolIdNum = Number(schoolId);
+      const studentObj = students.find(s => String(s.id) === sidStr);
 
       // Ensure fee structures are available to enrich assignments (when fee_structure is just an ID)
       let structList = feeStructures;
@@ -1229,6 +1271,11 @@ const FeesPage = () => {
         const rawStruct = a.fee_structure || a.fee || {};
         const sid = String(a.fee_structure_id || a.fee_id || rawStruct.id || a.fee_structure || a.fee || '');
         const sObj = (typeof rawStruct === 'object' && rawStruct) ? rawStruct : (structMap[sid] || {});
+        const monthVal = (() => {
+          const mv = a.month ?? a.billing_month ?? sObj.month ?? sObj.billing_month;
+          const n = Number(mv);
+          return Number.isFinite(n) && n > 0 ? n : null;
+        })();
         const baseCandidates = [
           a.custom_amount,
           a.amount, a.total_amount, a.payable_amount, a.payable, a.price, a.base_amount,
@@ -1247,28 +1294,74 @@ const FeesPage = () => {
         const due = Math.max(0, amount - paid);
         const freq = String((sObj && sObj.frequency) || a.frequency || '').toLowerCase();
         const rtype = freq === 'monthly' ? 'tuition' : (freq === 'one_time' ? 'exam' : 'other');
-        return { id: aid, name, amount, paid, due, due_date: a.due_date || null, type: rtype };
+        let rowAmount = amount;
+        let rowDue = due;
+        if (schoolIdNum === 19 && rtype === 'tuition') {
+          try {
+            const clsRaw = studentObj?.classroom?.id ?? studentObj?.classroom ?? studentObj?.class?.id ?? selectedClass;
+            const clsIdStr = clsRaw ? String(clsRaw) : '';
+            if (clsIdStr) {
+              const plan = deriveClassPlan(clsIdStr) || {};
+              const mAmt = Number(plan.monthlyAmount || 0);
+              if (mAmt > 0) {
+                rowAmount = mAmt;
+                rowDue = Math.max(0, rowAmount - paid);
+              }
+            }
+          } catch (_) {}
+        }
+        return { id: aid, name, amount: rowAmount, paid, due: rowDue, due_date: a.due_date || null, type: rtype, month: monthVal };
       });
 
       const rows = rowsRaw.filter(r => !(r.amount === 0 && r.paid === 0 && (/^(Structure|ফি\s?#?)/i).test(r.name)));
+      // Hide exam fees until their due date arrives
+      try {
+        const today = new Date();
+        const toDate = (d) => {
+          try { return d ? new Date(d) : null; } catch (_) { return null; }
+        };
+        const isExamRow = (r) => {
+          const nm = String(r.name || '').toLowerCase();
+          return (r.type === 'exam') || /(পরীক্ষা|exam)/.test(nm);
+        };
+        const filtered = rows.filter(r => {
+          if (isExamRow(r)) {
+            const dd = toDate(r.due_date);
+            return !!dd && dd <= today;
+          }
+          return true;
+        });
+        rows = filtered;
+      } catch (_) {}
       const totals = rows.reduce((acc, r) => ({ amount: acc.amount + r.amount, paid: acc.paid + r.paid, due: acc.due + r.due }), { amount: 0, paid: 0, due: 0 });
 
       // If everything is zero but we have structures, build a preview from structures so UI isn't empty
       if ((rows.length === 0 || (totals.amount === 0 && totals.paid === 0 && totals.due === 0)) && structList && structList.length > 0) {
         // Find the student object to get classroom info
         const student = students.find(s => String(s.id) === String(studentId));
-        const preview = structList
+        const preview = (() => {
+          const monthsBn = ['জানুয়ারী','ফেব্রুয়ারী','মার্চ','এপ্রিল','মে','জুন','জুলাই','আগষ্ট','সেপ্টেম্বর','অক্টোবর','নভেম্বর','ডিসেম্বর'];
+          const currentMonth = new Date().getMonth() + 1;
+          const list = structList
           .filter(s => {
             const sid = s.class_id ?? s.classId ?? s.classroom_id ?? s.classroomId ?? s.classroom?.id;
             return sid && String(sid) === String(student?.classroom?.id);
           })
-          .map(s => {
+          const rows = [];
+          for (const s of list) {
             const amt = Number(s.amount ?? s.default_amount ?? s.fee_amount ?? s.price ?? 0);
             const freq = String(s.frequency || '').toLowerCase();
             const rtype = freq === 'monthly' ? 'tuition' : (freq === 'one_time' ? 'exam' : 'other');
-            console.log(`Fee structure preview: ${s.name} - Amount: ${amt} (raw: ${s.amount}/${s.default_amount}/${s.fee_amount}/${s.price})`);
-            return { id: `struct-${s.id}`, name: s.name || getStructureLabel(s, s.id), amount: amt, paid: 0, due: amt, due_date: null, type: rtype };
-          });
+            if (rtype === 'tuition') {
+              for (let m = 1; m <= currentMonth; m++) {
+                rows.push({ id: `struct-${s.id}-m${m}`, name: `মাসিক বেতন(${monthsBn[m-1]})`, amount: amt, paid: 0, due: amt, due_date: null, type: rtype, month: m });
+              }
+            } else {
+              rows.push({ id: `struct-${s.id}`, name: s.name || getStructureLabel(s, s.id), amount: amt, paid: 0, due: amt, due_date: null, type: rtype, month: null });
+            }
+          }
+          return rows;
+        })();
         const previewTotals = preview.reduce((acc, r) => ({ amount: acc.amount + r.amount, paid: 0, due: acc.due + r.due }), { amount: 0, paid: 0, due: 0 });
         setLedger({ assignments, payments, rows: preview, totals: previewTotals });
         return;
@@ -2061,6 +2154,9 @@ const FeesPage = () => {
         <Box display="flex" alignItems="center" justifyContent="space-between" mb={2} sx={{ flexWrap: { xs: 'wrap', sm: 'nowrap' }, rowGap: 1, columnGap: 1 }}>
           <Typography variant="h5">ফি</Typography>
           <Box display="flex" gap={1} sx={{ flexWrap: 'wrap', justifyContent: { xs: 'flex-start', sm: 'flex-end' } }}>
+            <Button variant="outlined" startIcon={<ArrowBackIcon />} onClick={() => navigate(-1)}>
+              ব্যাক
+            </Button>
             <Button variant="outlined" startIcon={<RefreshIcon />} onClick={fetchFees} disabled={loading}>
               রিফ্রেশ
             </Button>

@@ -670,20 +670,23 @@ export default function StudentsPage() {
     const ensureDefaultSections = async (classId) => {
       if (!classId) return;
       try {
+        // Only create default sections for classes that require sections (6–10)
+        const clsObj = (contextClassrooms || []).find(c => Number(c.id) === Number(classId));
+        const name = String(clsObj?.name || '').toLowerCase();
+        const requires = /ষষ্ঠ|six|\b6\b|সপ্তম|seven|\b7\b|অষ্টম|eight|\b8\b|নবম|nine|\b9\b|দশম|ten|\b10\b/.test(name);
+        if (!requires) return;
         const existing = contextSections.filter(section => (section.classroom?.id ?? section.classroom) === Number(classId));
         const names = ['ক', 'খ', 'গ'];
-        if (existing.length < 3) {
-          const existingNames = new Set(existing.map(s => s.name));
-          for (const nm of names) {
-            if (!existingNames.has(nm)) {
-              try {
-                await api.post('/api/academics/sections/', { classroom_id: classId, name: nm });
-              } catch (_) {
-                // Ignore if already exists or permission issues
-              }
-            }
+        const existingNames = new Set(existing.map(s => s.name));
+        const toCreate = names.filter(nm => !existingNames.has(nm));
+        for (const nm of toCreate) {
+          try {
+            await api.post('/api/academics/sections/', { classroom_id: classId, name: nm });
+          } catch (_) {
+            // Ignore if already exists or permission issues
           }
-          // Refresh sections
+        }
+        if (toCreate.length > 0) {
           refreshSections();
         }
       } catch (_) {}
@@ -700,12 +703,19 @@ export default function StudentsPage() {
       toast.warning('Provide at least a username or a first name');
       return;
     }
-    // If classroom chosen, section must be selected (ক/খ/গ)
-    if (newStudent.classroom_id && !newStudent.section_id) {
-      errors.section_id = 'Section is required';
-      setNewStudentErrors(errors);
-      toast.warning('সেকশন নির্বাচন করুন (ক/খ/গ)');
-      return;
+    // Require section only for classes that have sections (6–10)
+    if (newStudent.classroom_id) {
+      try {
+        const clsObj = (contextClassrooms || []).find(c => Number(c.id) === Number(newStudent.classroom_id));
+        const name = String(clsObj?.name || '').toLowerCase();
+        const requires = /ষষ্ঠ|six|\b6\b|সপ্তম|seven|\b7\b|অষ্টম|eight|\b8\b|নবম|nine|\b9\b|দশম|ten|\b10\b/.test(name);
+        if (requires && !newStudent.section_id) {
+          errors.section_id = 'Section is required';
+          setNewStudentErrors(errors);
+          toast.warning('সেকশন নির্বাচন করুন (ক/খ/গ)');
+          return;
+        }
+      } catch (_) { /* ignore */ }
     }
 
     try {

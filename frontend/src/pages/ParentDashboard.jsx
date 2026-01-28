@@ -894,11 +894,52 @@ const ParentDashboard = () => {
       
       // Group fees by type (monthly vs exam)
       const monthlyFees = feeRows.filter(row => row.name.includes('মাসিক বেতন'));
-      const examFees = feeRows.filter(row => !row.name.includes('মাসিক বেতন'));
+      let examFees = feeRows.filter(row => !row.name.includes('মাসিক বেতন'));
+      try {
+        const today = new Date();
+        examFees = examFees.filter(r => {
+          try {
+            const dd = r.due_date ? new Date(r.due_date) : null;
+            return !!dd && dd <= today;
+          } catch (_) { return true; }
+        });
+      } catch (_) {}
       
-      // Calculate totals
-      const monthlyTotal = monthlyFees.reduce((sum, row) => sum + (row.amount || 0), 0);
-      const monthlyPaid = monthlyFees.reduce((sum, row) => sum + (row.paid || 0), 0);
+      // Calculate totals (limit monthly to running month)
+      const currentMonthNoCalc = Number(dayjs().format('M'));
+      const getMonthIdx = (row) => {
+        const nm = String(row.name || '');
+        const paren = nm.match(/\(([^)]+)\)/);
+        if (paren && paren[1]) {
+          const idx = monthsBn.indexOf(paren[1]);
+          if (idx >= 0) return idx + 1;
+        }
+        for (let i = 0; i < monthsBn.length; i++) {
+          if (nm.includes(monthsBn[i])) return i + 1;
+        }
+        const numMatch = nm.match(/(\d{1,2})/);
+        if (numMatch) {
+          const n = parseInt(numMatch[1], 10);
+          if (n >= 1 && n <= 12) return n;
+        }
+        return null;
+      };
+      const withInfo = monthlyFees.map(r => ({ r, m: getMonthIdx(r) })).filter(x => x.m != null);
+      let monthlyTotal = 0;
+      let monthlyPaid = 0;
+      if (withInfo.length > 0) {
+        const filtered = withInfo.filter(x => Number(x.m) <= currentMonthNoCalc).map(x => x.r);
+        monthlyTotal = filtered.reduce((sum, row) => sum + (row.amount || 0), 0);
+        monthlyPaid = filtered.reduce((sum, row) => sum + (row.paid || 0), 0);
+      } else if (monthlyFees.length === 1) {
+        monthlyTotal = Number(monthlyFees[0].amount || 0) * currentMonthNoCalc;
+        monthlyPaid = Number(monthlyFees[0].paid || 0);
+      } else {
+        const ordered = monthlyFees.slice().sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+        const sliced = ordered.slice(0, currentMonthNoCalc);
+        monthlyTotal = sliced.reduce((sum, row) => sum + (row.amount || 0), 0);
+        monthlyPaid = sliced.reduce((sum, row) => sum + (row.paid || 0), 0);
+      }
       const examTotal = examFees.reduce((sum, row) => sum + (row.amount || 0), 0);
       const examPaid = examFees.reduce((sum, row) => sum + (row.paid || 0), 0);
       
@@ -1813,7 +1854,15 @@ const ParentDashboard = () => {
                               <Grid item xs={6}>
                                 <Typography variant="body2" color="text.secondary">মাসিক গড় ফি:</Typography>
                                 <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                                  ৳{((feesData?.totals?.monthly || 0) / Math.max(1, (feesData?.monthly_fees?.length || 0))).toFixed(2)}
+                                  {(() => {
+                                    const currentMonthNum = parseInt(dayjs().format('M'), 10);
+                                    const currentMonthNameBn = MONTHS_BN[currentMonthNum - 1];
+                                    const monthlyFees = feesData?.monthly_fees || [];
+                                    const currentItem = monthlyFees.find(row => String(row.name || '').includes(currentMonthNameBn));
+                                    const unit = currentItem ? Number(currentItem.amount || 0) :
+                                      (monthlyFees.length > 0 ? Number(monthlyFees[0].amount || 0) : 0);
+                                    return `৳${unit.toFixed(2)}`;
+                                  })()}
                                 </Typography>
                               </Grid>
                             </Grid>

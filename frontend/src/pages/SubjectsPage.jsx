@@ -57,6 +57,8 @@ export default function SubjectsPage() {
   const [selectedClass, setSelectedClass] = useState(null);
   const [teachers, setTeachers] = useState([]);
   const [sections, setSections] = useState([]);
+  const [classSubjects, setClassSubjects] = useState([]);
+  const [classSubjectsLoading, setClassSubjectsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -160,10 +162,9 @@ export default function SubjectsPage() {
 
       const summary = classesData.map(classroom => {
         const classSubjects = subjectsData.filter(s => {
-          if (!s.classrooms || s.classrooms.length === 0) return true;
-          return s.classrooms.includes(classroom.id);
+          const cls = Array.isArray(s.classrooms) ? s.classrooms : [];
+          return cls.includes(classroom.id);
         });
-        
         return {
           id: classroom.id,
           name: classroom.name,
@@ -205,10 +206,30 @@ export default function SubjectsPage() {
   
   const handleClassSelect = (classroom) => {
     setSelectedClass(classroom);
+    try {
+      if (classroom && classroom.id) {
+        loadClassSubjects(classroom.id);
+      }
+    } catch (_) {}
   };
   
   const handleBackToClasses = () => {
     setSelectedClass(null);
+  };
+
+  const loadClassSubjects = async (classroomId) => {
+    if (!classroomId) return;
+    try {
+      setClassSubjectsLoading(true);
+      const res = await api.get(`/api/academics/classrooms/${classroomId}/subjects/`);
+      const data = Array.isArray(res.data) ? res.data : res.data.results || [];
+      setClassSubjects(data || []);
+    } catch (err) {
+      console.error('Failed to load class subjects:', err);
+      setClassSubjects([]);
+    } finally {
+      setClassSubjectsLoading(false);
+    }
   };
 
   const handleAdd = () => {
@@ -289,11 +310,14 @@ export default function SubjectsPage() {
     }
   };
 
-  const filtered = subjects
+  const baseList = (selectedClass && classSubjects.length > 0) ? classSubjects : subjects;
+  const filtered = baseList
     .filter(s => {
       // First filter by selected class if any
       if (selectedClass) {
-        // Fallback: show all subjects for now because assignments are optional
+        // Prefer class-scoped list; when using school-wide list, ensure subject is assigned to the selected class
+        const cls = Array.isArray(s.classrooms) ? s.classrooms : [];
+        if (!cls.includes(selectedClass.id) && !s.teachers) return false;
       }
       
       // Then filter by search query
@@ -303,8 +327,8 @@ export default function SubjectsPage() {
     })
     .filter(s => {
       if (selectedClass) {
-        if (!s.classrooms || s.classrooms.length === 0) return true;
-        return s.classrooms.includes(selectedClass.id);
+        const cls = Array.isArray(s.classrooms) ? s.classrooms : [];
+        return cls.includes(selectedClass.id);
       }
       return true;
     })
@@ -501,6 +525,14 @@ export default function SubjectsPage() {
             </Grid>
           </Fade>
         )
+      ) : classSubjectsLoading ? (
+        <Grid container spacing={2}>
+          {[1, 2, 3, 4].map(i => (
+            <Grid size={{ xs: 12, sm: 6, md: 4, lg: 3 }} key={`cls-skel-${i}`}>
+              <CardSkeleton />
+            </Grid>
+          ))}
+        </Grid>
       ) : filtered.length === 0 ? (
         // Empty state for selected class with no subjects
         <EmptyState
@@ -519,7 +551,10 @@ export default function SubjectsPage() {
                 <SubjectCard
                   subject={subject}
                   teachers={teachers}
-                  onUpdate={loadSubjects}
+                  onUpdate={() => {
+                    loadSubjects();
+                    if (selectedClass?.id) loadClassSubjects(selectedClass.id);
+                  }}
                   onDelete={() => handleDelete(subject)}
                   schoolId={id}
                 />

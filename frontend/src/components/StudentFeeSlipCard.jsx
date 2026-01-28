@@ -5,21 +5,15 @@ import DownloadIcon from '@mui/icons-material/Download';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 
-// Helper: classify fee rows into separate categories by their actual names
+// Helper: classify fee rows into categories
 function classifyRows(rows = []) {
-  // Group rows by their actual names to create separate categories
   const feeCategories = {};
-  
   for (const r of rows) {
-    const categoryName = r.name || 'অজানা ফি';
-    
-    if (!feeCategories[categoryName]) {
-      feeCategories[categoryName] = [];
-    }
+    const isMonthly = String(r.type || '').toLowerCase() === 'tuition';
+    const categoryName = isMonthly ? 'মাসিক বেতন' : (r.name || 'অজানা ফি');
+    if (!feeCategories[categoryName]) feeCategories[categoryName] = [];
     feeCategories[categoryName].push(r);
   }
-  
-  // Return all categories as separate objects
   return feeCategories;
 }
 
@@ -38,14 +32,42 @@ export default function StudentFeeSlipCard({ school, student, rows = [], totals 
   // Summary should reflect original charges by category; outstanding computed at the bottom
   const sumAmount = (arr = []) => arr.reduce((s, r) => s + Number(r.amount ?? 0), 0);
   
-  // Calculate totals for each fee category dynamically
+  // Calculate totals with special handling for monthly tuition (running month)
   const categoryTotals = useMemo(() => {
     const totals = {};
+    const currentMonth = new Date().getMonth() + 1;
+    const monthlyRows = (rows || []).filter(r => String(r.type || '').toLowerCase() === 'tuition');
+    let monthlyTotal = 0;
+    if (monthlyRows.length > 0) {
+      const monthsBn = ['জানুয়ারী','ফেব্রুয়ারী','মার্চ','এপ্রিল','মে','জুন','জুলাই','আগষ্ট','সেপ্টেম্বর','অক্টোবর','নভেম্বর','ডিসেম্বর'];
+      const monthOfRow = (r) => {
+        const mv = Number(r.month || 0);
+        if (mv > 0) return mv;
+        const nm = String(r.name || '');
+        const mMatch = nm.match(/মাসিক বেতন\((.+)\)/);
+        if (mMatch && mMatch[1]) {
+          const idx = monthsBn.indexOf(mMatch[1]);
+          if (idx >= 0) return idx + 1;
+        }
+        return null;
+      };
+      const withMonth = monthlyRows.map(r => ({ r, m: monthOfRow(r) })).filter(x => Number(x.m) > 0);
+      if (withMonth.length > 0) {
+        monthlyTotal = withMonth
+          .filter(x => Number(x.m) <= currentMonth)
+          .reduce((s, x) => s + Number(x.r.amount || 0), 0);
+      } else {
+        monthlyTotal = Number(monthlyRows[0].amount || 0) * currentMonth;
+      }
+    }
+    totals['মাসিক বেতন'] = monthlyTotal;
+    // Add other categories (non-monthly) by name
     Object.keys(grouped).forEach(categoryName => {
+      if (categoryName === 'মাসিক বেতন') return;
       totals[categoryName] = sumAmount(grouped[categoryName]);
     });
     return totals;
-  }, [grouped]);
+  }, [grouped, rows]);
   
   const overallAmount = useMemo(() => {
     return Object.values(categoryTotals).reduce((sum, total) => sum + total, 0);

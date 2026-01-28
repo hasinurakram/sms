@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
-import { useParams, useLocation } from 'react-router-dom';
+import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import api from '../utils/api';
 import { useAcademics } from '../context/AcademicsContext';
 import {
@@ -25,9 +25,11 @@ import EmptyState from '../components/EmptyState';
 import { useToast } from '../components/Toast';
 import AssessmentIcon from '@mui/icons-material/Assessment';
 import { scopedGet } from '../utils/schoolApi';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 
 export default function ResultCardGenerator() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const location = useLocation();
   const toast = useToast();
   const { classrooms, refreshClassrooms } = useAcademics();
@@ -926,6 +928,7 @@ export default function ResultCardGenerator() {
           <AssessmentIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
           রেজাল্ট কার্ড জেনারেটর
         </Typography>
+        <Button variant="outlined" startIcon={<ArrowBackIcon />} onClick={() => navigate(-1)}>ব্যাক</Button>
       </Stack>
 
       {/* Search Form */}

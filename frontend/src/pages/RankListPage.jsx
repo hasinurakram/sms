@@ -21,12 +21,13 @@ import {
   Button,
   Stack
 } from '@mui/material';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import api from '../utils/api';
 import { scopedGet } from '../utils/schoolApi';
 import { useSchool } from '../context/SchoolContext';
 import PrintIcon from '@mui/icons-material/Print';
 import DownloadIcon from '@mui/icons-material/Download';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 
 const EXAM_TYPE_LABELS = {
   'half_yearly': 'অর্ধবার্ষিক',
@@ -39,6 +40,7 @@ const EXAM_TYPE_LABELS = {
 
 const RankListPage = () => {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { schoolId: contextSchoolId } = useSchool();
   const schoolId = contextSchoolId || id;
   const tableRef = useRef(null);
@@ -212,7 +214,10 @@ const RankListPage = () => {
   return (
     <Box sx={{ p: 3 }}>
       <Box sx={{ '@media print': { display: 'none' } }}>
-      <Typography variant="h4" gutterBottom>Student Rankings</Typography>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
+        <Typography variant="h4" gutterBottom>Student Rankings</Typography>
+        <Button variant="outlined" startIcon={<ArrowBackIcon />} onClick={() => navigate(-1)}>ব্যাক</Button>
+      </Stack>
       <Paper sx={{ p: 2, mb: 3 }}>
         <Grid container spacing={2} alignItems="center">
           <Grid item xs={12} md={5}>

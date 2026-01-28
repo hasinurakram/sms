@@ -13,6 +13,103 @@ const SoftwareAssistant = () => {
   const [response, setResponse] = useState(null);
   const [showRaw, setShowRaw] = useState(false);
 
+  const toLowerBn = (s) => String(s || '').toLowerCase();
+  const todayStr = () => {
+    const d = new Date();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${d.getFullYear()}-${m}-${day}`;
+  };
+
+  const parseIntent = (text) => {
+    const t = toLowerBn(text);
+    const isAttendance = /(attendance|উপস্থিতি|অনুপস্থিতি)/.test(t);
+    const isFees = /(fee|fees|ফি|আদায়|collection|বকেয়া)/.test(t);
+    const isResults = /(result|results|ফলাফল)/.test(t);
+    const isBlood = /(blood|রক্ত|গ্রুপ)/.test(t);
+    let type = null;
+    if (isAttendance) type = 'attendance';
+    else if (isFees) type = 'fees';
+    else if (isResults) type = 'results';
+    let bloodGroup = null;
+    if (isBlood) {
+      const m = String(text || '').toUpperCase().match(/\b(AB|A|B|O)\s*([+-])\b/);
+      if (m) bloodGroup = `${m[1]}${m[2]}`;
+      if (bloodGroup) type = 'blood';
+    }
+    return { type, bloodGroup };
+  };
+
+  const fetchAttendanceSummary = async (dt) => {
+    const theDate = dt || todayStr();
+    const params = new URLSearchParams();
+    if (id) params.append('school', id);
+    if (theDate) params.append('date', theDate);
+    const res = await api.get(`/api/attendance/records/?${params.toString()}`);
+    const arr = Array.isArray(res.data) ? res.data : (res.data?.results || []);
+    const present = arr.filter(r => r.present === true).length;
+    const absent = arr.filter(r => r.present === false).length;
+    const total = arr.length;
+    const percentage = total ? Math.round((present / total) * 100) : 0;
+    return {
+      text: 'উপস্থিতির সারাংশ',
+      present,
+      absent,
+      total,
+      percentage
+    };
+  };
+
+  const fetchMonthlyCollection = async (mn) => {
+    const res = await api.get(`/api/fees/payments/?school=${id}`);
+    const arr = Array.isArray(res.data) ? res.data : (res.data?.results || res.data?.data || []);
+    const monthStr = mn || (new Date().toISOString().slice(0, 7));
+    const filtered = arr.filter(p => {
+      const d = p.payment_date || p.date || p.created_at || '';
+      return String(d).startsWith(monthStr);
+    });
+    const total_collected = filtered.reduce((sum, p) => {
+      const amt = parseFloat(p.amount ?? p.paid_amount ?? p.value ?? 0);
+      return sum + (Number.isFinite(amt) ? amt : 0);
+    }, 0);
+    return {
+      text: 'ফি আদায়ের সারাংশ',
+      month: monthStr,
+      total_collected
+    };
+  };
+
+  const fetchBloodGroupCount = async (group) => {
+    const res = await api.get(`/api/academics/students/?school=${id}`);
+    const arr = Array.isArray(res.data) ? res.data : (res.data?.results || res.data?.data || []);
+    const norm = (x) => String(x || '').replace(/\s+/g, '').toUpperCase();
+    const target = norm(group);
+    const count = arr.filter(s => {
+      const bg = s.blood_group ?? s.user?.blood_group ?? '';
+      return norm(bg) === target;
+    }).length;
+    return {
+      text: `${group} রক্তের গ্রুপের শিক্ষার্থী: ${count} জন`,
+      students_count: count,
+      total_students: arr.length
+    };
+  };
+
+  const localHandle = async () => {
+    const { type, bloodGroup } = parseIntent(q);
+    if (!type) return null;
+    if (type === 'attendance') {
+      return await fetchAttendanceSummary(date);
+    }
+    if (type === 'fees') {
+      return await fetchMonthlyCollection(month);
+    }
+    if (type === 'blood' && bloodGroup) {
+      return await fetchBloodGroupCount(bloodGroup);
+    }
+    return null;
+  };
+
   const handleAsk = async () => {
     setLoading(true);
     setError('');
@@ -22,10 +119,30 @@ const SoftwareAssistant = () => {
       if (date) params.date = date;
       if (month) params.month = month;
       const res = await api.get('/api/users/assistant/', { params });
-      setResponse(res.data);
+      const backend = res.data;
+      const intent = parseIntent(q);
+      const notUnderstood =
+        (typeof backend?.text === 'string' && /বুঝতে\s*পারিনি|অনুরোধ/i.test(backend.text)) ||
+        (typeof backend?.error === 'string' && /বুঝতে\s*পারিনি|অনুরোধ/i.test(backend.error));
+      if (notUnderstood && intent.type === 'blood') {
+        const fb = await localHandle();
+        setResponse(fb || backend);
+      } else {
+        setResponse(backend);
+      }
     } catch (e) {
       const msg = e?.response?.data?.error || e?.message || 'অনুরোধ ব্যর্থ হয়েছে';
-      setError(msg);
+      try {
+        const fallback = await localHandle();
+        if (fallback) {
+          setResponse(fallback);
+          setError('');
+        } else {
+          setError(msg);
+        }
+      } catch (_) {
+        setError(msg);
+      }
     } finally {
       setLoading(false);
     }

@@ -40,6 +40,7 @@ import SchoolIcon from '@mui/icons-material/School';
 import ClassIcon from '@mui/icons-material/Class';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import PeopleIcon from '@mui/icons-material/People';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import EmptyState from '../components/EmptyState';
 import { CardSkeleton } from '../components/LoadingSkeleton';
 import { useToast } from '../components/Toast';
@@ -328,6 +329,18 @@ export default function ClassroomsPage() {
               </Typography>
             </Box>
             <Stack direction="row" spacing={1}>
+              <Button 
+                variant="outlined" 
+                startIcon={<ArrowBackIcon />} 
+                onClick={() => navigate(-1)}
+                sx={{ 
+                  borderColor: 'rgba(255,255,255,0.5)', 
+                  color: 'white',
+                  '&:hover': { borderColor: 'white', bgcolor: 'rgba(255,255,255,0.1)' }
+                }}
+              >
+                ব্যাক
+              </Button>
               <Button 
                 variant="contained" 
                 startIcon={<AddIcon />} 

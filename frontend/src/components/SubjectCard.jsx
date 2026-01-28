@@ -64,8 +64,8 @@ export default function SubjectCard({
   const [classrooms, setClassrooms] = useState([]);
   const [sections, setSections] = useState([]);
 
-  // Get assigned teachers for this subject
-  const assignedTeachers = subject.assigned_teachers || [];
+  // Get assigned teachers for this subject (prefer class-scoped list if present)
+  const assignedTeachers = subject.teachers || subject.assigned_teachers || [];
 
   // Load classrooms when dialog opens
   useEffect(() => {

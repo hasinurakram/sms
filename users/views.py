@@ -183,7 +183,9 @@ class SoftwareAssistantView(APIView):
                 words_to_num = {
                     'one': '1','two': '2','three': '3','four': '4','five': '5','six': '6','seven': '7','eight': '8','nine': '9','ten': '10',
                     'সিক্স': '6','সেভেন': '7','এইট': '8','নাইন': '9','টেন': '10',
-                    'ষষ্ঠ': '6','সপ্তম': '7','অষ্টম': '8','নবম': '9','দশম': '10'
+                    'ষষ্ঠ': '6','সপ্তম': '7','অষ্টম': '8','নবম': '9','দশম': '10',
+                    'প্রথম': '1', 'দ্বিতীয়': '2', 'তৃতীয়': '3', 'চতুর্থ': '4', 'পঞ্চম': '5',
+                    'একাদশ': '11', 'দ্বাদশ': '12'
                 }
                 for w, n in words_to_num.items():
                     if w in ql:
@@ -195,7 +197,27 @@ class SoftwareAssistantView(APIView):
             else:
                 qs = ClassRoom.objects.all()
             if num:
-                cls = qs.filter(name__icontains=num).order_by('id').first()
+                from django.db.models import Q
+                digit_to_bn = {
+                    '1': 'প্রথম', '2': 'দ্বিতীয়', '3': 'তৃতীয়', '4': 'চতুর্থ', '5': 'পঞ্চম',
+                    '6': 'ষষ্ঠ', '7': 'সপ্তম', '8': 'অষ্টম', '9': 'নবম', '10': 'দশম',
+                    '11': 'একাদশ', '12': 'দ্বাদশ'
+                }
+                digit_to_roman = {
+                    '1': 'I', '2': 'II', '3': 'III', '4': 'IV', '5': 'V',
+                    '6': 'VI', '7': 'VII', '8': 'VIII', '9': 'IX', '10': 'X'
+                }
+                candidates = [num]
+                if num in digit_to_bn:
+                    candidates.append(digit_to_bn[num])
+                if num in digit_to_roman:
+                    candidates.append(digit_to_roman[num])
+                
+                q_obj = Q()
+                for c in candidates:
+                    q_obj |= Q(name__icontains=c)
+                
+                cls = qs.filter(q_obj).order_by('id').first()
                 if cls:
                     return str(cls.id), cls.name
             cls = qs.order_by('id').first()
@@ -252,6 +274,10 @@ class SoftwareAssistantView(APIView):
             d = {'annual': 'Annual', 'half_yearly': 'Half Yearly', 'test': 'Test', 'terminal': 'Terminal', 'model': 'Model'}
             return d.get(t, t or '')
         def intent():
+            if any(w in ql for w in ['blood', 'রক্ত', 'ব্লাড']) and any(w in ql for w in ['count', 'কতজন', 'সংখ্যা', 'how many', 'total', 'মোট']):
+                return 'blood_group_count'
+            if any(w in ql for w in ['blood', 'রক্ত', 'ব্লাড']) and any(w in ql for w in ['most', 'max', 'highest', 'বেশি', 'সর্বোচ্চ', 'সবচেয়ে বেশি', 'majority']):
+                return 'blood_group_max'
             if any(w in ql for w in ['attendance', 'এটেনড্যান্স', 'উপস্থিতি']):
                 if any(w in ql for w in ['monthly', 'মাসিক', 'month', 'মাস']):
                     return 'attendance_monthly'
@@ -284,6 +310,115 @@ class SoftwareAssistantView(APIView):
                 return ex
             return None
         it = intent()
+        if it == 'blood_group_count':
+            bg_map_items = [
+                ('ab positive', 'AB+'), ('ab negative', 'AB-'),
+                ('a positive', 'A+'), ('a negative', 'A-'),
+                ('b positive', 'B+'), ('b negative', 'B-'),
+                ('o positive', 'O+'), ('o negative', 'O-'),
+                ('এবি পজেটিভ', 'AB+'), ('এবি নেগেটিভ', 'AB-'),
+                ('এ পজেটিভ', 'A+'), ('এ নেগেটিভ', 'A-'),
+                ('বি পজেটিভ', 'B+'), ('বি নেগেটিভ', 'B-'),
+                ('ও পজেটিভ', 'O+'), ('ও নেগেটিভ', 'O-'),
+                ('ab+', 'AB+'), ('ab-', 'AB-'),
+                ('a+', 'A+'), ('a-', 'A-'),
+                ('b+', 'B+'), ('b-', 'B-'),
+                ('o+', 'O+'), ('o-', 'O-')
+            ]
+            bg = None
+            for k, v in bg_map_items:
+                if k in ql:
+                    bg = v
+                    break
+            
+            if not bg:
+                 return Response({"text": "রক্তের গ্রুপ বুঝতে পারিনি।"}, status=status.HTTP_200_OK)
+
+            from academics.models import StudentProfile
+            
+            qs_profile = Profile.objects.filter(blood_group=bg)
+            qs_student = StudentProfile.objects.filter(blood_group=bg)
+            
+            if school_id:
+                qs_profile = qs_profile.filter(school_id=school_id)
+                qs_student = qs_student.filter(school_id=school_id)
+            
+            user_ids = set(qs_profile.values_list('user_id', flat=True))
+            student_user_ids = set(qs_student.values_list('user_id', flat=True))
+            all_user_ids = user_ids.union(student_user_ids)
+            
+            count = len(all_user_ids)
+            
+            profiles = Profile.objects.filter(user_id__in=all_user_ids)
+            role_counts = {}
+            for p in profiles:
+                r = p.role
+                role_counts[r] = role_counts.get(r, 0) + 1
+            
+            text = f"{bg} রক্তের গ্রুপের মোট {count} জন পাওয়া গেছে।"
+            details = []
+            role_map = {'student': 'শিক্ষার্থী', 'teacher': 'শিক্ষক', 'admin': 'অ্যাডমিন', 'parent': 'অভিভাবক', 'committee': 'কমিটি'}
+            
+            for role, cnt in role_counts.items():
+                if cnt > 0:
+                    details.append(f"{role_map.get(role, role)}: {cnt}")
+            
+            if details:
+                text += " (" + ", ".join(details) + ")"
+            
+            try:
+                AssistantLog.objects.create(
+                    user=getattr(request, 'user', None),
+                    school_id=school_id if school_id else None,
+                    query_text=q,
+                    intent=it,
+                    params={'blood_group': bg},
+                    result_summary=text
+                )
+            except Exception:
+                pass
+            return Response({"text": text})
+
+        if it == 'blood_group_max':
+            from academics.models import StudentProfile
+            
+            bgs = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']
+            counts = {}
+            
+            for bg in bgs:
+                qs_profile = Profile.objects.filter(blood_group=bg)
+                qs_student = StudentProfile.objects.filter(blood_group=bg)
+                
+                if school_id:
+                    qs_profile = qs_profile.filter(school_id=school_id)
+                    qs_student = qs_student.filter(school_id=school_id)
+                
+                user_ids = set(qs_profile.values_list('user_id', flat=True))
+                student_user_ids = set(qs_student.values_list('user_id', flat=True))
+                all_user_ids = user_ids.union(student_user_ids)
+                
+                counts[bg] = len(all_user_ids)
+            
+            if not counts or all(c == 0 for c in counts.values()):
+                 return Response({"text": "কোনো রক্তের গ্রুপের তথ্য পাওয়া যায়নি।"}, status=status.HTTP_200_OK)
+
+            max_bg = max(counts, key=counts.get)
+            max_count = counts[max_bg]
+            
+            text = f"সবচেয়ে বেশি ব্যবহারকারী আছেন {max_bg} রক্ত গ্রুপের ({max_count} জন)।"
+            
+            try:
+                AssistantLog.objects.create(
+                    user=getattr(request, 'user', None),
+                    school_id=school_id if school_id else None,
+                    query_text=q,
+                    intent=it,
+                    result_summary=text
+                )
+            except Exception:
+                pass
+            return Response({"text": text})
+
         if it == 'student_result':
             import re
             def normalize_digits(s):
@@ -795,17 +930,43 @@ class SoftwareAssistantView(APIView):
             if not school_id:
                 return Response({"error": "school প্রয়োজন"}, status=status.HTTP_400_BAD_REQUEST)
             from academics.models import StudentProfile
-            students_count = StudentProfile.objects.filter(school_id=school_id).count()
-            teachers_count = Profile.objects.filter(school_id=school_id, role='teacher').count()
-            text = f"এই স্কুলে মোট {students_count} জন শিক্ষার্থী ও {teachers_count} জন শিক্ষক রয়েছে।"
-            resp = {"text": text, "students_count": students_count, "teachers_count": teachers_count}
+            
+            cls_id, cls_name = resolve_classroom()
+            sec_id, sec_name = resolve_section()
+            
+            qs_students = StudentProfile.objects.filter(school_id=school_id)
+            if cls_id:
+                qs_students = qs_students.filter(classroom_id=cls_id)
+            if sec_id:
+                qs_students = qs_students.filter(section_id=sec_id)
+                
+            students_count = qs_students.count()
+            
+            # Teachers are usually not assigned to a single class in Profile model directly in a simple way 
+            # (unless we check assignments, but let's keep it simple for now or just return total teachers if no class specified)
+            
+            if cls_id:
+                # If specific class requested, we focus on students
+                cls_disp = cls_name or cls_id
+                if sec_name:
+                    text = f"{cls_disp} ({sec_name})-এ মোট {students_count} জন শিক্ষার্থী রয়েছে।"
+                else:
+                    text = f"{cls_disp}-এ মোট {students_count} জন শিক্ষার্থী রয়েছে।"
+            else:
+                teachers_count = Profile.objects.filter(school_id=school_id, role='teacher').count()
+                text = f"এই স্কুলে মোট {students_count} জন শিক্ষার্থী ও {teachers_count} জন শিক্ষক রয়েছে।"
+            
+            resp = {"text": text, "students_count": students_count}
+            if not cls_id:
+                resp["teachers_count"] = teachers_count
+                
             try:
                 AssistantLog.objects.create(
                     user=getattr(request, 'user', None),
                     school_id=school_id if school_id else None,
                     query_text=q,
                     intent=it,
-                    params={},
+                    params={'classroom': cls_id, 'section': sec_id},
                     result_summary=text
                 )
                 mem, _ = AssistantMemory.objects.get_or_create(school_id=school_id or 0, key='intent_counts')

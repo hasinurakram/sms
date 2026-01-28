@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import api from '../utils/api';
 import {
   Box,
@@ -34,6 +34,7 @@ import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import AddIcon from '@mui/icons-material/Add';
 import CloseIcon from '@mui/icons-material/Close';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EmptyState from '../components/EmptyState';
@@ -43,6 +44,7 @@ import PhotoUpload from '../components/PhotoUpload';
 
 export default function TeachersPage() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const theme = useTheme();
   const isXs = useMediaQuery(theme.breakpoints.down('sm'));
   const [assignments, setAssignments] = useState([]);
@@ -797,6 +799,7 @@ export default function TeachersPage() {
             </Typography>
           </Box>
           <Stack direction="row" spacing={1}>
+            <Button variant="outlined" startIcon={<ArrowBackIcon />} onClick={() => navigate(-1)} sx={{ borderColor: 'rgba(255,255,255,0.5)', color: 'white', '&:hover': { borderColor: 'white', bgcolor: 'rgba(255,255,255,0.1)' } }}>ব্যাক</Button>
             <Button 
               variant="contained" 
               startIcon={<AddIcon />} 

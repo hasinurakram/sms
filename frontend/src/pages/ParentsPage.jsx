@@ -16,6 +16,7 @@ import {
   Chip
 } from '@mui/material';
 import FamilyRestroomIcon from '@mui/icons-material/FamilyRestroom';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SearchIcon from '@mui/icons-material/Search';
 import AddIcon from '@mui/icons-material/Add';
@@ -39,6 +40,16 @@ export default function ParentsPage() {
   const [focusParent, setFocusParent] = useState('');
   const toast = useToast();
   const { classrooms, students, sections, refreshAll } = useAcademics();
+
+  // Determine if the selected classroom requires sections (only for class 6–10)
+  const requiresSectionForSelectedClass = React.useMemo(() => {
+    try {
+      if (!selectedClassroom) return false;
+      const clsObj = (classrooms || []).find(c => String(c.id) === String(selectedClassroom));
+      const name = String(clsObj?.name || '').toLowerCase();
+      return /ষষ্ঠ|six|\b6\b|সপ্তম|seven|\b7\b|অষ্টম|eight|\b8\b|নবম|nine|\b9\b|দশম|ten|\b10\b/.test(name);
+    } catch (_) { return false; }
+  }, [selectedClassroom, classrooms]);
 
   const loadParents = () => {
     if (!id) return;
@@ -289,10 +300,10 @@ export default function ParentsPage() {
       return matchesSearch;
     }
 
-    // If no class/section selected, don't show any parents (unless in showAll mode)
-    if (!selectedClassroom || !selectedSection) {
-      return false;
-    }
+    // If no class selected, don't show any parents (unless in showAll mode)
+    if (!selectedClassroom) return false;
+    // If class requires section but none selected, don't show parents yet
+    if (requiresSectionForSelectedClass && !selectedSection) return false;
 
     // Apply search filter if present
     if (searchQuery && !matchesSearch) return false;
@@ -324,9 +335,9 @@ export default function ParentsPage() {
       const stSectionId = st.section?.id ?? st.section;
       
       // Check if this student is in the selected class/section
-      const isInSelectedClassSection = 
-        String(stClassId) === String(selectedClassroom) && 
-        String(stSectionId) === String(selectedSection);
+      const isInSelectedClass = String(stClassId) === String(selectedClassroom);
+      const isInSelectedSection = requiresSectionForSelectedClass ? (String(stSectionId) === String(selectedSection)) : true;
+      const isInSelectedClassSection = isInSelectedClass && isInSelectedSection;
       
       // Check if this student is linked to the current parent
       const isLinkedToParent = 
@@ -385,11 +396,31 @@ export default function ParentsPage() {
                 অভিভাবকের প্রোফাইল ম্যানেজ করুন এবং শিক্ষার্থীদের সাথে লিঙ্ক করুন
               </Typography>
               <Typography variant="body2" sx={{ opacity: 0.7, mt: 1 }}>
-                স্কুল আইডি: {id} | মোট অভিভাবক: {parents.length}
-                {(effectiveShowAll || selectedSection) && ` | দেখানো হচ্ছে: ${displayedParents.length}`}
+                {(() => {
+                  const totalForDisplay = (() => {
+                    if (!selectedClassroom || effectiveShowAll) return parents.length;
+                    return requiresSectionForSelectedClass
+                      ? (selectedSection ? getGuardianCountForSection(selectedSection) : getGuardianCountForClass(selectedClassroom))
+                      : getGuardianCountForClass(selectedClassroom);
+                  })();
+                  const showing = displayedParents.length;
+                  return `স্কুল আইডি: ${id} | মোট অভিভাবক: ${toBn(totalForDisplay)}${(selectedClassroom && !requiresSectionForSelectedClass) || effectiveShowAll || selectedSection ? ` | দেখানো হচ্ছে: ${toBn(showing)}` : ''}`;
+                })()}
               </Typography>
             </Box>
             <Stack direction="row" spacing={1} flexWrap="wrap">
+              <Button 
+                variant="outlined" 
+                startIcon={<ArrowBackIcon />} 
+                onClick={() => navigate(-1)}
+                sx={{ 
+                  borderColor: 'rgba(255,255,255,0.5)', 
+                  color: 'white',
+                  '&:hover': { borderColor: 'white', bgcolor: 'rgba(255,255,255,0.1)' }
+                }}
+              >
+                ব্যাক
+              </Button>
               <Button 
                 variant="contained" 
                 startIcon={<AddIcon />} 
@@ -512,7 +543,7 @@ export default function ParentsPage() {
         />
       )}
 
-      {!loading && !effectiveShowAll && selectedClassroom && !selectedSection && (
+      {!loading && !effectiveShowAll && selectedClassroom && !selectedSection && requiresSectionForSelectedClass && (
         <Grid container spacing={2}>
           {((sections || []).filter(s => String(s.classroom?.id ?? s.classroom) === String(selectedClassroom))).length === 0 ? (
             <Grid size={{ xs: 12 }}>
@@ -576,7 +607,7 @@ export default function ParentsPage() {
         </Grid>
       )}
     
-    {!loading && (effectiveShowAll || selectedSection) && displayedParents.length === 0 && (
+    {!loading && ((effectiveShowAll || selectedSection) || (selectedClassroom && !requiresSectionForSelectedClass)) && displayedParents.length === 0 && (
       <EmptyState
         title="কোন অভিভাবক পাওয়া যায়নি"
         message="নির্বাচিত শ্রেণী ও সেকশনে কোনো অভিভাবক নেই বা পাওয়া যায়নি"
@@ -626,8 +657,16 @@ export default function ParentsPage() {
           }}
         >
           <Typography variant="h6" color="primary.dark">
-            📊 মোট অভিভাবক: <strong>{parents.length}</strong>
-            {searchQuery && ` | দেখানো হচ্ছে: ${filtered.length}`}
+            {(() => {
+              const totalForDisplay = (() => {
+                if (!selectedClassroom || effectiveShowAll) return parents.length;
+                return requiresSectionForSelectedClass
+                  ? (selectedSection ? getGuardianCountForSection(selectedSection) : getGuardianCountForClass(selectedClassroom))
+                  : getGuardianCountForClass(selectedClassroom);
+              })();
+              const showing = displayedParents.length;
+              return `📊 মোট অভিভাবক: ${toBn(totalForDisplay)}${showing >= 0 ? ` | দেখানো হচ্ছে: ${toBn(showing)}` : ''}`;
+            })()}
           </Typography>
         </Paper>
       </Fade>

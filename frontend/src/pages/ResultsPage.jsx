@@ -38,6 +38,7 @@ import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ClearIcon from '@mui/icons-material/Clear';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import EmptyState from '../components/EmptyState';
 import { TableSkeleton } from '../components/LoadingSkeleton';
 import { useToast } from '../components/Toast';
@@ -1236,6 +1237,7 @@ export default function ResultsPage() {
           <AssessmentIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
           রেজাল্ট ও পরীক্ষা
         </Typography>
+        <Button variant="outlined" startIcon={<ArrowBackIcon />} onClick={() => navigate(-1)}>ব্যাক</Button>
         <Button 
           variant="contained" 
           color="primary" 
