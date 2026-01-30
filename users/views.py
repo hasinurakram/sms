@@ -351,9 +351,18 @@ class SoftwareAssistantView(APIView):
             
             profiles = Profile.objects.filter(user_id__in=all_user_ids)
             role_counts = {}
+            user_role_map = {}
+            
             for p in profiles:
                 r = p.role
                 role_counts[r] = role_counts.get(r, 0) + 1
+                user_role_map[p.user.id] = r
+            
+            # Ensure students from StudentProfile are counted as students if not in Profile
+            for uid in student_user_ids:
+                if uid not in user_role_map:
+                    role_counts['student'] = role_counts.get('student', 0) + 1
+                    user_role_map[uid] = 'student'
             
             text = f"{bg} রক্তের গ্রুপের মোট {count} জন পাওয়া গেছে।"
             details = []
@@ -366,6 +375,23 @@ class SoftwareAssistantView(APIView):
             if details:
                 text += " (" + ", ".join(details) + ")"
             
+            # Generate detailed list with mobile numbers
+            users_list = []
+            users_objs = User.objects.filter(id__in=all_user_ids).values('id', 'first_name', 'last_name', 'username', 'phone_number')
+            
+            for u in users_objs:
+                uid = u['id']
+                full_name = f"{u['first_name']} {u['last_name']}".strip() or u['username']
+                phone = u['phone_number']
+                role_key = user_role_map.get(uid, 'unknown')
+                role_display = role_map.get(role_key, role_key)
+                
+                users_list.append({
+                    'name': full_name,
+                    'phone': phone,
+                    'role': role_display
+                })
+            
             try:
                 AssistantLog.objects.create(
                     user=getattr(request, 'user', None),
@@ -377,7 +403,7 @@ class SoftwareAssistantView(APIView):
                 )
             except Exception:
                 pass
-            return Response({"text": text})
+            return Response({"text": text, "users_list": users_list})
 
         if it == 'blood_group_max':
             from academics.models import StudentProfile

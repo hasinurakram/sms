@@ -237,6 +237,31 @@ const SoftwareAssistant = () => {
         </Box>
       );
     }
+    if (Array.isArray(res.users_list) && res.users_list.length > 0) {
+      items.push(
+        <Box key="users_list_table" sx={{ mt: 2 }}>
+          <Typography variant="subtitle1" sx={{ mb: 1 }}>ব্যবহারকারীদের তালিকা</Typography>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>নাম</TableCell>
+                <TableCell>পদবী</TableCell>
+                <TableCell align="right">মোবাইল</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {res.users_list.map((u, idx) => (
+                <TableRow key={idx}>
+                  <TableCell>{u.name}</TableCell>
+                  <TableCell>{u.role}</TableCell>
+                  <TableCell align="right">{u.phone || '-'}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Box>
+      );
+    }
     if (items.length === 0) {
       items.push(
         <Typography key="fallback" sx={{ mt: 1 }}>তথ্য পাওয়া যায়নি বা প্রদর্শনের জন্য উপযুক্ত ফরম্যাট নেই।</Typography>

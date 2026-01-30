@@ -239,29 +239,43 @@ export default function AttendanceReportCard() {
   };
 
   const downloadPDF = async () => {
-    if (!reportRef.current) return;
+    const cards = document.querySelectorAll('.student-report-card');
+    if (!cards.length) {
+      toast.warning('No report cards to download');
+      return;
+    }
 
-    toast.info('Generating PDF... Please wait');
+    toast.info('Generating PDF... Please wait (this may take a moment for many students)');
 
     try {
-      const canvas = await html2canvas(reportRef.current, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff'
-      });
-
-      const imgData = canvas.toDataURL('image/png');
       const pdf = new jsPDF('p', 'mm', 'a4');
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = pdf.internal.pageSize.getHeight();
-      const imgWidth = canvas.width;
-      const imgHeight = canvas.height;
-      const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
-      const imgX = (pdfWidth - imgWidth * ratio) / 2;
-      const imgY = 10;
 
-      pdf.addImage(imgData, 'PNG', imgX, imgY, imgWidth * ratio, imgHeight * ratio);
+      for (let i = 0; i < cards.length; i++) {
+        if (i > 0) pdf.addPage();
+
+        const card = cards[i];
+        const canvas = await html2canvas(card, {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#ffffff'
+        });
+
+        const imgData = canvas.toDataURL('image/png');
+        const imgWidth = canvas.width;
+        const imgHeight = canvas.height;
+        
+        // Calculate dimensions to fit A4 width, maintaining aspect ratio
+        const ratio = pdfWidth / imgWidth;
+        const finalWidth = pdfWidth;
+        const finalHeight = imgHeight * ratio;
+
+        // If height exceeds page, we might need to handle it (but report cards usually fit)
+        // For now, just add it at top-left
+        pdf.addImage(imgData, 'PNG', 0, 10, finalWidth, finalHeight);
+      }
       
       const fileName = `Attendance_Report_${selectedMonth}_${selectedClassroom}.pdf`;
       pdf.save(fileName);
@@ -428,7 +442,8 @@ export default function AttendanceReportCard() {
           p: { xs: 2, sm: 3 },
           background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
           color: 'white',
-          borderRadius: 3
+          borderRadius: 3,
+          display: { print: 'none' }
         }}
       >
         <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ xs: 'flex-start', sm: 'center' }} spacing={2}>
@@ -445,7 +460,7 @@ export default function AttendanceReportCard() {
       </Paper>
 
       {/* Filters */}
-      <Paper sx={{ p: { xs: 2, sm: 3 }, mb: 3, borderRadius: 2 }}>
+      <Paper sx={{ p: { xs: 2, sm: 3 }, mb: 3, borderRadius: 2, display: { print: 'none' } }}>
         <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold' }}>
           প্রতিবেদন প্যারামিটার নির্বাচন করুন
         </Typography>
@@ -533,7 +548,7 @@ export default function AttendanceReportCard() {
 
       {/* Action Buttons */}
       {showReport && reportData.length > 0 && (
-        <Stack direction="row" spacing={2} sx={{ mb: 3 }} justifyContent="center">
+        <Stack direction="row" spacing={2} sx={{ mb: 3, display: { print: 'none' } }} justifyContent="center">
           <Button
             variant="contained"
             color="primary"
@@ -564,13 +579,14 @@ export default function AttendanceReportCard() {
             borderRadius: 2,
             '@media print': {
               boxShadow: 'none',
-              p: 2
+              p: 0,
+              backgroundColor: 'transparent'
             }
           }}
           id="attendance-report-card"
         >
-          {/* Report Header */}
-          <Box sx={{ mb: 4 }}>
+          {/* Report Header - Hidden in Print (Each card has its own header) */}
+          <Box sx={{ mb: 4, display: 'block', '@media print': { display: 'none' } }}>
             <Grid container spacing={2} alignItems="center" justifyContent="space-between">
               {/* School Logo */}
               <Grid item xs={3} sx={{ textAlign: 'left' }}>
@@ -648,7 +664,7 @@ export default function AttendanceReportCard() {
           </Box>
 
           {/* Summary Statistics */}
-          <Grid container spacing={2} sx={{ mb: 4 }}>
+          <Grid container spacing={2} sx={{ mb: 4, display: { print: 'none' } }}>
             <Grid item xs={12} sm={3}>
               <Card sx={{ bgcolor: 'primary.50', height: '100%' }}>
                 <CardContent>
@@ -739,8 +755,21 @@ export default function AttendanceReportCard() {
               }
               
               return (
-                <Grid item xs={12} key={student.student_id}>
-                  <Card variant="outlined" sx={{ borderRadius: 2, overflow: 'hidden' }}>
+                <Grid item xs={12} key={student.student_id} className="student-report-card-wrapper">
+                  <Card 
+                    variant="outlined" 
+                    className="student-report-card"
+                    sx={{ 
+                      borderRadius: 2, 
+                      overflow: 'hidden',
+                      '@media print': {
+                        breakInside: 'avoid',
+                        pageBreakInside: 'avoid',
+                        mb: 4,
+                        border: '1px solid #000'
+                      }
+                    }}
+                  >
                     {/* School Header */}
                     <Box sx={{ 
                       bgcolor: '#1976d2', 
@@ -748,7 +777,13 @@ export default function AttendanceReportCard() {
                       p: 2,
                       borderBottom: '1px solid #1565c0',
                       position: 'relative',
-                      minHeight: '120px'
+                      minHeight: '120px',
+                      '@media print': {
+                        bgcolor: '#1976d2 !important',
+                        color: 'white !important',
+                        WebkitPrintColorAdjust: 'exact',
+                        printColorAdjust: 'exact'
+                      }
                     }}>
                       {/* School Logo (Left) */}
                       <Box sx={{ 

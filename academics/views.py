@@ -290,6 +290,11 @@ class StudentProfileViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(classroom_id=classroom_id)
         if section_id:
             queryset = queryset.filter(section_id=section_id)
+            
+        # Sort by roll number (numeric), with empty/nulls at the end
+        # Moved sorting to frontend to avoid DB-specific regex issues (e.g. SQLite vs Postgres)
+        queryset = queryset.order_by('roll_number')
+        
         return queryset
     
     def _validate_section(self, data):

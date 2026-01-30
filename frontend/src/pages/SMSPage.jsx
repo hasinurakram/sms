@@ -76,6 +76,9 @@ export default function SMSPage() {
   // Voice message
   const [voiceRecorderOpen, setVoiceRecorderOpen] = useState(false);
   const [voiceMessage, setVoiceMessage] = useState(null);
+  const [whatsappDialogOpen, setWhatsappDialogOpen] = useState(false);
+  const [whatsappLinks, setWhatsappLinks] = useState([]);
+  const [voiceDownloadUrl, setVoiceDownloadUrl] = useState(null);
 
   useEffect(() => {
     if (!id) return;
@@ -182,6 +185,57 @@ export default function SMSPage() {
   const handleVoiceSave = (audioFile) => {
     setVoiceMessage(audioFile);
     toast.success('Voice message attached! Click send to deliver.');
+  };
+
+  const normalizePhoneForWhatsApp = (phone) => {
+    const digits = String(phone || '').replace(/\D/g, '');
+    if (!digits) return null;
+    if (/^01\d{9}$/.test(digits)) {
+      return `880${digits.slice(1)}`;
+    }
+    if (/^0\d+$/.test(digits)) {
+      return `880${digits.replace(/^0+/, '')}`;
+    }
+    return digits;
+  };
+
+  const handleSendViaWhatsApp = () => {
+    if (selectedRecipients.length === 0) {
+      toast.warning('Please select at least one recipient');
+      return;
+    }
+    if (!message.trim() && !voiceMessage) {
+      toast.warning('Please enter a message or record a voice message');
+      return;
+    }
+    const text = message.trim() || 'Voice message';
+    const encodedText = encodeURIComponent(text);
+    const links = [];
+    selectedRecipients.forEach((p) => {
+      const formatted = normalizePhoneForWhatsApp(p);
+      if (formatted) {
+        links.push({
+          phone: p,
+          wa: `https://wa.me/${formatted}?text=${encodedText}`,
+        });
+      }
+    });
+    if (links.length === 0) {
+      toast.error('No valid phone numbers for WhatsApp');
+      return;
+    }
+    if (voiceMessage) {
+      try {
+        const url = URL.createObjectURL(voiceMessage);
+        setVoiceDownloadUrl(url);
+      } catch (_) {
+        setVoiceDownloadUrl(null);
+      }
+    } else {
+      setVoiceDownloadUrl(null);
+    }
+    setWhatsappLinks(links);
+    setWhatsappDialogOpen(true);
   };
 
   const handleSendManual = async () => {
@@ -473,6 +527,38 @@ export default function SMSPage() {
                 >
                   {sending ? 'পাঠানো হচ্ছে...' : `${selectedRecipients.length} জনকে পাঠান`}
                 </Button>
+                <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
+                  <Button
+                    variant="outlined"
+                    onClick={handleSendViaWhatsApp}
+                    disabled={selectedRecipients.length === 0 || (!message.trim() && !voiceMessage)}
+                  >
+                    WhatsApp Web-এ পাঠান
+                  </Button>
+                  {voiceMessage && (
+                    <Button
+                      variant="outlined"
+                      color="secondary"
+                      onClick={() => {
+                        try {
+                          const url = voiceDownloadUrl || URL.createObjectURL(voiceMessage);
+                          setVoiceDownloadUrl(url);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = voiceMessage.name || 'voice_message.webm';
+                          document.body.appendChild(a);
+                          a.click();
+                          document.body.removeChild(a);
+                          toast.info('Voice file downloaded. Attach it in WhatsApp manually.');
+                        } catch (e) {
+                          toast.error('Failed to prepare download for voice message');
+                        }
+                      }}
+                    >
+                      ভয়েস ফাইল ডাউনলোড করুন
+                    </Button>
+                  )}
+                </Stack>
               </Box>
             )}
 
@@ -660,6 +746,31 @@ export default function SMSPage() {
           )}
         </Grid>
       </Grid>
+
+      {/* WhatsApp Links Dialog */}
+      <Dialog open={whatsappDialogOpen} onClose={() => setWhatsappDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>WhatsApp Web লিংকসমূহ</DialogTitle>
+        <DialogContent>
+          <Alert severity="info" sx={{ mb: 2 }}>
+            ভয়েস মেসেজ স্বয়ংক্রিয়ভাবে পাঠানো যায় না। অনুগ্রহ করে WhatsApp-এ গিয়ে ফাইলটি ম্যানুয়ালি সংযুক্ত করুন।
+          </Alert>
+          {voiceDownloadUrl && (
+            <Alert severity="success" sx={{ mb: 2 }}>
+              ভয়েস ফাইলটি ডাউনলোড করা হয়েছে/করুন, তারপর চ্যাটে এটাচ করুন।
+            </Alert>
+          )}
+          <List dense>
+            {whatsappLinks.map((item, idx) => (
+              <ListItem key={idx} component="a" href={item.wa} target="_blank" rel="noopener noreferrer" button>
+                <ListItemText primary={item.phone} secondary={item.wa} />
+              </ListItem>
+            ))}
+          </List>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setWhatsappDialogOpen(false)}>বন্ধ করুন</Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Results Dialog */}
       <Dialog open={resultsDialogOpen} onClose={() => setResultsDialogOpen(false)} maxWidth="sm" fullWidth>

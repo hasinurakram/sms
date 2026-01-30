@@ -760,6 +760,24 @@ class StudentDashboard extends React.Component {
             }
           } catch (_) {}
 
+          // Deduplicate monthly fees for the same month (common issue with multiple structures or generation bugs)
+          try {
+             const seenMonths = new Set();
+             const uniqueRows = [];
+             for (const r of rows) {
+                // Check for duplicate monthly fees
+                if (String(r.name || '').startsWith('মাসিক বেতন')) {
+                   const key = `${r.name}-${r.amount}`; // Dedup by Name + Amount
+                   if (seenMonths.has(key)) {
+                      continue; 
+                   }
+                   seenMonths.add(key);
+                }
+                uniqueRows.push(r);
+             }
+             rows = uniqueRows;
+          } catch (_) {}
+
           let totals = rows.reduce((acc, r) => ({
             amount: acc.amount + r.amount,
             paid: acc.paid + r.paid,

@@ -57,16 +57,41 @@ export const AcademicsProvider = ({ children }) => {
     try {
       const response = await scopedGet('/api/academics/students/', schoolId, {}, { timeout: 15000 });
       const data = Array.isArray(response.data) ? response.data : response.data.results || [];
-      const sorted = [...data].sort((a, b) => {
-        const ar = parseInt(String(a?.roll_number ?? '').replace(/\D/g, ''), 10);
-        const br = parseInt(String(b?.roll_number ?? '').replace(/\D/g, ''), 10);
-        const aNum = Number.isNaN(ar) ? null : ar;
-        const bNum = Number.isNaN(br) ? null : br;
-        if (aNum !== null && bNum !== null) return aNum - bNum;
-        const as = String(a?.roll_number ?? '');
-        const bs = String(b?.roll_number ?? '');
-        return as.localeCompare(bs, undefined, { numeric: true, sensitivity: 'base' });
-      });
+      console.log(`Fetched ${data.length} students. Sorting...`);
+      
+      let sorted = [];
+      try {
+        sorted = [...data].sort((a, b) => {
+          const rA = String(a?.roll_number ?? '').trim();
+          const rB = String(b?.roll_number ?? '').trim();
+  
+          const emptyA = !rA;
+          const emptyB = !rB;
+  
+          if (emptyA && !emptyB) return 1;
+          if (!emptyA && emptyB) return -1;
+          if (emptyA && emptyB) return 0;
+  
+          // Try numeric sort for non-empty values
+          const ar = parseInt(rA.replace(/\D/g, ''), 10);
+          const br = parseInt(rB.replace(/\D/g, ''), 10);
+          
+          const aNum = Number.isNaN(ar) ? null : ar;
+          const bNum = Number.isNaN(br) ? null : br;
+          
+          // If both have extractable numbers, compare them first
+          if (aNum !== null && bNum !== null && aNum !== bNum) {
+              return aNum - bNum;
+          }
+          
+          // Fallback to string comparison
+          return rA.localeCompare(rB, undefined, { numeric: true, sensitivity: 'base' });
+        });
+      } catch (sortErr) {
+        console.error('Sorting failed, using unsorted data:', sortErr);
+        sorted = data;
+      }
+      
       setStudents(sorted);
       return sorted;
     } catch (error) {
