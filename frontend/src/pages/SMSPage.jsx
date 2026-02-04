@@ -79,6 +79,8 @@ export default function SMSPage() {
   const [whatsappDialogOpen, setWhatsappDialogOpen] = useState(false);
   const [whatsappLinks, setWhatsappLinks] = useState([]);
   const [voiceDownloadUrl, setVoiceDownloadUrl] = useState(null);
+  const [telegramDialogOpen, setTelegramDialogOpen] = useState(false);
+  const [telegramChatIdsInput, setTelegramChatIdsInput] = useState('');
 
   useEffect(() => {
     if (!id) return;
@@ -200,42 +202,56 @@ export default function SMSPage() {
   };
 
   const handleSendViaWhatsApp = () => {
-    if (selectedRecipients.length === 0) {
-      toast.warning('Please select at least one recipient');
-      return;
-    }
-    if (!message.trim() && !voiceMessage) {
-      toast.warning('Please enter a message or record a voice message');
-      return;
-    }
-    const text = message.trim() || 'Voice message';
-    const encodedText = encodeURIComponent(text);
-    const links = [];
-    selectedRecipients.forEach((p) => {
-      const formatted = normalizePhoneForWhatsApp(p);
-      if (formatted) {
-        links.push({
-          phone: p,
-          wa: `https://wa.me/${formatted}?text=${encodedText}`,
-        });
+    (async () => {
+      if (selectedRecipients.length === 0) {
+        toast.warning('Please select at least one recipient');
+        return;
       }
-    });
-    if (links.length === 0) {
-      toast.error('No valid phone numbers for WhatsApp');
-      return;
-    }
-    if (voiceMessage) {
-      try {
-        const url = URL.createObjectURL(voiceMessage);
-        setVoiceDownloadUrl(url);
-      } catch (_) {
+      if (!message.trim() && !voiceMessage) {
+        toast.warning('Please enter a message or record a voice message');
+        return;
+      }
+      let text = message.trim() || 'Voice message';
+      let voiceUrl = null;
+      if (voiceMessage) {
+        try {
+          const fd = new FormData();
+          fd.append('voice', voiceMessage);
+          const res = await api.post('/api/users/voice/upload/', fd, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+          });
+          if (res?.data?.success && res.data.url) {
+            voiceUrl = res.data.url;
+            text = `${text}\n\nVoice: ${voiceUrl}`;
+            setVoiceDownloadUrl(voiceUrl);
+          } else {
+            toast.warning('Voice upload failed; will send text only');
+          }
+        } catch (e) {
+          toast.error('Failed to upload voice message; sending text only');
+        }
+      } else {
         setVoiceDownloadUrl(null);
       }
-    } else {
-      setVoiceDownloadUrl(null);
-    }
-    setWhatsappLinks(links);
-    setWhatsappDialogOpen(true);
+      const encodedText = encodeURIComponent(text);
+      const links = [];
+      selectedRecipients.forEach((p) => {
+        const formatted = normalizePhoneForWhatsApp(p);
+        if (formatted) {
+          links.push({
+            phone: p,
+            wa: `https://wa.me/${formatted}?text=${encodedText}`,
+            voice: voiceUrl || null,
+          });
+        }
+      });
+      if (links.length === 0) {
+        toast.error('No valid phone numbers for WhatsApp');
+        return;
+      }
+      setWhatsappLinks(links);
+      setWhatsappDialogOpen(true);
+    })();
   };
 
   const handleSendManual = async () => {
@@ -435,7 +451,7 @@ export default function SMSPage() {
           }}
         >
           <Tab icon={<PersonIcon />} label="ম্যানুয়াল নির্বাচন" iconPosition="start" />
-          <Tab icon={<GroupIcon />} label="শ্রেণী অনুযায়ী" iconPosition="start" />
+          <Tab icon={<GroupIcon />} label="শ্রেণি অনুযায়ী" iconPosition="start" />
           <Tab icon={<SchoolIcon />} label="সকল স্কুল" iconPosition="start" />
         </Tabs>
       </Paper>
@@ -535,6 +551,39 @@ export default function SMSPage() {
                   >
                     WhatsApp Web-এ পাঠান
                   </Button>
+                  <Button
+                    variant="outlined"
+                    onClick={async () => {
+                      try {
+                        const formattedPhones = selectedRecipients.map(normalizePhoneForWhatsApp).filter(Boolean);
+                        const fd = new FormData();
+                        fd.append('phone_numbers', JSON.stringify(formattedPhones));
+                        fd.append('message', message.trim());
+                        if (voiceMessage) {
+                          fd.append('audio', voiceMessage);
+                        }
+                        const resp = await api.post('/api/users/whatsapp/send/', fd);
+                        setSendResults(resp.data);
+                        setResultsDialogOpen(true);
+                        if (Array.isArray(resp.data?.results) && resp.data.results.some(r => r.message === 'dry_run')) {
+                          toast.warning('WhatsApp API dry-run: টোকেন/ফোন আইডি কনফিগার করুন');
+                        } else {
+                          toast.success(`WhatsApp API: ${resp.data.sent} সফল, ${resp.data.failed} ব্যর্থ`);
+                        }
+                      } catch (e) {
+                        toast.error('WhatsApp API পাঠাতে ব্যর্থ');
+                      }
+                    }}
+                    disabled={selectedRecipients.length === 0 || (!message.trim() && !voiceMessage)}
+                  >
+                    WhatsApp API দিয়ে পাঠান
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    onClick={() => setTelegramDialogOpen(true)}
+                  >
+                    Telegram API দিয়ে পাঠান
+                  </Button>
                   {voiceMessage && (
                     <Button
                       variant="outlined"
@@ -569,12 +618,12 @@ export default function SMSPage() {
                   <Grid size={{ xs: 12, sm: 6 }}>
                     <TextField
                       select
-                      label="শ্রেণী নির্বাচন করুন"
+                      label="শ্রেণি নির্বাচন করুন"
                       value={selectedClass}
                       onChange={(e) => handleClassChange(e.target.value)}
                       fullWidth
                     >
-                      <MenuItem value="">সব শ্রেণী</MenuItem>
+                      <MenuItem value="">সব শ্রেণি</MenuItem>
                       {classrooms.map((c) => (
                         <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
                       ))}
@@ -597,7 +646,7 @@ export default function SMSPage() {
                   </Grid>
                 </Grid>
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                  এই শ্রেণীর {getClassParentPhones().length} জন অভিভাবককে পাঠানো হবে
+                  এই শ্রেণির {getClassParentPhones().length} জন অভিভাবককে পাঠানো হবে
                 </Typography>
                 <Button
                   variant="contained"
@@ -607,7 +656,7 @@ export default function SMSPage() {
                   fullWidth
                   size="large"
                 >
-                  {sending ? 'পাঠানো হচ্ছে...' : `শ্রেণীর অভিভাবকদের পাঠান`}
+                  {sending ? 'পাঠানো হচ্ছে...' : `শ্রেণির অভিভাবকদের পাঠান`}
                 </Button>
               </Box>
             )}
@@ -702,7 +751,7 @@ export default function SMSPage() {
           {tabValue === 1 && selectedClass && (
             <Paper sx={{ p: 2, borderRadius: 3, boxShadow: 3 }}>
               <Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold' }}>
-                📊 শ্রেণী সারসংক্ষেপ
+                📊 শ্রেণি সারসংক্ষেপ
               </Typography>
               <Card variant="outlined" sx={{ mb: 2 }}>
                 <CardContent>
@@ -768,7 +817,81 @@ export default function SMSPage() {
           </List>
         </DialogContent>
         <DialogActions>
+          <Button
+            onClick={async () => {
+              try {
+                const text = whatsappLinks.map(l => l.wa).join('\n');
+                await navigator.clipboard.writeText(text);
+                toast.success('সব লিংক ক্লিপবোর্ডে কপি করা হয়েছে');
+              } catch {
+                toast.error('লিংক কপি করতে ব্যর্থ');
+              }
+            }}
+          >
+            লিংকগুলো কপি করুন
+          </Button>
+          <Button
+            onClick={() => {
+              if (!whatsappLinks.length) return;
+              toast.info('সব লিংক খুলছে (ব্রাউজার পপআপ ব্লক করতে পারে)');
+              whatsappLinks.forEach((l, i) => {
+                setTimeout(() => {
+                  try {
+                    window.open(l.wa, '_blank', 'noopener,noreferrer');
+                  } catch {}
+                }, i * 500);
+              });
+            }}
+          >
+            সব লিংক খুলুন
+          </Button>
           <Button onClick={() => setWhatsappDialogOpen(false)}>বন্ধ করুন</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={telegramDialogOpen} onClose={() => setTelegramDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Telegram Chat IDs</DialogTitle>
+        <DialogContent>
+          <Alert severity="info" sx={{ mb: 2 }}>
+            কমা দিয়ে আলাদা করা chat_id লিখুন। ভয়েস থাকলে লিংক হিসেবে পাঠানো হবে।
+          </Alert>
+          <TextField
+            label="Chat IDs (comma separated)"
+            fullWidth
+            value={telegramChatIdsInput}
+            onChange={(e) => setTelegramChatIdsInput(e.target.value)}
+            sx={{ mb: 2 }}
+          />
+          <Button
+            variant="contained"
+            onClick={async () => {
+              const ids = (telegramChatIdsInput || '').split(',').map(s => s.trim()).filter(Boolean);
+              if (ids.length === 0) {
+                toast.warning('কমপক্ষে একটি chat_id দিন');
+                return;
+              }
+              try {
+                const fd = new FormData();
+                fd.append('chat_ids', JSON.stringify(ids));
+                fd.append('message', message.trim());
+                if (voiceMessage) {
+                  fd.append('audio', voiceMessage);
+                }
+                const resp = await api.post('/api/users/telegram/send/', fd);
+                setSendResults(resp.data);
+                setResultsDialogOpen(true);
+                setTelegramDialogOpen(false);
+                toast.success(`Telegram API: ${resp.data.sent} সফল, ${resp.data.failed} ব্যর্থ`);
+              } catch (e) {
+                toast.error('Telegram API পাঠাতে ব্যর্থ');
+              }
+            }}
+          >
+            পাঠান
+          </Button>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setTelegramDialogOpen(false)}>বন্ধ করুন</Button>
         </DialogActions>
       </Dialog>
 

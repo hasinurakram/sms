@@ -309,18 +309,18 @@ export default function AttendancePageNew() {
       {/* Filters */}
       <Paper sx={{ p: 3, mb: 3, borderRadius: 2 }}>
         <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold' }}>
-          শ্রেণী ও তারিখ নির্বাচন
+          শ্রেণি ও তারিখ নির্বাচন
         </Typography>
         <Grid container spacing={2}>
           <Grid item xs={12} sm={6} md={3}>
             <TextField
               select
               fullWidth
-              label="শ্রেণী *"
+              label="শ্রেণি *"
               value={selectedClassroom}
               onChange={(e) => setSelectedClassroom(e.target.value)}
             >
-              <MenuItem value="">-- শ্রেণী নির্বাচন করুন --</MenuItem>
+              <MenuItem value="">-- শ্রেণি নির্বাচন করুন --</MenuItem>
               {classrooms.map(classroom => (
                 <MenuItem key={classroom.id} value={classroom.id}>
                   {classroom.name}
@@ -450,7 +450,7 @@ export default function AttendancePageNew() {
           </Box>
         ) : students.length === 0 ? (
           <Alert severity="info">
-            হাজিরা দেওয়ার জন্য প্রথমে শ্রেণী নির্বাচন করে "শিক্ষার্থী লোড করুন" বাটনে ক্লিক করুন
+            হাজিরা দেওয়ার জন্য প্রথমে শ্রেণি নির্বাচন করে "শিক্ষার্থী লোড করুন" বাটনে ক্লিক করুন
           </Alert>
         ) : (
           <>
@@ -485,7 +485,7 @@ export default function AttendancePageNew() {
                 <TableRow sx={{ bgcolor: 'grey.100' }}>
                   <TableCell sx={{ fontWeight: 'bold' }}>রোল</TableCell>
                   <TableCell sx={{ fontWeight: 'bold' }}>শিক্ষার্থীর নাম</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold' }}>শ্রেণী</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold' }}>শ্রেণি</TableCell>
                   <TableCell sx={{ fontWeight: 'bold' }}>সেকশন</TableCell>
                   <TableCell sx={{ fontWeight: 'bold' }} align="center">উপস্থিত</TableCell>
                   <TableCell sx={{ fontWeight: 'bold' }} align="center">অবস্থা</TableCell>
@@ -590,7 +590,7 @@ export default function AttendancePageNew() {
             <Table>
               <TableHead>
                 <TableRow>
-                  <TableCell sx={{ fontWeight: 'bold' }}>শ্রেণী</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold' }}>শ্রেণি</TableCell>
                   <TableCell sx={{ fontWeight: 'bold' }}>সেকশন</TableCell>
                   <TableCell sx={{ fontWeight: 'bold' }} align="center">মোট</TableCell>
                   <TableCell sx={{ fontWeight: 'bold' }} align="center">উপস্থিত</TableCell>
@@ -641,7 +641,7 @@ export default function AttendancePageNew() {
             <TableHead>
               <TableRow sx={{ bgcolor: 'grey.100' }}>
                 <TableCell sx={{ fontWeight: 'bold' }}>শিক্ষার্থীর নাম</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>শ্রেণী</TableCell>
+                <TableCell sx={{ fontWeight: 'bold' }}>শ্রেণি</TableCell>
                 <TableCell sx={{ fontWeight: 'bold' }}>সেকশন</TableCell>
                 <TableCell sx={{ fontWeight: 'bold' }} align="center">মোট দিন</TableCell>
                 <TableCell sx={{ fontWeight: 'bold' }} align="center">উপস্থিত</TableCell>

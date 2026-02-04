@@ -457,6 +457,9 @@ export default function StudentsPage() {
           formData.append(key, studentData[key]);
         }
       });
+      if (guardianIdToUse) {
+        formData.append('guardian_name', '');
+      }
       
       // If there's a photo file, add it to the form data
       if (photoFile) {
@@ -1011,9 +1014,9 @@ export default function StudentsPage() {
                     onClick={handleBackToClasses}
                     sx={{ mr: 2, color: 'white', fontWeight: 'bold' }}
                   >
-                    ← শ্রেণী তালিকা
+                    ← শ্রেণি তালিকা
                   </Button>
-                  {contextClassrooms.find(c => c.id === selectedClass)?.name || 'শ্রেণী'}
+                  {contextClassrooms.find(c => c.id === selectedClass)?.name || 'শ্রেণি'}
                 </>
               ) : 'শিক্ষার্থী ব্যবস্থাপনা'}
             </Typography>
@@ -1100,10 +1103,10 @@ export default function StudentsPage() {
         <Box sx={{ mb: 4 }}>
           <Paper elevation={3} sx={{ p: 3, borderRadius: 2, bgcolor: '#f5f9ff' }}>
             <Typography variant="h6" gutterBottom sx={{ color: 'primary.main', fontWeight: 'bold' }}>
-              শ্রেণী সারসংক্ষেপ
+              শ্রেণি সারসংক্ষেপ
             </Typography>
             <Typography variant="body2" sx={{ mb: 3, color: 'text.secondary' }}>
-              শিক্ষার্থীদের দেখতে একটি শ্রেণী নির্বাচন করুন। মোট শ্রেণী: {classSummary.length}
+              শিক্ষার্থীদের দেখতে একটি শ্রেণি নির্বাচন করুন। মোট শ্রেণি: {classSummary.length}
             </Typography>
             
             <Grid container spacing={2}>
@@ -1149,8 +1152,8 @@ export default function StudentsPage() {
                 <Grid size={{ xs: 12 }}>
                   <EmptyState
                     icon={<SchoolIcon fontSize="large" />}
-                    title="কোনো শ্রেণী পাওয়া যায়নি"
-                    message="শিক্ষার্থী যোগ করার আগে দয়া করে আপনার স্কুলে শ্রেণী যোগ করুন।"
+                    title="কোনো শ্রেণি পাওয়া যায়নি"
+                    message="শিক্ষার্থী যোগ করার আগে দয়া করে আপনার স্কুলে শ্রেণি যোগ করুন।"
                     action={
                       <Button
                         variant="contained"
@@ -1158,7 +1161,7 @@ export default function StudentsPage() {
                         onClick={() => navigate(`/school/${id}/classes`)}
                         startIcon={<AddIcon />}
                       >
-                        শ্রেণী যোগ করুন
+                        শ্রেণি যোগ করুন
                       </Button>
                     }
                   />
@@ -1166,7 +1169,7 @@ export default function StudentsPage() {
               ) : classSummary.length === 0 ? (
                 <Grid size={{ xs: 12 }}>
                   <Alert severity="info">
-                    কোনো শ্রেণী পাওয়া যায়নি। দয়া করে আপনার স্কুলে শ্রেণী ও শিক্ষার্থী যোগ করুন।
+                    কোনো শ্রেণি পাওয়া যায়নি। দয়া করে আপনার স্কুলে শ্রেণি ও শিক্ষার্থী যোগ করুন।
                   </Alert>
                 </Grid>
               ) : null}
@@ -1370,7 +1373,7 @@ export default function StudentsPage() {
                 🎓 নতুন শিক্ষার্থী যোগ করুন
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                নতুন শিক্ষার্থীর একাউন্ট তৈরি করুন এবং শ্রেণীতে ভর্তি করুন
+                নতুন শিক্ষার্থীর একাউন্ট তৈরি করুন এবং শ্রেণিতে ভর্তি করুন
               </Typography>
             </Box>
             <IconButton onClick={() => setAddDialogOpen(false)}>
@@ -1489,14 +1492,14 @@ export default function StudentsPage() {
             <Grid size={{ xs: 12, sm: 4 }}>
               <TextField
                 select
-                label="শ্রেণী (ঐচ্ছিক)"
+                label="শ্রেণি (ঐচ্ছিক)"
                 value={newStudent.classroom_id}
                 onChange={(e) => setNewStudent({...newStudent, classroom_id: e.target.value, section_id: ''})}
                 fullWidth
                 error={!!newStudentErrors.classroom_id}
                 helperText={newStudentErrors.classroom_id || ''}
               >
-                <MenuItem value="">শ্রেণী নির্বাচন করুন</MenuItem>
+                <MenuItem value="">শ্রেণি নির্বাচন করুন</MenuItem>
                 {contextClassrooms.map(c => (
                   <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
                 ))}
@@ -1524,7 +1527,7 @@ export default function StudentsPage() {
                 error={!!newStudentErrors.section_id}
                 helperText={
                   newStudentErrors.section_id
-                  || (!newStudent.classroom_id ? 'আগে শ্রেণী নির্বাচন করুন'
+                  || (!newStudent.classroom_id ? 'আগে শ্রেণি নির্বাচন করুন'
                     : (!requiresSection ? 'এই শ্রেণিতে সেকশন নেই'
                       : (addFormSectionsLoading ? 'সেকশন লোড হচ্ছে...' : 'ক/খ/গ সেকশন নির্বাচন করুন')))
                 }
@@ -1552,7 +1555,7 @@ export default function StudentsPage() {
                 onChange={(e) => setNewStudent({...newStudent, roll_number: e.target.value})}
                 fullWidth
                 error={!!newStudentErrors.roll_number}
-                helperText={newStudentErrors.roll_number || 'শ্রেণীতে ইউনিক'}
+                helperText={newStudentErrors.roll_number || 'শ্রেণিতে ইউনিক'}
               />
             </Grid>
             

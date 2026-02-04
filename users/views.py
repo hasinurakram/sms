@@ -18,6 +18,12 @@ from .serializers import (
     TaskSerializer,
 )
 from .sms_service import send_sms, send_bulk_sms, SMSTemplates
+from django.core.files.storage import default_storage
+from django.conf import settings
+import os
+import time
+import requests
+import re
 
 User = get_user_model()
 
@@ -62,6 +68,171 @@ class UserRegistrationView(generics.CreateAPIView):
             "user": UserSerializer(user).data,
             "message": "User registered successfully"
         }, status=status.HTTP_201_CREATED)
+
+class VoiceUploadView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request, *args, **kwargs):
+        file_obj = request.FILES.get('voice') or request.FILES.get('audio')
+        if not file_obj:
+            return Response({"success": False, "error": "No voice file provided (expected 'voice' or 'audio')"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            ts = int(time.time())
+            name = os.path.basename(getattr(file_obj, 'name', f'voice_message_{ts}.webm'))
+            path = f"voice_messages/{ts}_{name}"
+            saved_path = default_storage.save(path, file_obj)
+            base_url = getattr(settings, 'MEDIA_URL', '/media/')
+            rel_url = f"{base_url}{saved_path}"
+            site_base = (getattr(settings, 'SITE_BASE_URL', '') or '').rstrip('/')
+            if site_base:
+                clean_rel = rel_url if rel_url.startswith('/') else f"/{rel_url}"
+                absolute_url = f"{site_base}{clean_rel}"
+            else:
+                try:
+                    absolute_url = request.build_absolute_uri(rel_url)
+                except Exception:
+                    absolute_url = rel_url
+            return Response({"success": True, "url": absolute_url, "filename": name}, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            return Response({"success": False, "error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class WhatsAppSendView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request, *args, **kwargs):
+        token = getattr(settings, 'WHATSAPP_TOKEN', '')
+        phone_id = getattr(settings, 'WHATSAPP_PHONE_ID', '')
+        base = getattr(settings, 'WHATSAPP_BASE_URL', 'https://graph.facebook.com/v20.0')
+        message = (request.data.get('message') or '').strip()
+        phones = request.data.get('phone_numbers') or []
+        audio_url = request.data.get('audio_url') or None
+        audio_file = request.FILES.get('audio') or None
+        if isinstance(phones, str):
+            try:
+                import json
+                phones = json.loads(phones)
+            except Exception:
+                phones = [p.strip() for p in phones.split(',') if p.strip()]
+        if not isinstance(phones, list):
+            return Response({"success": False, "error": "phone_numbers must be a list"}, status=status.HTTP_400_BAD_REQUEST)
+        def _normalize_phone(p):
+            d = re.sub(r'\D', '', str(p or ''))
+            if not d:
+                return None
+            if d.startswith('01') and len(d) == 11:
+                return f"880{d[1:]}"
+            if d.startswith('0'):
+                return f"880{d.lstrip('0')}"
+            if d.startswith('+'):
+                return d[1:]
+            return d
+        phones = [x for x in map(_normalize_phone, phones) if x]
+        results = []
+        if not token or not phone_id:
+            for p in phones:
+                results.append({"to": p, "success": True, "message": "dry_run"})
+            return Response({"success": True, "sent": len(phones), "failed": 0, "results": results})
+        url = f"{base}/{phone_id}/messages"
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+        sent = 0
+        failed = 0
+        media_id = None
+        if audio_file:
+            try:
+                upload_url = f"{base}/{phone_id}/media"
+                files = {'file': (getattr(audio_file, 'name', 'voice_message'), audio_file.read(), getattr(audio_file, 'content_type', 'audio/ogg'))}
+                data = {'messaging_product': 'whatsapp', 'type': 'audio'}
+                r_up = requests.post(upload_url, headers={"Authorization": f"Bearer {token}"}, files=files, data=data, timeout=30)
+                if r_up.status_code in (200, 201):
+                    media_id = r_up.json().get('id')
+                else:
+                    media_id = None
+            except Exception:
+                media_id = None
+        for p in phones:
+            payload = {"messaging_product": "whatsapp", "to": p}
+            if media_id:
+                payload["type"] = "audio"
+                payload["audio"] = {"id": media_id}
+            elif audio_url:
+                payload["type"] = "audio"
+                payload["audio"] = {"link": audio_url}
+            elif message:
+                payload["type"] = "text"
+                payload["text"] = {"preview_url": True, "body": message}
+            else:
+                results.append({"to": p, "success": False, "message": "No content"})
+                failed += 1
+                continue
+            try:
+                r = requests.post(url, json=payload, headers=headers, timeout=15)
+                if r.status_code in (200, 201):
+                    sent += 1
+                    results.append({"to": p, "success": True})
+                else:
+                    failed += 1
+                    results.append({"to": p, "success": False, "status": r.status_code, "error": r.text})
+            except Exception as e:
+                failed += 1
+                results.append({"to": p, "success": False, "error": str(e)})
+        return Response({"success": failed == 0, "sent": sent, "failed": failed, "results": results})
+
+class TelegramSendView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request, *args, **kwargs):
+        token = getattr(settings, 'TELEGRAM_BOT_TOKEN', '')
+        message = (request.data.get('message') or '').strip()
+        chat_ids = request.data.get('chat_ids') or []
+        audio_url = request.data.get('audio_url') or None
+        voice_file = request.FILES.get('voice') or request.FILES.get('audio') or None
+        if isinstance(chat_ids, str):
+            try:
+                import json
+                chat_ids = json.loads(chat_ids)
+            except Exception:
+                chat_ids = [c.strip() for c in chat_ids.split(',') if c.strip()]
+        if not isinstance(chat_ids, list):
+            return Response({"success": False, "error": "chat_ids must be a list"}, status=status.HTTP_400_BAD_REQUEST)
+        results = []
+        if not token:
+            for cid in chat_ids:
+                results.append({"chat_id": cid, "success": True, "message": "dry_run"})
+            return Response({"success": True, "sent": len(chat_ids), "failed": 0, "results": results})
+        base = "https://api.telegram.org"
+        sent = 0
+        failed = 0
+        for cid in chat_ids:
+            try:
+                if voice_file:
+                    name = getattr(voice_file, 'name', 'voice_message')
+                    ctype = getattr(voice_file, 'content_type', 'audio/ogg')
+                    ext = os.path.splitext(name)[1].lower()
+                    if ext in ('.ogg', '.opus'):
+                        resp = requests.post(f"{base}/bot{token}/sendVoice", files={'voice': (name, voice_file.read(), ctype)}, data={"chat_id": cid}, timeout=30)
+                    else:
+                        resp = requests.post(f"{base}/bot{token}/sendAudio", files={'audio': (name, voice_file.read(), ctype)}, data={"chat_id": cid}, timeout=30)
+                elif audio_url:
+                    ext = os.path.splitext(str(audio_url).split('?')[0])[1].lower()
+                    if ext in ('.ogg', '.opus'):
+                        resp = requests.post(f"{base}/bot{token}/sendVoice", json={"chat_id": cid, "voice": audio_url}, timeout=15)
+                    else:
+                        resp = requests.post(f"{base}/bot{token}/sendAudio", json={"chat_id": cid, "audio": audio_url}, timeout=15)
+                else:
+                    resp = requests.post(f"{base}/bot{token}/sendMessage", json={"chat_id": cid, "text": message}, timeout=15)
+                if resp.status_code == 200 and resp.json().get('ok'):
+                    sent += 1
+                    results.append({"chat_id": cid, "success": True})
+                else:
+                    failed += 1
+                    results.append({"chat_id": cid, "success": False, "status": resp.status_code, "error": resp.text})
+            except Exception as e:
+                failed += 1
+                results.append({"chat_id": cid, "success": False, "error": str(e)})
+        return Response({"success": failed == 0, "sent": sent, "failed": failed, "results": results})
 
 class UserProfileView(generics.RetrieveUpdateAPIView):
     serializer_class = ProfileSerializer
@@ -180,6 +351,11 @@ class SoftwareAssistantView(APIView):
             if m:
                 num = m.group(2)
             if not num:
+                m_alt = re.search(r'([0-9০-৯]+)\s*(?:ষ্ঠ|তম|th|য়)?\s*(class|ক্লাস|শ্রেণি)', ql)
+                if m_alt:
+                    bn2en = {'০':'0','১':'1','২':'2','৩':'3','৪':'4','৫':'5','৬':'6','৭':'7','৮':'8','৯':'9'}
+                    num = ''.join(bn2en.get(ch, ch) for ch in m_alt.group(1))
+            if not num:
                 words_to_num = {
                     'one': '1','two': '2','three': '3','four': '4','five': '5','six': '6','seven': '7','eight': '8','nine': '9','ten': '10',
                     'সিক্স': '6','সেভেন': '7','এইট': '8','নাইন': '9','টেন': '10',
@@ -191,6 +367,11 @@ class SoftwareAssistantView(APIView):
                     if w in ql:
                         num = n
                         break
+            if not num:
+                m_any = re.search(r'([0-9০-৯]+)', ql)
+                if m_any:
+                    bn2en = {'০':'0','১':'1','২':'2','৩':'3','৪':'4','৫':'5','৬':'6','৭':'7','৮':'8','৯':'9'}
+                    num = ''.join(bn2en.get(ch, ch) for ch in m_any.group(1))
             from academics.models import ClassRoom
             if school_id:
                 qs = ClassRoom.objects.filter(school_id=school_id)
@@ -207,11 +388,23 @@ class SoftwareAssistantView(APIView):
                     '1': 'I', '2': 'II', '3': 'III', '4': 'IV', '5': 'V',
                     '6': 'VI', '7': 'VII', '8': 'VIII', '9': 'IX', '10': 'X'
                 }
+                digit_to_en = {
+                    '1': 'one', '2': 'two', '3': 'three', '4': 'four', '5': 'five',
+                    '6': 'six', '7': 'seven', '8': 'eight', '9': 'nine', '10': 'ten',
+                    '11': 'eleven', '12': 'twelve'
+                }
+                digit_to_bn_translit = {
+                    '6': 'সিক্স', '7': 'সেভেন', '8': 'এইট', '9': 'নাইন', '10': 'টেন'
+                }
                 candidates = [num]
                 if num in digit_to_bn:
                     candidates.append(digit_to_bn[num])
                 if num in digit_to_roman:
                     candidates.append(digit_to_roman[num])
+                if num in digit_to_en:
+                    candidates.append(digit_to_en[num])
+                if num in digit_to_bn_translit:
+                    candidates.append(digit_to_bn_translit[num])
                 
                 q_obj = Q()
                 for c in candidates:
@@ -229,6 +422,9 @@ class SoftwareAssistantView(APIView):
                 return section_id, None
             import re
             val = None
+            m0 = re.search(r'(class|ক্লাস|শ্রেণি)\s*([0-9০-৯]+)\s*([a-zA-Zঅ-হ])', ql)
+            if m0:
+                val = m0.group(3)
             m1 = re.search(r'(section|সেকশন|শাখা)\s*([a-zA-Zঅ-হ]+)', ql)
             if m1:
                 val = m1.group(2)
@@ -242,7 +438,7 @@ class SoftwareAssistantView(APIView):
                     val = m3.group(1)
             if not val:
                 return None, None
-            bn_map = {'ক': 'A', 'খ': 'B', 'গ': 'C', 'ঘ': 'D', 'ঙ': 'E', 'চ': 'F', 'ছ': 'G', 'জ': 'H'}
+            bn_map = {'ক': 'A', 'খ': 'B', 'গ': 'C', 'ঘ': 'D', 'ঙ': 'E', 'চ': 'F', 'ছ': 'G', 'জ': 'H', 'এ': 'A'}
             candidates = [val.strip()]
             if val.strip() in bn_map:
                 candidates.append(bn_map[val.strip()])
@@ -274,6 +470,22 @@ class SoftwareAssistantView(APIView):
             d = {'annual': 'Annual', 'half_yearly': 'Half Yearly', 'test': 'Test', 'terminal': 'Terminal', 'model': 'Model'}
             return d.get(t, t or '')
         def intent():
+            # Basic greetings and chat
+            if any(w in ql for w in ['hello', 'hi', 'salam', 'সালাম', 'আদাব', 'হাই', 'হ্যালো', 'hey', 'start', 'শুরু']):
+                return 'greeting'
+            if any(w in ql for w in ['kemon', 'kmn', 'how are', 'কেমন', 'খবর', 'obostha']):
+                 return 'chat_status'
+            if any(w in ql for w in ['love', 'like', 'pachondo', 'পছন্দ', 'ভালোবাসি', 'valobashi', 'prem', 'সুন্দর', 'nice']):
+                 return 'chat_affection'
+            if any(w in ql for w in ['thanks', 'thank', 'dhonnobad', 'ধন্যবাদ', 'shukriya']):
+                 return 'chat_thanks'
+            if any(w in ql for w in ['smart', 'intelligent', 'buddhiman', 'বুদ্ধিমান', 'ভালো', 'good', 'best', 'great']):
+                 return 'chat_compliment'
+            if any(w in ql for w in ['ki koro', 'what are you doing', 'ki korcho']):
+                 return 'chat_activity'
+            if any(w in ql for w in ['bye', 'goodbye', 'allah hafez', 'বিদায়', 'আল্লাহ হাফেজ']):
+                 return 'chat_bye'
+
             if any(w in ql for w in ['blood', 'রক্ত', 'ব্লাড']) and any(w in ql for w in ['count', 'কতজন', 'সংখ্যা', 'how many', 'total', 'মোট']):
                 return 'blood_group_count'
             if any(w in ql for w in ['blood', 'রক্ত', 'ব্লাড']) and any(w in ql for w in ['most', 'max', 'highest', 'বেশি', 'সর্বোচ্চ', 'সবচেয়ে বেশি', 'majority']):
@@ -286,15 +498,58 @@ class SoftwareAssistantView(APIView):
                 return 'fees_collection'
             if any(w in ql for w in ['বকেয়া', 'বাকি', 'due', 'বেতন']) or ('fee' in ql and 'due' in ql):
                 return 'fees_due'
-            if (any(w in ql for w in ['student', 'ছাত্র', 'ছাত্রী', 'শিক্ষার্থী']) or any(w in ql for w in ['teacher', 'শিক্ষক'])) and any(w in ql for w in ['কতজন', 'মোট', 'count', 'সংখ্যা']):
+            entity_tokens = ['student', 'students', 'স্টুডেন্ট', 'স্টুডেন্টস', 'ছাত্র', 'ছাত্রী', 'ছাত্রছাত্রী', 'শিক্ষার্থী', 'teacher', 'শিক্ষক']
+            count_tokens = ['কতজন', 'কয়জন', 'কয়জন', 'মোট', 'count', 'সংখ্যা', 'how many', 'total', 'কত', 'কতো', 'কতগুলো', 'কতগুলি', 'কয়টি', 'কয়টি']
+            try:
+                from users.models import AssistantMemory
+                mem, _ = AssistantMemory.objects.get_or_create(school_id=school_id or 0, key='synonyms')
+                syn = dict(mem.data or {})
+                sc = dict(syn.get('school_counts') or {})
+                e_extra = list(sc.get('entity') or [])
+                c_extra = list(sc.get('count') or [])
+                entity_tokens = list(dict.fromkeys(entity_tokens + e_extra))
+                count_tokens = list(dict.fromkeys(count_tokens + c_extra))
+            except Exception:
+                pass
+            has_entity = any(w in ql for w in entity_tokens)
+            has_count = any(w in ql for w in count_tokens) or (('জন' in ql) and any(w in ql for w in ['কত','কতো','কয়','কয়']))
+            if has_entity and has_count:
+                try:
+                    from users.models import AssistantMemory
+                    mem, _ = AssistantMemory.objects.get_or_create(school_id=school_id or 0, key='synonyms')
+                    syn = dict(mem.data or {})
+                    sc = dict(syn.get('school_counts') or {})
+                    e_list = list(sc.get('entity') or [])
+                    c_list = list(sc.get('count') or [])
+                    matched_e = [w for w in entity_tokens if w in ql]
+                    matched_c = [w for w in count_tokens if w in ql]
+                    e_new = list(dict.fromkeys(e_list + matched_e))
+                    c_new = list(dict.fromkeys(c_list + matched_c))
+                    sc['entity'] = e_new
+                    sc['count'] = c_new
+                    syn['school_counts'] = sc
+                    mem.data = syn
+                    mem.save(update_fields=['data'])
+                except Exception:
+                    pass
                 return 'school_counts'
             if any(w in ql for w in ['roll', 'রোল', 'রোল নাম্বার', 'রোল নম্বর', 'roll number']):
                 return 'student_result'
             topper_words = ['১ম', 'প্রথম', 'first', 'topper', 'টপার', 'rank 1', 'র‌্যাংক', 'র‍্যাঙ্ক', 'top']
             if any(w in ql for w in topper_words):
                 return 'results_topper'
+            rank_words = ['তম', 'rank', 'র‌্যাংক', 'র‍্যাঙ্ক', 'স্থান', 'position', 'nth', 'কে']
+            has_number = any(ch.isdigit() for ch in ql) or any(d in ql for d in ['০','১','২','৩','৪','৫','৬','৭','৮','৯'])
+            if any(w in ql for w in rank_words) and has_number:
+                return 'results_rank'
+            if (('মেনু' in ql or 'menu' in ql) and any(w in ql for w in ['স্কুল', 'school'])) or any(w in ql for w in ['স্কুল মেনু', 'school menu']):
+                return 'school_menu'
             if any(w in ql for w in ['result', 'রেজাল্ট', 'পরীক্ষা', 'exam', 'examination']):
                 return 'results'
+            if any(w in ql for w in ['sms', 'message', 'এসএমএস', 'মেসেজ']) and any(w in ql for w in ['send', 'pathao', 'dao', 'দাও', 'পাঠাও']):
+                return 'action_send_sms'
+            if (any(w in ql for w in ['student', 'ছাত্র', 'ছাত্রী', 'শিক্ষার্থী']) or any(w in ql for w in ['admission', 'ভর্তি'])) and any(w in ql for w in ['add', 'create', 'new', 'নতুন', 'করো']):
+                return 'action_add_student'
             return 'unknown'
         def latest_exam_for_class(cls_id, sec_id):
             from results.models import Examination
@@ -444,6 +699,211 @@ class SoftwareAssistantView(APIView):
             except Exception:
                 pass
             return Response({"text": text})
+
+        # Removed duplicate basic 'school_counts' handler in favor of enhanced handler below
+
+        if it == 'attendance_daily':
+            from attendance.models import AttendanceRecord
+            import datetime
+            today = datetime.date.today()
+            
+            qs = AttendanceRecord.objects.filter(date=today)
+            if school_id:
+                qs = qs.filter(school_id=school_id)
+            
+            total_p = qs.filter(present=True).count()
+            total_a = qs.filter(present=False).count()
+            
+            if total_p + total_a == 0:
+                 return Response({"text": "আজকের হাজিরা এখনো এন্ট্রি করা হয়নি।"}, status=status.HTTP_200_OK)
+            
+            text = f"আজকের উপস্থিতি: {total_p} জন, অনুপস্থিত: {total_a} জন।"
+            return Response({"text": text}, status=status.HTTP_200_OK)
+
+        if it == 'fees_due':
+            from fees.models import FeeSlip
+            from django.db.models import Sum
+            
+            qs = FeeSlip.objects.filter(status__in=['unpaid', 'partial'])
+            if school_id:
+                qs = qs.filter(school_id=school_id)
+            
+            # Simple iteration to handle partial payments safely
+            total_due = 0
+            count = 0
+            slips = qs.only('amount', 'amount_paid')
+            for s in slips:
+                total_due += (s.amount - s.amount_paid)
+                count += 1
+            
+            student_count = qs.values('student').distinct().count()
+            
+            text = f"মোট বকেয়া: {total_due} টাকা ({student_count} জন শিক্ষার্থীর)।"
+            return Response({"text": text}, status=status.HTTP_200_OK)
+
+        if it == 'fees_collection':
+            from fees.models import Payment
+            import datetime
+            today = datetime.date.today()
+            
+            qs = Payment.objects.filter(payment_date=today, payment_status='completed')
+            if school_id:
+                qs = qs.filter(student__school_id=school_id)
+                
+            total = qs.aggregate(Sum('amount'))['amount__sum'] or 0
+            
+            text = f"আজকের মোট আদায়: {total} টাকা।"
+            return Response({"text": text}, status=status.HTTP_200_OK)
+            
+        if it == 'results_topper':
+            cls_id, cls_name = resolve_classroom()
+            sec_id, sec_name = resolve_section()
+            et = pick_exam_type()
+            if not cls_id:
+                return Response({"text": "কোন ক্লাসের টপার খুঁজছেন? ক্লাসের নাম উল্লেখ করুন (যেমন: ক্লাস সিক্স)।"}, status=status.HTTP_200_OK)
+            from results.models import Examination, Result
+            from django.db.models import Sum
+            exams = Examination.objects.all()
+            if school_id:
+                exams = exams.filter(school_id=school_id)
+            exams = exams.filter(classroom_id=cls_id)
+            if sec_id:
+                exams = exams.filter(section_id=sec_id)
+            if et:
+                exams = exams.filter(exam_type=et)
+            ex = exams.order_by('-exam_date', '-id').first()
+            if not ex:
+                return Response({"text": "কোনো পরীক্ষা পাওয়া যায়নি।"}, status=status.HTTP_200_OK)
+            top = Result.objects.filter(examination=ex).values('student').annotate(total=Sum('total_obtained')).order_by('-total')[:1]
+            if not top:
+                return Response({"text": "ফলাফল পাওয়া যায়নি।"}, status=status.HTTP_200_OK)
+            topper_st_id = top[0]['student']
+            max_marks = top[0]['total']
+            from academics.models import StudentProfile
+            try:
+                st = StudentProfile.objects.get(id=topper_st_id)
+                nm = st.user.get_full_name() or st.user.username
+                text = f"{ex.name}-এ টপার: {nm} (রোল {st.roll_number}), প্রাপ্ত নম্বর: {max_marks}।"
+            except Exception:
+                text = f"টপার আইডি {topper_st_id} এর তথ্য পাওয়া যায়নি।"
+            return Response({"text": text}, status=status.HTTP_200_OK)
+
+        if it == 'results_rank':
+            import re
+            def normalize_digits(s):
+                m = {'০':'0','১':'1','২':'2','৩':'3','৪':'4','৫':'5','৬':'6','৭':'7','৮':'8','৯':'9'}
+                return ''.join(m.get(ch, ch) for ch in s)
+            pos = None
+            mpos = re.search(r'([0-9০-৯]+)\s*(তম|th)', ql)
+            if mpos:
+                pos = int(normalize_digits(mpos.group(1)))
+            if not pos:
+                mpos2 = re.search(r'(rank|র‌্যাংক|র‍্যাঙ্ক)\s*([0-9০-৯]+)', ql)
+                if mpos2:
+                    pos = int(normalize_digits(mpos2.group(2)))
+            if not pos:
+                mpos3 = re.search(r'([0-9০-৯]+)\s*(number|নম্বর|স্থান|position)', ql)
+                if mpos3:
+                    pos = int(normalize_digits(mpos3.group(1)))
+            cls_id, cls_name = resolve_classroom()
+            sec_id, sec_name = resolve_section()
+            et = pick_exam_type()
+            from results.models import Examination, Result
+            from django.db.models import Sum
+            if not cls_id:
+                return Response({"text": "কোন ক্লাস উল্লেখ নেই। উদাহরণ: ক্লাস সেভেন ক।"}, status=status.HTTP_200_OK)
+            exams = Examination.objects.all()
+            if school_id:
+                exams = exams.filter(school_id=school_id)
+            exams = exams.filter(classroom_id=cls_id)
+            if sec_id:
+                exams = exams.filter(section_id=sec_id)
+            if et:
+                exams = exams.filter(exam_type=et)
+            if date:
+                try:
+                    exams = exams.filter(exam_date=date)
+                except Exception:
+                    pass
+            if month:
+                try:
+                    # month format YYYY-MM
+                    y, mth = month.split('-')
+                    exams = exams.filter(exam_date__year=int(y), exam_date__month=int(mth))
+                except Exception:
+                    pass
+            ex = exams.order_by('-exam_date', '-id').first()
+            if not ex:
+                return Response({"text": "কোনো পরীক্ষা পাওয়া যায়নি।"}, status=status.HTTP_200_OK)
+            agg = Result.objects.filter(examination=ex).values('student').annotate(total=Sum('total_obtained')).order_by('-total', 'student')
+            if not agg:
+                return Response({"text": "এই পরীক্ষার কোনো ফলাফল পাওয়া যায়নি।"}, status=status.HTTP_200_OK)
+            if not pos or pos < 1 or pos > len(agg):
+                return Response({"text": f"উল্লেখিত র‍্যাঙ্কের কোনো শিক্ষার্থী নেই। মোট {len(agg)} জনের ফল প্রকাশিত।"}, status=status.HTTP_200_OK)
+            target = agg[pos-1]
+            from academics.models import StudentProfile
+            try:
+                st = StudentProfile.objects.get(id=target['student'])
+                nm = st.user.get_full_name() or st.user.username
+                text = f"{ex.name}-এর {pos} তম: {nm} (রোল {st.roll_number}), মোট নম্বর {target['total']}।"
+            except Exception:
+                text = f"{ex.name}-এর {pos} তম শিক্ষার্থীর তথ্য পাওয়া যায়নি।"
+            return Response({"text": text}, status=status.HTTP_200_OK)
+
+        if it == 'action_send_sms':
+            return Response({"text": "এসএমএস পাঠাতে হলে বাম পাশের মেনু থেকে 'SMS Panel'-এ যান। সেখানে আপনি নির্দিষ্ট ক্লাস বা বকেয়া শিক্ষার্থীদের মেসেজ পাঠাতে পারবেন।"}, status=status.HTTP_200_OK)
+
+        if it == 'action_add_student':
+            return Response({"text": "নতুন ছাত্র ভর্তি করতে হলে ড্যাশবোর্ডের 'Admission' মেনুতে ক্লিক করুন অথবা 'Students' পেজে গিয়ে 'Add Student' বাটন চাপুন।"}, status=status.HTTP_200_OK)
+
+        if it == 'greeting':
+            return Response({"text": "হ্যালো! আমি আপনাকে কীভাবে সাহায্য করতে পারি? পরীক্ষার ফলাফল, বকেয়া বেতন, বা অন্য কোনো তথ্য জানতে চাইতে পারেন।"}, status=status.HTTP_200_OK)
+        
+        if it == 'chat_status':
+            return Response({"text": "আমি ভালো আছি, ধন্যবাদ! আপনি কেমন আছেন? আপনার কি কোনো সাহায্য প্রয়োজন?"}, status=status.HTTP_200_OK)
+        
+        if it == 'chat_affection':
+            return Response({"text": "ধন্যবাদ! আমিও আপনাদের সবাইকে খুব পছন্দ করি। আপনাদের সাহায্য করতে পেরে আমি আনন্দিত।"}, status=status.HTTP_200_OK)
+        
+        if it == 'chat_compliment':
+            return Response({"text": "অনেক ধন্যবাদ! আমি সবসময় চেষ্টা করি আপনাদের সেরা সেবা দিতে।"}, status=status.HTTP_200_OK)
+            
+        if it == 'chat_thanks':
+            return Response({"text": "আপনাকেও ধন্যবাদ! আরো কোনো সাহায্য লাগলে জানাবেন।"}, status=status.HTTP_200_OK)
+            
+        if it == 'chat_activity':
+            return Response({"text": "আমি এখন আপনার প্রশ্নের উত্তর দেওয়ার জন্য প্রস্তুত। আপনি কি কোনো নির্দিষ্ট তথ্য খুঁজছেন?"}, status=status.HTTP_200_OK)
+            
+        if it == 'chat_bye':
+            return Response({"text": "আল্লাহ হাফেজ! আবার কথা হবে। ভালো থাকবেন।"}, status=status.HTTP_200_OK)
+
+        if it == 'school_menu':
+            items = [
+                'ড্যাশবোর্ড','শ্রেণি','শিক্ষক','ছাত্র-ছাত্রী','বিষয়/সাবজেক্ট','হাজিরা','রেজাল্ট','রেজাল্ট কার্ড','Rank List','আইডি কার্ড','সার্টিফিকেট','প্রবেশপত্র','পরীক্ষা','ফি','ফি পরিশোধ','রিসিট বই','সফটওয়ার এ্যাসিসটেন্ট','এসএমএস','অভিভাবক','কমিটি','এডমিন','প্রোফাইল'
+            ]
+            n = len(items)
+            ask_count = any(w in ql for w in ['কয়টি','কত','সংখ্যা','কতগুলো','কতগুলি','how many','count','total','মোট'])
+            ask_list = any(w in ql for w in ['তালিকা','list','নাম','কি কি','options','items','অপশন','অপসন','ওপসন'])
+            if ask_count and not ask_list:
+                text = f"স্কুল মেনুতে মোট {n}টি অপশন আছে।"
+                resp = {"text": text, "total_menu_items": n}
+            elif ask_list and not ask_count:
+                text = f"স্কুল মেনুর অপশনগুলো: {', '.join(items)}."
+                resp = {"text": text, "items": items, "total_menu_items": n}
+            else:
+                text = f"স্কুল মেনুতে মোট {n}টি অপশন আছে। প্রধানগুলো: {', '.join(items[:6])}…"
+                resp = {"text": text, "items": items, "total_menu_items": n}
+            try:
+                AssistantLog.objects.create(
+                    user=getattr(request, 'user', None),
+                    school_id=school_id if school_id else None,
+                    query_text=q,
+                    intent=it,
+                    result_summary=resp.get('text')
+                )
+            except Exception:
+                pass
+            return Response(resp)
 
         if it == 'student_result':
             import re
@@ -956,9 +1416,25 @@ class SoftwareAssistantView(APIView):
             if not school_id:
                 return Response({"error": "school প্রয়োজন"}, status=status.HTTP_400_BAD_REQUEST)
             from academics.models import StudentProfile
+            try:
+                from users.models import AssistantMemory
+                mem, _ = AssistantMemory.objects.get_or_create(school_id=school_id or 0, key='cache')
+                cache = dict(mem.data or {})
+            except Exception:
+                cache = {}
             
             cls_id, cls_name = resolve_classroom()
             sec_id, sec_name = resolve_section()
+            cache_key = f"school_counts|{school_id or ''}|{cls_id or ''}|{sec_id or ''}"
+            cached = cache.get(cache_key)
+            if cached:
+                import time
+                now = int(time.time())
+                if isinstance(cached, dict) and 'value' in cached and 'ts' in cached and 'ttl' in cached:
+                    if (now - int(cached['ts'])) <= int(cached['ttl']):
+                        return Response(cached['value'])
+                else:
+                    return Response(cached)
             
             qs_students = StudentProfile.objects.filter(school_id=school_id)
             if cls_id:
@@ -1000,6 +1476,23 @@ class SoftwareAssistantView(APIView):
                 data[it] = int(data.get(it, 0)) + 1
                 mem.data = data
                 mem.save(update_fields=['data'])
+                try:
+                    mem2, _ = AssistantMemory.objects.get_or_create(school_id=school_id or 0, key='cache')
+                    cdata = dict(mem2.data or {})
+                    import time
+                    now = int(time.time())
+                    ttl = 900
+                    try:
+                        cfg, _ = AssistantMemory.objects.get_or_create(school_id=school_id or 0, key='cache_config')
+                        cfg_data = dict(cfg.data or {})
+                        ttl = int(cfg_data.get('school_counts_ttl', ttl))
+                    except Exception:
+                        pass
+                    cdata[cache_key] = {"value": resp, "ts": now, "ttl": ttl}
+                    mem2.data = cdata
+                    mem2.save(update_fields=['data'])
+                except Exception:
+                    pass
             except Exception:
                 pass
             return Response(resp)
@@ -1012,6 +1505,17 @@ class SoftwareAssistantView(APIView):
                 params={'raw': True},
                 result_summary="unparsed"
             )
+        except Exception:
+            pass
+        try:
+            from users.models import AssistantMemory
+            mem, _ = AssistantMemory.objects.get_or_create(school_id=school_id or 0, key='unknown_queries')
+            arr = list(mem.data or [])
+            arr.append({"q": q})
+            if len(arr) > 200:
+                arr = arr[-200:]
+            mem.data = arr
+            mem.save(update_fields=['data'])
         except Exception:
             pass
         return Response({"text": "অনুরোধটি বুঝতে পারিনি। অনুগ্রহ করে ফলাফল, উপস্থিতি বা ফি সম্পর্কিত প্রশ্ন করুন।"}, status=status.HTTP_200_OK)
@@ -1209,3 +1713,79 @@ def send_template_sms_view(request):
         return Response({
             "error": f"Invalid template data: {str(e)}"
         }, status=status.HTTP_400_BAD_REQUEST)
+
+class AutoRuleSuggestionView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    def get(self, request):
+        school_id = request.query_params.get('school')
+        try:
+            mem_unknown, _ = AssistantMemory.objects.get_or_create(school_id=school_id or 0, key='unknown_queries')
+            unknown = list(mem_unknown.data or [])
+        except Exception:
+            unknown = []
+        try:
+            mem_syn, _ = AssistantMemory.objects.get_or_create(school_id=school_id or 0, key='synonyms')
+            syn = dict(mem_syn.data or {})
+            sc = dict(syn.get('school_counts') or {})
+        except Exception:
+            syn = {}
+            sc = {}
+        existing_entity = set(sc.get('entity') or [])
+        existing_count = set(sc.get('count') or [])
+        existing_class = set(sc.get('class') or [])
+        existing_period = set(sc.get('period') or [])
+        base_entity = {'student','students','স্টুডেন্ট','স্টুডেন্টস','ছাত্র','ছাত্রী','ছাত্রছাত্রী','শিক্ষার্থী','teacher','শিক্ষক'}
+        base_count = {'কতজন','কয়জন','কয়জন','মোট','count','সংখ্যা','how many','total','কত','কতো','কতগুলো','কতগুলি','কয়টি','কয়টি'}
+        base_class = {'class','ক্লাস','শ্রেণি'}
+        base_period = {'monthly','মাসিক','month','মাস'}
+        freq_entity = {}
+        freq_count = {}
+        freq_class = {}
+        freq_period = {}
+        for item in unknown[-200:]:
+            q = (item.get('q') or '').lower()
+            for t in base_entity:
+                if t in q:
+                    freq_entity[t] = freq_entity.get(t, 0) + 1
+            for t in base_count:
+                if t in q:
+                    freq_count[t] = freq_count.get(t, 0) + 1
+            for t in base_class:
+                if t in q:
+                    freq_class[t] = freq_class.get(t, 0) + 1
+            for t in base_period:
+                if t in q:
+                    freq_period[t] = freq_period.get(t, 0) + 1
+        suggest_entity = [t for t, c in sorted(freq_entity.items(), key=lambda x: -x[1]) if t not in existing_entity][:10]
+        suggest_count = [t for t, c in sorted(freq_count.items(), key=lambda x: -x[1]) if t not in existing_count][:10]
+        suggest_class = [t for t, c in sorted(freq_class.items(), key=lambda x: -x[1]) if t not in existing_class][:10]
+        suggest_period = [t for t, c in sorted(freq_period.items(), key=lambda x: -x[1]) if t not in existing_period][:10]
+        return Response({
+            "intent": "school_counts",
+            "unknown_total": len(unknown),
+            "suggestions": {
+                "entity": suggest_entity,
+                "count": suggest_count,
+                "class": suggest_class,
+                "period": suggest_period
+            }
+        })
+    def post(self, request):
+        school_id = request.data.get('school') or request.query_params.get('school')
+        payload = request.data or {}
+        intent_key = (payload.get('intent') or 'school_counts')
+        entity = list(payload.get('entity') or [])
+        count = list(payload.get('count') or [])
+        cls = list(payload.get('class') or [])
+        period = list(payload.get('period') or [])
+        mem_syn, _ = AssistantMemory.objects.get_or_create(school_id=school_id or 0, key='synonyms')
+        syn = dict(mem_syn.data or {})
+        sc = dict(syn.get(intent_key) or {})
+        sc['entity'] = list(dict.fromkeys(list(sc.get('entity') or []) + entity))
+        sc['count'] = list(dict.fromkeys(list(sc.get('count') or []) + count))
+        sc['class'] = list(dict.fromkeys(list(sc.get('class') or []) + cls))
+        sc['period'] = list(dict.fromkeys(list(sc.get('period') or []) + period))
+        syn[intent_key] = sc
+        mem_syn.data = syn
+        mem_syn.save(update_fields=['data'])
+        return Response({"status": "updated", "synonyms": syn.get(intent_key)})

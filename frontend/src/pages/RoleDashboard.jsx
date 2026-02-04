@@ -106,7 +106,7 @@ const RoleDashboard = ({ role: roleProp }) => {
   };
   const shortClass = (name) => {
     if (!name) return '';
-    return String(name).replace(/\s*শ্রেণী?\s*$/,'');
+    return String(name).replace(/\s*(?:শ্রেণি|শ্রেণী)?\s*$/,'');
   };
 
   // Load pending payments for this school (flexible to backend variations)
@@ -1167,7 +1167,7 @@ const RoleDashboard = ({ role: roleProp }) => {
                           const firstName = String(fullName).trim().split(/\s+/)[0] || '';
                           const rollBn = p.roll ? engToBnDigits(p.roll) : '';
                           const clsRaw = p.class_name || '';
-                          const clsPart = clsRaw ? (/(শ্রেণী|শ্রেণি)/.test(clsRaw) ? clsRaw : `${clsRaw} শ্রেণী`) : '';
+                          const clsPart = clsRaw ? (/(শ্রেণী|শ্রেণি)/.test(clsRaw) ? clsRaw : `${clsRaw} শ্রেণি`) : '';
                           // Line 1: amount + first name + roll
                           return `${amt}টাকা ${firstName}${rollBn ? ` ${rollBn}` : ''}${clsPart ? ` ${clsPart}` : ''}`;
                         })()}

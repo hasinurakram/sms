@@ -315,7 +315,7 @@ export default function IDCardGenerator() {
                 onClick={() => setSearchType('bulk')}
                 size="small"
               >
-                একাধিক (শ্রেণী অনুযায়ী)
+                একাধিক (শ্রেণি অনুযায়ী)
               </Button>
             </Stack>
 
@@ -334,7 +334,7 @@ export default function IDCardGenerator() {
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 2 }}>
                 <TextField
                   select
-                  label="শ্রেণী নির্বাচন"
+                  label="শ্রেণি নির্বাচন"
                   value={classFilter}
                   onChange={(e) => {
                     setClassFilter(e.target.value);
@@ -343,7 +343,7 @@ export default function IDCardGenerator() {
                   }}
                   fullWidth
                 >
-                  <MenuItem value="">সব শ্রেণী</MenuItem>
+                  <MenuItem value="">সব শ্রেণি</MenuItem>
                   {classrooms.map((cls) => (
                     <MenuItem key={cls.id} value={cls.id}>{cls.name}</MenuItem>
                   ))}

@@ -160,8 +160,8 @@ const ReceiptBook = () => {
           </Grid>
           <Grid item xs={6}>
             <Typography variant="body2" sx={{ color: '#334065' }}>
-              <strong>শ্রেণী:</strong> _______________
-            </Typography>
+                <strong>শ্রেণি:</strong> _______________
+              </Typography>
           </Grid>
           <Grid item xs={6}>
             <Typography variant="body2" sx={{ color: '#334065' }}>

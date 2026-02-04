@@ -152,7 +152,7 @@ export default function ResultsPage() {
         setExaminations(data);
         setLoading(false);
         if (data.length === 0) {
-          toast.info('এই শ্রেণীর জন্য কোনো পরীক্ষা পাওয়া যায়নি');
+          toast.info('এই শ্রেণির জন্য কোনো পরীক্ষা পাওয়া যায়নি');
         }
       })
       .catch(err => {
@@ -1106,9 +1106,9 @@ export default function ResultsPage() {
     const examId = parseInt(bulkForm.exam || selectedExam);
     const subjectId = parseInt(bulkForm.subject);
     const classroomId = parseInt(bulkForm.classroom);
-    if (!examId || !subjectId || !classroomId) { toast.error('পরীক্ষা, শ্রেণী ও বিষয় নির্বাচন করুন'); return; }
+    if (!examId || !subjectId || !classroomId) { toast.error('পরীক্ষা, শ্রেণি ও বিষয় নির্বাচন করুন'); return; }
     const examObj = examinations.find(ex => ex.id === examId);
-    if (!examObj || examObj.classroom !== classroomId) { toast.error('নির্বাচিত পরীক্ষা ওই শ্রেণীর নয়'); return; }
+    if (!examObj || examObj.classroom !== classroomId) { toast.error('নির্বাচিত পরীক্ষা ওই শ্রেণির নয়'); return; }
     if (examObj && examObj.total_marks) {
       toast.info(`এই বাল্ক ইনপুটে হিসাব হবে মোট ${examObj.total_marks} ধরে`);
     }
@@ -1261,7 +1261,7 @@ export default function ResultsPage() {
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="center">
             <TextField
               select
-              label="শ্রেণী নির্বাচন করুন"
+              label="শ্রেণি নির্বাচন করুন"
               value={selectedClass}
               onChange={handleClassChange}
               sx={{ minWidth: 240 }}
@@ -1684,11 +1684,11 @@ export default function ResultsPage() {
             {/* Class Selection */}
             <Grid size={{ xs: 12, md: 6 }}>
               <FormControl fullWidth>
-                <InputLabel>শ্রেণী নির্বাচন করুন</InputLabel>
+                <InputLabel>শ্রেণি নির্বাচন করুন</InputLabel>
                 <Select
                   value={selectedClass}
                   onChange={handleClassChange}
-                  label="শ্রেণী নির্বাচন করুন"
+                  label="শ্রেণি নির্বাচন করুন"
                   disabled={loadingClasses}
                 >
                   {classes.map(classroom => (
@@ -1941,7 +1941,7 @@ export default function ResultsPage() {
           </Button>
           <Button
             onClick={async () => {
-              if (!selectedExam || !selectedClass || !selectedStudent) { toast.error('পরীক্ষা, শ্রেণী ও শিক্ষার্থী নির্বাচন করুন'); return; }
+              if (!selectedExam || !selectedClass || !selectedStudent) { toast.error('পরীক্ষা, শ্রেণি ও শিক্ষার্থী নির্বাচন করুন'); return; }
               const examId = parseInt(selectedExam);
               const examObjForRedirect = examinations.find(ex => ex.id === examId) || null;
               const clsIdRedirect = String(selectedClass);
@@ -2045,11 +2045,11 @@ export default function ResultsPage() {
           <Grid container spacing={2} sx={{ mt: 1 }}>
             <Grid size={{ xs: 12, md: 3 }}>
               <FormControl fullWidth>
-                <InputLabel>শ্রেণী</InputLabel>
+                <InputLabel>শ্রেণি</InputLabel>
                 <Select
                   value={bulkForm.classroom}
                   onChange={(e) => { const v = e.target.value; setBulkForm(prev => ({ ...prev, classroom: v })); loadStudentsByClass(v, bulkForm.section || null); loadSectionsByClass(v); loadSubjectsByClass(v); loadExaminationsByClass(v); const exams = getExamsForClass(v); setBulkForm(prev => ({ ...prev, exam: exams[0]?.id || '' })); }}
-                  label="শ্রেণী"
+                  label="শ্রেণি"
                   disabled={loadingClasses}
                 >
                   {classes.map(classroom => (

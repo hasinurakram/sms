@@ -25,7 +25,7 @@ export const AcademicsProvider = ({ children }) => {
     if (!schoolId) return;
     
     try {
-      const response = await scopedGet('/api/academics/classrooms/', schoolId, {}, { timeout: 15000 });
+      const response = await scopedGet('/api/academics/classrooms/', schoolId, {}, { timeout: 30000 });
       const data = Array.isArray(response.data) ? response.data : response.data.results || [];
       setClassrooms(data);
       return data;
@@ -54,49 +54,61 @@ export const AcademicsProvider = ({ children }) => {
   const refreshStudents = useCallback(async (schoolId = currentSchoolId) => {
     if (!schoolId) return;
     
-    try {
-      const response = await scopedGet('/api/academics/students/', schoolId, {}, { timeout: 15000 });
-      const data = Array.isArray(response.data) ? response.data : response.data.results || [];
-      console.log(`Fetched ${data.length} students. Sorting...`);
-      
-      let sorted = [];
+    let attempts = 0;
+    const maxAttempts = 3;
+    
+    while (attempts < maxAttempts) {
       try {
-        sorted = [...data].sort((a, b) => {
-          const rA = String(a?.roll_number ?? '').trim();
-          const rB = String(b?.roll_number ?? '').trim();
-  
-          const emptyA = !rA;
-          const emptyB = !rB;
-  
-          if (emptyA && !emptyB) return 1;
-          if (!emptyA && emptyB) return -1;
-          if (emptyA && emptyB) return 0;
-  
-          // Try numeric sort for non-empty values
-          const ar = parseInt(rA.replace(/\D/g, ''), 10);
-          const br = parseInt(rB.replace(/\D/g, ''), 10);
-          
-          const aNum = Number.isNaN(ar) ? null : ar;
-          const bNum = Number.isNaN(br) ? null : br;
-          
-          // If both have extractable numbers, compare them first
-          if (aNum !== null && bNum !== null && aNum !== bNum) {
-              return aNum - bNum;
-          }
-          
-          // Fallback to string comparison
-          return rA.localeCompare(rB, undefined, { numeric: true, sensitivity: 'base' });
-        });
-      } catch (sortErr) {
-        console.error('Sorting failed, using unsorted data:', sortErr);
-        sorted = data;
+        const response = await scopedGet('/api/academics/students/', schoolId, {}, { timeout: 60000 });
+        const data = Array.isArray(response.data) ? response.data : response.data.results || [];
+        console.log(`Fetched ${data.length} students. Sorting...`);
+        
+        let sorted = [];
+        try {
+          sorted = [...data].sort((a, b) => {
+            const rA = String(a?.roll_number ?? '').trim();
+            const rB = String(b?.roll_number ?? '').trim();
+    
+            const emptyA = !rA;
+            const emptyB = !rB;
+    
+            if (emptyA && !emptyB) return 1;
+            if (!emptyA && emptyB) return -1;
+            if (emptyA && emptyB) return 0;
+    
+            // Try numeric sort for non-empty values
+            const ar = parseInt(rA.replace(/\D/g, ''), 10);
+            const br = parseInt(rB.replace(/\D/g, ''), 10);
+            
+            const aNum = Number.isNaN(ar) ? null : ar;
+            const bNum = Number.isNaN(br) ? null : br;
+            
+            // If both have extractable numbers, compare them first
+            if (aNum !== null && bNum !== null && aNum !== bNum) {
+                return aNum - bNum;
+            }
+            
+            // Fallback to string comparison
+            return rA.localeCompare(rB, undefined, { numeric: true, sensitivity: 'base' });
+          });
+        } catch (sortErr) {
+          console.error('Sorting failed, using unsorted data:', sortErr);
+          sorted = data;
+        }
+        
+        setStudents(sorted);
+        return sorted;
+      } catch (error) {
+        attempts++;
+        console.error(`Error fetching students (attempt ${attempts}/${maxAttempts}):`, error);
+        
+        if (attempts >= maxAttempts) {
+          throw error;
+        }
+        
+        // Wait before retrying (1s, 2s, etc.)
+        await new Promise(resolve => setTimeout(resolve, attempts * 1000));
       }
-      
-      setStudents(sorted);
-      return sorted;
-    } catch (error) {
-      console.error('Error fetching students:', error);
-      throw error;
     }
   }, [currentSchoolId]);
 

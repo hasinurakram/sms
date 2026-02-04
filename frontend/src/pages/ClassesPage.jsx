@@ -77,9 +77,9 @@ export default function ClassesPage(){
         gap: 2
       }}>
         <Box>
-          <Typography variant="h4" component="h1" gutterBottom>শ্রেণী ব্যবস্থাপনা</Typography>
+          <Typography variant="h4" component="h1" gutterBottom>শ্রেণি ব্যবস্থাপনা</Typography>
           <Typography variant="body1" color="text.secondary">
-            আপনার স্কুলের শ্রেণী ও সেকশন পরিচালনা করুন
+            আপনার স্কুলের শ্রেণি ও সেকশন পরিচালনা করুন
           </Typography>
         </Box>
         <Button 
@@ -87,7 +87,7 @@ export default function ClassesPage(){
           onClick={() => navigate(`/school/${id}/classes/create`)}
           sx={{ height: 'fit-content' }}
         >
-          নতুন শ্রেণী যোগ করুন
+          নতুন শ্রেণি যোগ করুন
         </Button>
       </Box>
 
@@ -98,7 +98,7 @@ export default function ClassesPage(){
               classroom={{
                 ...c,
                 // Ensure we have all required fields with fallbacks
-                name: c.name || 'নামবিহীন শ্রেণী',
+                name: c.name || 'নামবিহীন শ্রেণি',
                 description: c.description || '',
                 student_count: c.student_count || 0,
                 sections: c.sections || [],
@@ -110,7 +110,7 @@ export default function ClassesPage(){
 
       <Box sx={{ mt: 4, textAlign: 'center' }}>
         <Typography variant="body2" color="text.secondary">
-          📊 মোট শ্রেণী: {classes.length} | মোট সেকশন: {getTotalSections()}
+          📊 মোট শ্রেণি: {classes.length} | মোট সেকশন: {getTotalSections()}
         </Typography>
       </Box>
     </Box>

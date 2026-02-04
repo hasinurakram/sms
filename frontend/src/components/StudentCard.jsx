@@ -22,8 +22,7 @@ export default function StudentCard({ student, onUploaded, onEdit, onDelete, onC
 
   const className = student.classroom?.name || '';
   const sectionName = student.section?.name || '';
-  const guardianName = student.guardian_name
-    || (student.guardian ? `${student.guardian.first_name || ''} ${student.guardian.last_name || ''}`.trim() : '');
+  const guardianName = (student.guardian ? `${student.guardian.first_name || ''} ${student.guardian.last_name || ''}`.trim() : '') || student.guardian_name;
 
   const resolvePhotoUrl = (raw) => {
     try {
@@ -97,7 +96,7 @@ export default function StudentCard({ student, onUploaded, onEdit, onDelete, onC
                 <Typography variant="h6">{displayName}</Typography>
               </Stack>
               <Typography variant="body2">রোল: {student.roll_number || 'N/A'}</Typography>
-              {className && <Typography variant="body2">শ্রেণী: {className}</Typography>}
+              {className && <Typography variant="body2">শ্রেণি: {className}</Typography>}
               {sectionName && <Typography variant="body2">সেকশন: {sectionName}</Typography>}
               <Typography variant="body2">রক্তের গ্রুপ: {student.blood_group || 'N/A'}</Typography>
               {guardianName && <Typography variant="body2">অভিভাবক: {guardianName}</Typography>}

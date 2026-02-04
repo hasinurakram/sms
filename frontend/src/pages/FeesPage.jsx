@@ -216,7 +216,7 @@ const FeesPage = () => {
         return;
       }
       if (!selectedClass) {
-        setSnackbar({ open: true, message: 'শ্রেণী নির্বাচন করুন', severity: 'error' });
+        setSnackbar({ open: true, message: 'শ্রেণি নির্বাচন করুন', severity: 'error' });
         return;
       }
       const cid = String(selectedClass);
@@ -494,7 +494,7 @@ const FeesPage = () => {
       return;
     }
     if (!selectedClass) {
-      setSnackbar({ open: true, message: 'শ্রেণী নির্বাচন করুন', severity: 'warning' });
+      setSnackbar({ open: true, message: 'শ্রেণি নির্বাচন করুন', severity: 'warning' });
       return;
     }
     try {
@@ -665,7 +665,7 @@ const FeesPage = () => {
       return;
     }
     if (!selectedClass) {
-      setSnackbar({ open: true, message: 'শ্রেণী নির্বাচন করুন', severity: 'error' });
+      setSnackbar({ open: true, message: 'শ্রেণি নির্বাচন করুন', severity: 'error' });
       return;
     }
     const anyAmount = [
@@ -845,7 +845,7 @@ const FeesPage = () => {
   // Generate class slips: assign all structures to all students in class (skip existing)
   const generateClassSlips = async () => {
     if (!selectedClass) {
-      setSnackbar({ open: true, message: 'শ্রেণী নির্বাচন করুন', severity: 'error' });
+      setSnackbar({ open: true, message: 'শ্রেণি নির্বাচন করুন', severity: 'error' });
       return;
     }
     try {
@@ -945,7 +945,7 @@ const FeesPage = () => {
       if (formattedClasses.length === 0) {
         setSnackbar({
           open: true,
-          message: 'কোন শ্রেণী পাওয়া যায়নি। দয়া করে প্রথমে শ্রেণী তৈরি করুন।',
+          message: 'কোন শ্রেণি পাওয়া যায়নি। দয়া করে প্রথমে শ্রেণি তৈরি করুন।',
           severity: 'warning'
         });
       }
@@ -1816,7 +1816,7 @@ const FeesPage = () => {
       if (formattedStudents.length === 0) {
         setSnackbar({
           open: true,
-          message: 'এই শ্রেণীতে কোন শিক্ষার্থী পাওয়া যায়নি',
+          message: 'এই শ্রেণিতে কোন শিক্ষার্থী পাওয়া যায়নি',
           severity: 'info',
           autoHideDuration: 5000
         });
@@ -2052,8 +2052,8 @@ const FeesPage = () => {
   if (!selectedClass) {
     return (
       <FormControl fullWidth disabled>
-        <InputLabel>প্রথমে একটি শ্রেণী নির্বাচন করুন</InputLabel>
-        <Select value="" label="প্রথমে একটি শ্রেণী নির্বাচন করুন" />
+        <InputLabel>প্রথমে একটি শ্রেণি নির্বাচন করুন</InputLabel>
+        <Select value="" label="প্রথমে একটি শ্রেণি নির্বাচন করুন" />
       </FormControl>
     );
   }
@@ -2086,7 +2086,7 @@ const FeesPage = () => {
           disabled
         />
         <Typography variant="caption" color="error">
-          {formErrors.studentId || 'এই শ্রেণীতে কোন নিবন্ধিত শিক্ষার্থী নেই'}
+          {formErrors.studentId || 'এই শ্রেণিতে কোন নিবন্ধিত শিক্ষার্থী নেই'}
         </Typography>
       </FormControl>
     );
@@ -2185,15 +2185,15 @@ const FeesPage = () => {
               <Grid container spacing={2} alignItems="center">
                 <Grid item xs={12} sm={4}>
                   <FormControl fullWidth>
-                    <InputLabel id="ledger-class-label">শ্রেণী নির্বাচন করুন</InputLabel>
+                    <InputLabel id="ledger-class-label">শ্রেণি নির্বাচন করুন</InputLabel>
                     <Select
                       labelId="ledger-class-label"
                       value={classes.some((cls) => String(cls.id) === String(selectedClass)) ? String(selectedClass) : ''}
-                      label="শ্রেণী নির্বাচন করুন"
+                      label="শ্রেণি নির্বাচন করুন"
                       onChange={handleLedgerClassChange}
                     >
                       <MenuItem value="">
-                        <em>শ্রেণী নির্বাচন করুন</em>
+                        <em>শ্রেণি নির্বাচন করুন</em>
                       </MenuItem>
                       {classes.map((cls) => (
                         <MenuItem key={cls.id} value={String(cls.id)}>
@@ -2297,7 +2297,7 @@ const FeesPage = () => {
                 ) : selectedLedgerStudentId ? (
                   <Typography variant="body2">এই শিক্ষার্থীর জন্য কোনো ফি আইটেম পাওয়া যায়নি।</Typography>
                 ) : (
-                  <Typography variant="body2">লেজার দেখতে শ্রেণী ও শিক্ষার্থী নির্বাচন করুন।</Typography>
+                  <Typography variant="body2">লেজার দেখতে শ্রেণি ও শিক্ষার্থী নির্বাচন করুন।</Typography>
                 )}
               </Box>
             </Paper>
@@ -2719,7 +2719,7 @@ const FeesPage = () => {
               <Grid container spacing={2}>
                 <Grid item xs={12} sm={6}>
                   <FormControl fullWidth error={!!formErrors.classId}>
-                    <InputLabel id="class-select-label">শ্রেণী নির্বাচন করুন *</InputLabel>
+                    <InputLabel id="class-select-label">শ্রেণি নির্বাচন করুন *</InputLabel>
                     <Select
                       labelId="class-select-label"
                       id="class-select"
@@ -2881,7 +2881,7 @@ const FeesPage = () => {
               <Grid container spacing={2}>
                 <Grid item xs={12}>
                   <Alert severity={selectedClass ? 'info' : 'warning'}>
-                    {selectedClass ? 'Selected Class ID: ' + selectedClass : 'শ্রেণী নির্বাচন করুন (উপরে Student Ledger সেকশনে)'}
+                    {selectedClass ? 'Selected Class ID: ' + selectedClass : 'শ্রেণি নির্বাচন করুন (উপরে Student Ledger সেকশনে)'}
                   </Alert>
                 </Grid>
                 <Grid item xs={12} sm={6}>

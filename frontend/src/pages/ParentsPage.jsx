@@ -460,14 +460,14 @@ export default function ParentsPage() {
       <Paper elevation={2} sx={{ p: 2, mb: 3, borderRadius: 2 }}>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
           <FormControl fullWidth>
-            <InputLabel id="classroom-select-label">শ্রেণী অনুযায়ী ফিল্টার</InputLabel>
+            <InputLabel id="classroom-select-label">শ্রেণি অনুযায়ী ফিল্টার</InputLabel>
             <Select
               labelId="classroom-select-label"
               value={selectedClassroom}
-              label="শ্রেণী অনুযায়ী ফিল্টার"
+              label="শ্রেণি অনুযায়ী ফিল্টার"
               onChange={(e) => { setSelectedClassroom(e.target.value); setSelectedSection(''); setShowAll(false); setFocusParent(''); }}
             >
-              <MenuItem value="">সব শ্রেণী</MenuItem>
+              <MenuItem value="">সব শ্রেণি</MenuItem>
               {(classrooms || []).map(c => (
                 <MenuItem key={c.id} value={String(c.id)}>{c.name}</MenuItem>
               ))}
@@ -548,8 +548,8 @@ export default function ParentsPage() {
           {((sections || []).filter(s => String(s.classroom?.id ?? s.classroom) === String(selectedClassroom))).length === 0 ? (
             <Grid size={{ xs: 12 }}>
               <EmptyState
-                title="এই শ্রেণীতে কোনো সেকশন পাওয়া যায়নি"
-                message="দয়া করে আগে এই শ্রেণীর জন্য সেকশন যুক্ত করুন"
+                title="এই শ্রেণিতে কোনো সেকশন পাওয়া যায়নি"
+                message="দয়া করে আগে এই শ্রেণির জন্য সেকশন যুক্ত করুন"
               />
             </Grid>
           ) : (
@@ -610,7 +610,7 @@ export default function ParentsPage() {
     {!loading && ((effectiveShowAll || selectedSection) || (selectedClassroom && !requiresSectionForSelectedClass)) && displayedParents.length === 0 && (
       <EmptyState
         title="কোন অভিভাবক পাওয়া যায়নি"
-        message="নির্বাচিত শ্রেণী ও সেকশনে কোনো অভিভাবক নেই বা পাওয়া যায়নি"
+        message="নির্বাচিত শ্রেণি ও সেকশনে কোনো অভিভাবক নেই বা পাওয়া যায়নি"
       />
     )}
 

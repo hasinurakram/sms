@@ -83,6 +83,36 @@ const getMediaUrl = (path) => {
 // Drawer width constant
 const drawerWidth = 260;
 
+const banglaNumberMap = {
+  'প্রথম': 1,
+  'দ্বিতীয়': 2,
+  'দ্বিতীয়': 2,
+  'তৃতীয়': 3,
+  'তৃতীয়': 3,
+  'চতুর্থ': 4,
+  'পঞ্চম': 5,
+  'ষষ্ঠ': 6,
+  'সপ্তম': 7,
+  'অষ্টম': 8,
+  'নবম': 9,
+  'দশম': 10,
+  'একাদশ': 11,
+  'দ্বাদশ': 12,
+  'ছয়': 6,
+  'ছয়': 6
+};
+const bnDigitMap = { '০': 0, '১': 1, '২': 2, '৩': 3, '৪': 4, '৫': 5, '৬': 6, '৭': 7, '৮': 8, '৯': 9 };
+const normalizeBnDigits = (s) => String(s || '').split('').map(ch => (ch in bnDigitMap ? String(bnDigitMap[ch]) : ch)).join('');
+const getClassOrder = (name) => {
+  const str = normalizeBnDigits(String(name || '')).trim();
+  for (const [bangla, num] of Object.entries(banglaNumberMap)) {
+    if (str.includes(bangla)) return num;
+  }
+  const match = str.match(/\d+/);
+  if (match) return parseInt(match[0], 10);
+  return 999;
+};
+
 // Menu items in exact order: School → Class → Section → Teacher → Student → Group → Subject → Attendance → Examination → Result → Fees → Users
 const menuItems = [
   { label: 'ড্যাশবোর্ড', icon: <AssessmentIcon />, key: '' },
@@ -246,7 +276,10 @@ const SchoolDashboard = () => {
             const needsClassDist = !Array.isArray(enriched.class_distribution);
             const needsFee = !Array.isArray(enriched.fee_collection);
             const needsAttendance = !Array.isArray(enriched.attendance_data);
-            const needsFeeDues = !enriched.fee_dues_summary || !Array.isArray(enriched.fee_dues_by_class);
+            let needsFeeDues = !enriched.fee_dues_summary || !Array.isArray(enriched.fee_dues_by_class);
+            if (Number(id) === 19) {
+              needsFeeDues = true;
+            }
             const requests = [];
             if (needsCounts || needsClassDist) {
               requests.push(api.get(`/api/academics/students/?school=${id}`));
@@ -354,6 +387,7 @@ const SchoolDashboard = () => {
                   const classMap = new Map(); // key: classroom name, value: { tuition_due, exam_due, total_due }
                   let tuition_due_total = 0;
                   let exam_due_total = 0;
+                  const seenMonthlyByStudentMonth = new Set();
 
                   for (const a of (assignments || [])) {
                     const currentMonthNo = new Date().getMonth() + 1;
@@ -398,14 +432,20 @@ const SchoolDashboard = () => {
                       const schoolIdNum = Number(id || 0);
                       if (schoolIdNum === 19) {
                         if (rtype === 'tuition') {
+                          const effectiveMonth = monthNo || currentMonthNo;
                           if (monthNo && monthNo > currentMonthNo) continue;
-                          gross = monthlyFixed || gross;
+                          const seenKey = `${stuId}:${effectiveMonth}`;
+                          if (seenMonthlyByStudentMonth.has(seenKey)) continue;
+                          seenMonthlyByStudentMonth.add(seenKey);
+                          gross = monthlyFixed || 0;
                           due = Math.max(0, gross - paid);
                           if (due <= 0) continue;
                         } else if (rtype === 'exam') {
-                          if (currentMonthNo <= 6 && !isHalf) continue;
-                          if (currentMonthNo > 6 && !isAnnual) continue;
-                          gross = 500;
+                          const effectiveMonth = monthNo || 0;
+                          if (effectiveMonth === 0) continue;
+                          if (effectiveMonth < 4) continue;
+                          if (effectiveMonth > currentMonthNo) continue;
+                          gross = Number(sObj.amount || a.amount || 500) || 500;
                           due = Math.max(0, gross - paid);
                           if (due <= 0) continue;
                         }
@@ -420,13 +460,51 @@ const SchoolDashboard = () => {
                       entry.exam_due += due;
                       exam_due_total += due;
                     } else {
-                      // treat other as tuition for summary neutrality
-                      entry.tuition_due += due;
-                      tuition_due_total += due;
+                      // ignore other fees in the summary to keep tuition/exam accurate
                     }
                     entry.total_due += due;
                     classMap.set(className, entry);
                   }
+
+                  try {
+                    const schoolIdNum2 = Number(id || 0);
+                    if (schoolIdNum2 === 19) {
+                      const currentMonthNo = new Date().getMonth() + 1;
+                      for (const cls of (classrooms || [])) {
+                        const cname = cls?.name || String(cls?.id || '');
+                        let entry = classMap.get(cname);
+                        if (!entry) {
+                          entry = { tuition_due: 0, exam_due: 0, total_due: 0 };
+                          classMap.set(cname, entry);
+                        }
+                        
+                        const order = getClassOrder(cname);
+                        const monthlyRate = order >= 1 && order <= 5 ? 250 : (order >= 6 && order <= 10 ? 150 : 0);
+                        
+                        if (monthlyRate > 0) {
+                          // Find students in this class
+                          const classStudents = (students || []).filter(s => {
+                            const cid = s?.classroom?.id ?? s?.classroom ?? null;
+                            return String(cid) === String(cls.id);
+                          });
+
+                          for (const stu of classStudents) {
+                             const sid = String(stu.id);
+                             for (let m = 1; m <= currentMonthNo; m++) {
+                                const seenKey = `${sid}:${m}`;
+                                if (!seenMonthlyByStudentMonth.has(seenKey)) {
+                                   // Missing month! Add virtual due.
+                                   entry.tuition_due += monthlyRate;
+                                   entry.total_due += monthlyRate;
+                                   tuition_due_total += monthlyRate;
+                                   seenMonthlyByStudentMonth.add(seenKey);
+                                }
+                             }
+                          }
+                        }
+                      }
+                    }
+                  } catch (_) {}
 
                   enriched.fee_dues_summary = {
                     tuition_due_total,
@@ -434,7 +512,12 @@ const SchoolDashboard = () => {
                     total_due: tuition_due_total + exam_due_total
                   };
                   enriched.fee_dues_by_class = Array.from(classMap.entries()).map(([class_name, v]) => ({ class_name, ...v }))
-                    .sort((a,b) => a.class_name.localeCompare(b.class_name));
+                    .sort((a, b) => {
+                      const ao = getClassOrder(a.class_name);
+                      const bo = getClassOrder(b.class_name);
+                      if (ao !== bo) return ao - bo;
+                      return String(a.class_name).localeCompare(String(b.class_name));
+                    });
                 }
               }
               if (needsAttendance) {

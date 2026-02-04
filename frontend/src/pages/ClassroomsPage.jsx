@@ -322,10 +322,10 @@ export default function ClassroomsPage() {
             <Box>
               <Typography variant="h4" sx={{ fontWeight: 'bold', mb: 1, display: 'flex', alignItems: 'center' }}>
                 <SchoolIcon sx={{ mr: 1, fontSize: 40 }} />
-                শ্রেণী ব্যবস্থাপনা
+                শ্রেণি ব্যবস্থাপনা
               </Typography>
               <Typography variant="body2" sx={{ opacity: 0.9 }}>
-                আপনার স্কুলের শ্রেণী ও সেকশন পরিচালনা করুন
+                আপনার স্কুলের শ্রেণি ও সেকশন পরিচালনা করুন
               </Typography>
             </Box>
             <Stack direction="row" spacing={1}>
@@ -351,7 +351,7 @@ export default function ClassroomsPage() {
                   backdropFilter: 'blur(10px)'
                 }}
               >
-                শ্রেণী যোগ করুন
+                শ্রেণি যোগ করুন
               </Button>
               <Button 
                 variant="outlined" 
@@ -375,7 +375,7 @@ export default function ClassroomsPage() {
         <Paper elevation={2} sx={{ p: 2, mb: 3, borderRadius: 2 }}>
           <TextField
             fullWidth
-            placeholder="শ্রেণী খুঁজুন..."
+            placeholder="শ্রেণি খুঁজুন..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             InputProps={{
@@ -406,9 +406,9 @@ export default function ClassroomsPage() {
       ) : filtered.length === 0 ? (
         <EmptyState
           icon={SchoolIcon}
-          title={searchQuery ? "কোনো শ্রেণী পাওয়া যায়নি" : "এখনও কোনো শ্রেণী নেই"}
-          message={searchQuery ? "অন্য কীওয়ার্ড দিয়ে চেষ্টা করুন" : "প্রথমে একটি শ্রেণী যোগ করুন"}
-          actionText={!searchQuery ? "শ্রেণী যোগ করুন" : undefined}
+          title={searchQuery ? "কোনো শ্রেণি পাওয়া যায়নি" : "এখনও কোনো শ্রেণি নেই"}
+          message={searchQuery ? "অন্য কীওয়ার্ড দিয়ে চেষ্টা করুন" : "প্রথমে একটি শ্রেণি যোগ করুন"}
+          actionText={!searchQuery ? "শ্রেণি যোগ করুন" : undefined}
           onAction={!searchQuery ? handleAddClass : undefined}
         />
       ) : (
@@ -537,11 +537,11 @@ export default function ClassroomsPage() {
         <DialogTitle>
           <Stack direction="row" alignItems="center" justifyContent="space-between">
             <Box>
-              <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
-                {editMode ? '✏️ শ্রেণী সম্পাদনা' : '➕ নতুন শ্রেণী যোগ'}
+              <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                {editMode ? '✏️ শ্রেণি সম্পাদনা' : '➕ নতুন শ্রেণি যোগ'}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                {editMode ? 'শ্রেণীর তথ্য হালনাগাদ করুন' : 'আপনার স্কুলের জন্য নতুন শ্রেণী তৈরি করুন'}
+                {editMode ? 'শ্রেণির তথ্য হালনাগাদ করুন' : 'আপনার স্কুলের জন্য নতুন শ্রেণি তৈরি করুন'}
               </Typography>
             </Box>
             <IconButton onClick={() => setDialogOpen(false)}>
@@ -553,12 +553,12 @@ export default function ClassroomsPage() {
         <DialogContent dividers>
           <Stack spacing={2}>
             <TextField
-              label="শ্রেণীর নাম *"
+              label="শ্রেণির নাম *"
               value={formData.name}
               onChange={(e) => setFormData({...formData, name: e.target.value})}
               fullWidth
-              placeholder="যেমন: ষষ্ঠ শ্রেণী, সপ্তম শ্রেণী, Class 6"
-              helperText="শ্রেণীর নাম লিখুন"
+              placeholder="যেমন: ষষ্ঠ শ্রেণি, সপ্তম শ্রেণি, Class 6"
+              helperText="শ্রেণির নাম লিখুন"
             />
             <TextField
               label="সেকশন"
@@ -579,7 +579,7 @@ export default function ClassroomsPage() {
             disabled={saving}
             startIcon={editMode ? <EditIcon /> : <AddIcon />}
           >
-            {saving ? 'সংরক্ষণ হচ্ছে...' : (editMode ? 'আপডেট' : 'শ্রেণী যোগ করুন')}
+            {saving ? 'সংরক্ষণ হচ্ছে...' : (editMode ? 'আপডেট' : 'শ্রেণি যোগ করুন')}
           </Button>
         </DialogActions>
       </Dialog>
@@ -599,7 +599,7 @@ export default function ClassroomsPage() {
                 ➕ সেকশন যোগ
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                {selectedClassroom?.name} শ্রেণীতে নতুন সেকশন যোগ করুন
+              {selectedClassroom?.name} শ্রেণিতে নতুন সেকশন যোগ করুন
               </Typography>
             </Box>
             <IconButton onClick={() => setSectionDialogOpen(false)}>
@@ -640,7 +640,7 @@ export default function ClassroomsPage() {
       >
         <DialogTitle>
           <Typography variant="h6" color="error" fontWeight="bold">
-            🗑️ শ্রেণী মুছবেন?
+            🗑️ শ্রেণি মুছবেন?
           </Typography>
         </DialogTitle>
         <DialogContent>
@@ -648,10 +648,10 @@ export default function ClassroomsPage() {
             এই কাজটি পূর্বাবস্থায় ফেরানো যাবে না!
           </Alert>
           <Typography>
-            আপনি কি নিশ্চিত যে <strong>{selectedItem?.name}</strong> শ্রেণীটি মুছে ফেলতে চান?
+            আপনি কি নিশ্চিত যে <strong>{selectedItem?.name}</strong> শ্রেণিটি মুছে ফেলতে চান?
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-            এতে এই শ্রেণীর সব সেকশন মুছে যাবে এবং ভর্তিকৃত শিক্ষার্থীদের উপর প্রভাব পড়তে পারে।
+            এতে এই শ্রেণির সব সেকশন মুছে যাবে এবং ভর্তিকৃত শিক্ষার্থীদের উপর প্রভাব পড়তে পারে।
           </Typography>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
@@ -682,7 +682,7 @@ export default function ClassroomsPage() {
             }}
           >
             <Typography variant="h6" color="info.dark">
-              📊 মোট শ্রেণী: <strong>{classrooms.length}</strong> | 
+              📊 মোট শ্রেণি: <strong>{classrooms.length}</strong> | 
               মোট সেকশন: <strong>{sections.length}</strong>
               {searchQuery && ` | দেখানো হচ্ছে: ${filtered.length}`}
             </Typography>

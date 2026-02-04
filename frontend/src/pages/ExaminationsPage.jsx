@@ -446,7 +446,7 @@ export default function ExaminationsPage() {
                 variant="outlined"
                 onClick={() => setSelectedClassroom(null)}
               >
-                সব শ্রেণী দেখাও
+                সব শ্রেণি দেখাও
               </Button>
             )}
             <Button
@@ -465,7 +465,7 @@ export default function ExaminationsPage() {
           <Box sx={{ mb: 4 }}>
             <Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center' }}>
               <SchoolIcon sx={{ mr: 1 }} />
-              পরীক্ষাসমূহ দেখতে শ্রেণী নির্বাচন করুন
+              পরীক্ষাসমূহ দেখতে শ্রেণি নির্বাচন করুন
             </Typography>
             <Grid container spacing={2}>
               {classrooms.map((classroom) => (
@@ -507,8 +507,8 @@ export default function ExaminationsPage() {
         {!loading && filteredExaminations.length === 0 && selectedClassroom && (
           <EmptyState
             icon={ExamIcon}
-            title="এই শ্রেণীর জন্য কোনো পরীক্ষা নেই"
-            message={`${selectedClassroom.name} শ্রেণীর জন্য কোনো পরীক্ষা পাওয়া যায়নি। 'পরীক্ষা যোগ করুন' বাটনে ক্লিক করে নতুন পরীক্ষা তৈরি করুন।`}
+            title="এই শ্রেণির জন্য কোনো পরীক্ষা নেই"
+            message={`${selectedClassroom.name} শ্রেণির জন্য কোনো পরীক্ষা পাওয়া যায়নি। 'পরীক্ষা যোগ করুন' বাটনে ক্লিক করে নতুন পরীক্ষা তৈরি করুন।`}
           />
         )}
 
@@ -742,7 +742,7 @@ export default function ExaminationsPage() {
         {/* Bulk Subject Marks Dialog */}
         <Dialog open={bulkDialogOpen} onClose={closeBulkDialog} maxWidth="sm" fullWidth>
           <DialogTitle>
-            সকল শ্রেণীর জন্য নাম্বার সেট
+            সকল শ্রেণির জন্য নাম্বার সেট
           </DialogTitle>
           <DialogContent sx={{ pt: 2 }}>
             <Grid container spacing={3}>
@@ -770,18 +770,18 @@ export default function ExaminationsPage() {
                 <TextField
                   select
                   fullWidth
-                  label="যে শ্রেণীগুলোর জন্য প্রযোজ্য"
+                  label="যে শ্রেণিগুলোর জন্য প্রযোজ্য"
                   value={bulkForm.classrooms}
                   onChange={(e) => setBulkForm(prev => ({ ...prev, classrooms: typeof e.target.value === 'string' ? e.target.value.split(',').map(Number) : e.target.value }))}
                   SelectProps={{ multiple: true, renderValue: (selected) => {
                     const ids = Array.isArray(selected) ? selected : [];
-                    if (!ids.length) return 'ফাঁকা রাখলে সব শ্রেণীতে প্রযোজ্য';
+                    if (!ids.length) return 'ফাঁকা রাখলে সব শ্রেণিতে প্রযোজ্য';
                     return ids.map(idv => {
                       const match = classrooms.find(c => Number(c.id) === Number(idv));
                       return match?.name || String(idv);
                     }).join(', ');
                   }}}
-                  helperText="যে শ্রেণীগুলোর মধ্যে এই বিষয়টি আছে সেগুলো সিলেক্ট করুন (ফাঁকা রাখলে সব শ্রেণী)"
+                  helperText="যে শ্রেণিগুলোর মধ্যে এই বিষয়টি আছে সেগুলো সিলেক্ট করুন (ফাঁকা রাখলে সব শ্রেণি)"
                 >
                   {classrooms.map((c) => (
                     <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
@@ -801,7 +801,7 @@ export default function ExaminationsPage() {
                     if (!ids.length) return 'নির্বাচন না করলে সব সেকশন (প্রযোজ্য ক্লাসে)';
                     return ids.map(idv => bulkSections.find(s => s.id === idv)?.name || idv).join(', ');
                   }}}
-                  helperText="প্রয়োজনে নির্দিষ্ট সেকশনগুলি সিলেক্ট করুন; ফাঁকা রাখলে নির্বাচিত শ্রেণীর সব সেকশনে প্রযোজ্য"
+                  helperText="প্রয়োজনে নির্দিষ্ট সেকশনগুলি সিলেক্ট করুন; ফাঁকা রাখলে নির্বাচিত শ্রেণির সব সেকশনে প্রযোজ্য"
                 >
                   {bulkSections.map((s) => (
                     <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>

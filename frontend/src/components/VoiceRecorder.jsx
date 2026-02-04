@@ -39,6 +39,7 @@ export default function VoiceRecorder({ open, onClose, onSave }) {
   const audioChunksRef = useRef([]);
   const timerRef = useRef(null);
   const audioPlayerRef = useRef(null);
+  const [selectedMimeType, setSelectedMimeType] = useState('audio/webm');
 
   useEffect(() => {
     return () => {
@@ -53,8 +54,24 @@ export default function VoiceRecorder({ open, onClose, onSave }) {
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      
-      const mediaRecorder = new MediaRecorder(stream);
+
+      const candidates = [
+        'audio/ogg;codecs=opus',
+        'audio/webm;codecs=opus',
+        'audio/mp4',
+        'audio/webm'
+      ];
+      const supported = candidates.find((t) => {
+        try {
+          return typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t);
+        } catch {
+          return false;
+        }
+      }) || 'audio/webm';
+      setSelectedMimeType(supported);
+
+      const options = supported ? { mimeType: supported } : undefined;
+      const mediaRecorder = new MediaRecorder(stream, options);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
 
@@ -65,7 +82,8 @@ export default function VoiceRecorder({ open, onClose, onSave }) {
       };
 
       mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const finalType = mediaRecorder.mimeType || selectedMimeType || 'audio/webm';
+        const audioBlob = new Blob(audioChunksRef.current, { type: finalType });
         const audioUrl = URL.createObjectURL(audioBlob);
         setAudioURL(audioUrl);
         setAudioBlob(audioBlob);
@@ -164,10 +182,9 @@ export default function VoiceRecorder({ open, onClose, onSave }) {
       return;
     }
 
-    // Create a File object from the blob
-    const audioFile = new File([audioBlob], `voice_message_${Date.now()}.webm`, {
-      type: 'audio/webm'
-    });
+    const t = (audioBlob && audioBlob.type) || selectedMimeType || 'audio/webm';
+    const ext = t.includes('ogg') ? 'ogg' : (t.includes('mp4') ? 'm4a' : 'webm');
+    const audioFile = new File([audioBlob], `voice_message_${Date.now()}.${ext}`, { type: t });
 
     onSave(audioFile);
     handleClose();

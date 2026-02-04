@@ -311,13 +311,16 @@ export default function SubjectsPage() {
   };
 
   const baseList = (selectedClass && classSubjects.length > 0) ? classSubjects : subjects;
+  const isClassScoped = !!(selectedClass && classSubjects.length > 0);
   const filtered = baseList
     .filter(s => {
       // First filter by selected class if any
       if (selectedClass) {
         // Prefer class-scoped list; when using school-wide list, ensure subject is assigned to the selected class
-        const cls = Array.isArray(s.classrooms) ? s.classrooms : [];
-        if (!cls.includes(selectedClass.id) && !s.teachers) return false;
+        if (!isClassScoped) {
+          const cls = Array.isArray(s.classrooms) ? s.classrooms : [];
+          if (!cls.includes(selectedClass.id) && !s.teachers) return false;
+        }
       }
       
       // Then filter by search query
@@ -326,7 +329,7 @@ export default function SubjectsPage() {
              s.code.toLowerCase().includes(searchLower);
     })
     .filter(s => {
-      if (selectedClass) {
+      if (selectedClass && !isClassScoped) {
         const cls = Array.isArray(s.classrooms) ? s.classrooms : [];
         return cls.includes(selectedClass.id);
       }
@@ -376,12 +379,12 @@ export default function SubjectsPage() {
               </Typography>
               <Typography variant="body2" sx={{ opacity: 0.9 }}>
                 {selectedClass 
-                  ? `${selectedClass.name} শ্রেণীর বিষয়সমূহ পরিচালনা করুন`
+                  ? `${selectedClass.name} শ্রেণির বিষয়সমূহ পরিচালনা করুন`
                   : 'বিষয় যোগ, সম্পাদনা এবং শিক্ষকদের সংযুক্ত করুন'}
               </Typography>
               <Typography variant="body2" sx={{ opacity: 0.7, mt: 1 }}>
                 স্কুল আইডি: {id} | মোট বিষয়: {subjects.length} | শিক্ষক: {teachers.length}
-                {selectedClass && ` | শ্রেণীর বিষয়: ${filtered.length}`}
+                {selectedClass && ` | শ্রেণির বিষয়: ${filtered.length}`}
               </Typography>
             </Box>
             <Stack direction="row" spacing={1} flexWrap="wrap">
@@ -396,7 +399,7 @@ export default function SubjectsPage() {
                     '&:hover': { borderColor: 'white', bgcolor: 'rgba(255,255,255,0.1)' }
                   }}
                 >
-                  শ্রেণী তালিকা
+                  শ্রেণি তালিকা
                 </Button>
               )}
               <Button 
@@ -752,7 +755,7 @@ export default function SubjectsPage() {
                 </>
               ) : (
                 <>
-                  📊 মোট শ্রেণী: <strong>{classSummary.length}</strong> | মোট বিষয়: <strong>{subjects.length}</strong>
+                  📊 মোট শ্রেণি: <strong>{classSummary.length}</strong> | মোট বিষয়: <strong>{subjects.length}</strong>
                 </>
               )}
             </Typography>

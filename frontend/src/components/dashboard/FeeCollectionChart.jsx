@@ -164,7 +164,7 @@ const FeeCollectionChart = ({ feeData, feeDuesSummary, feeDuesByClass }) => {
       <Paper
         elevation={0}
         sx={{
-          p: 2,
+          p: 3,
           mb: 2,
           background: 'linear-gradient(135deg, #6a1b9a 0%, #9c27b0 100%)',
           color: 'white',
@@ -172,24 +172,25 @@ const FeeCollectionChart = ({ feeData, feeDuesSummary, feeDuesByClass }) => {
           flexShrink: 0
         }}
       >
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'flex-start', sm: 'center' }} justifyContent="space-between">
-          <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-            মোট বকেয়া
-          </Typography>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'flex-start', sm: 'center' }}>
-            <Chip 
-              label={`মোট: ৳${Number(feeDuesSummary?.total_due || 0).toLocaleString()}`}
-              sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: 'white', fontWeight: 700 }}
-            />
-            <Chip 
-              label={`বেতন: ৳${Number(feeDuesSummary?.tuition_due_total || 0).toLocaleString()}`}
-              sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: 'white' }}
-            />
-            <Chip 
-              label={`পরীক্ষার ফি: ৳${Number(feeDuesSummary?.exam_due_total || 0).toLocaleString()}`}
-              sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: 'white' }}
-            />
-          </Stack>
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={3} alignItems="center" justifyContent="space-evenly" divider={<Divider orientation="vertical" flexItem sx={{ bgcolor: 'rgba(255,255,255,0.3)', display: { xs: 'none', md: 'block' } }} />}>
+          <Box textAlign="center">
+            <Typography variant="body1" sx={{ opacity: 0.9, mb: 0.5 }}>মোট বকেয়া</Typography>
+            <Typography variant="h3" sx={{ fontWeight: 700 }}>
+              ৳{Number(feeDuesSummary?.total_due || 0).toLocaleString()}
+            </Typography>
+          </Box>
+          <Box textAlign="center">
+            <Typography variant="body1" sx={{ opacity: 0.9, mb: 0.5 }}>বেতন বকেয়া</Typography>
+            <Typography variant="h4" sx={{ fontWeight: 600 }}>
+              ৳{Number(feeDuesSummary?.tuition_due_total || 0).toLocaleString()}
+            </Typography>
+          </Box>
+          <Box textAlign="center">
+            <Typography variant="body1" sx={{ opacity: 0.9, mb: 0.5 }}>পরীক্ষার ফি বকেয়া</Typography>
+            <Typography variant="h4" sx={{ fontWeight: 600 }}>
+              ৳{Number(feeDuesSummary?.exam_due_total || 0).toLocaleString()}
+            </Typography>
+          </Box>
         </Stack>
       </Paper>
 

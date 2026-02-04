@@ -1497,7 +1497,7 @@ const ParentDashboard = () => {
                     )}
                     {selectedChild.classroom?.name && (
                       <Chip 
-                        label={`শ্রেণী: ${selectedChild.classroom.name}`} 
+                        label={`শ্রেণি: ${selectedChild.classroom.name}`} 
                         color="primary" 
                         variant="outlined" 
                         sx={{ 

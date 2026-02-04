@@ -211,8 +211,7 @@ export default function TeachersPage() {
         section: null
       }));
 
-    const validAssignments = enrichedAssignments.filter(a => !!a.teacher && !!a.teacherProfile);
-
+    const validAssignments = enrichedAssignments.filter(a => !!a.teacher);
     return [...validAssignments, ...placeholders];
   };
 
@@ -318,8 +317,7 @@ export default function TeachersPage() {
       }
       
       if (!teacherProfile || !teacherProfile.id) {
-        toast.error('Teacher profile not found');
-        return;
+        toast.warning('Teacher profile not found. Assignments will still be linked.');
       }
       
       const formData = new FormData();
@@ -333,12 +331,70 @@ export default function TeachersPage() {
         formData.append('photo', editFormData._photoFile);
       }
       
-      const endpoint = `/api/users/teachers/${teacherProfile.id}/`;
-      await api.patch(endpoint, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+      if (teacherProfile?.id) {
+        try {
+          const endpoint = `/api/users/teachers/${teacherProfile.id}/`;
+          await api.patch(endpoint, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+          });
+        } catch (e) {
+          console.warn('Profile patch failed, proceeding with assignments', e?.response?.data || e?.message);
+          toast.warning('প্রোফাইল আপডেট হয়নি, তবুও অ্যাসাইনমেন্ট লিংক হবে');
+        }
+      }
+      // Upsert teaching assignments based on edit selections
+      const teacherUserId = userId;
+      const subjectsToAssign = Array.isArray(editSelectedSubjectIds) ? editSelectedSubjectIds.filter(Boolean) : [];
+      const classesToAssign = Array.isArray(editSelectedClassroomIds) ? editSelectedClassroomIds.filter(Boolean) : [];
+      const sectionForClass = editSelectedSectionId || '';
+      if (subjectsToAssign.length > 0 && classesToAssign.length > 0) {
+        const payloads = [];
+        for (const sid of subjectsToAssign) {
+          for (const cid of classesToAssign) {
+            const body = { teacher_id: teacherUserId, subject_id: sid, classroom_id: cid };
+            if (classesToAssign.length === 1 && sectionForClass) {
+              body.section_id = sectionForClass;
+            }
+            payloads.push(body);
+          }
+        }
+        try {
+          const results = await Promise.all(
+            payloads.map(pl =>
+              api.post('/api/academics/assignments/', pl)
+                .then(() => ({ ok: true }))
+                .catch(err => {
+                  const status = err?.response?.status;
+                  if (status === 400 || status === 409) {
+                    return { ok: false, status, msg: 'Duplicate or validation error' };
+                  }
+                  if (status === 403) {
+                    return { ok: false, status, msg: 'অনুমতি নেই (403)' };
+                  }
+                  if (status === 401) {
+                    return { ok: false, status, msg: 'লগইন প্রয়োজন (401)' };
+                  }
+                  return { ok: false, status: status || 0, msg: err?.message || 'Unknown error' };
+                })
+            )
+          );
+          const createdCount = results.filter(r => r.ok).length;
+          const failed = results.filter(r => !r.ok);
+          if (createdCount === 0 && payloads.length > 0) {
+            const msg = failed.length
+              ? `সাবজেক্ট/ক্লাস লিংক হয়নি: ${failed.map(f => f.msg).join('; ')}`
+              : 'সাবজেক্ট/ক্লাস লিংক হয়নি';
+            toast.warning(msg);
+          } else if (createdCount > 0) {
+            toast.success(`${createdCount}টি অ্যাসাইনমেন্ট যুক্ত হয়েছে`);
+          }
+        } catch (e) {
+          console.error('Assignment upsert error', e);
+          toast.error('অ্যাসাইনমেন্ট তৈরি করতে ব্যর্থ');
+        }
+      }
       
-      toast.success('Teacher profile updated successfully');
+      toast.success('Changes saved')
       setEditDialogOpen(false);
       setEditFormData({
         first_name: '',
@@ -640,11 +696,11 @@ export default function TeachersPage() {
     try {
       // Create classes
       const classNames = [
-        'Class 6 (ষষ্ঠ শ্রেণী)',
-        'Class 7 (সপ্তম শ্রেণী)',
-        'Class 8 (অষ্টম শ্রেণী)',
-        'Class 9 (নবম শ্রেণী)',
-        'Class 10 (দশম শ্রেণী)',
+        'Class 6 (ষষ্ঠ শ্রেণি)',
+        'Class 7 (সপ্তম শ্রেণি)',
+        'Class 8 (অষ্টম শ্রেণি)',
+        'Class 9 (নবম শ্রেণি)',
+        'Class 10 (দশম শ্রেণি)',
       ];
       
       for (const name of classNames) {
@@ -772,7 +828,7 @@ export default function TeachersPage() {
     })
     .sort((a, b) => {
       const teacherIdA = a.teacher?.user?.id || a.teacher?.id || 0;
-      const teacherIdB = b.teacher?.user?.id || a.teacher?.id || 0;
+      const teacherIdB = b.teacher?.user?.id || b.teacher?.id || 0;
       return teacherIdA - teacherIdB;
     });
 
@@ -838,14 +894,14 @@ export default function TeachersPage() {
       </Paper>
 
       <TextField
-        placeholder="শিক্ষক/বিষয়/শ্রেণী দিয়ে অনুসন্ধান"
+        placeholder="শিক্ষক/বিষয়/শ্রেণি দিয়ে অনুসন্ধান"
         value={searchQuery}
         onChange={e => setSearchQuery(e.target.value)}
         sx={{ mb: 3 }}
         fullWidth
         InputProps={{
           endAdornment: (
-            <Tooltip title="শিক্ষক, বিষয় বা শ্রেণীর নাম দিয়ে অনুসন্ধান করুন">
+            <Tooltip title="শিক্ষক, বিষয় বা শ্রেণির নাম দিয়ে অনুসন্ধান করুন">
               <HelpOutlineIcon sx={{ color: 'text.secondary', cursor: 'help' }} />
             </Tooltip>
           )
@@ -883,7 +939,7 @@ export default function TeachersPage() {
             console.log('Educational qualification:', qualification);
             
             return (
-            <Grid item xs={12} sm={6} md={4} key={a.id}>
+            <Grid item xs={12} sm={6} md={4} key={(a.teacher?.user?.id || a.teacher?.id || Math.random())}>
               <Card sx={{ borderRadius: 2, boxShadow: { xs: 2, sm: 3 }, transition: 'transform 0.2s', '&:hover': { transform: 'translateY(-4px)', boxShadow: 6 }, p: { xs: 1, sm: 2 } }}>
                 <CardHeader
                       onClick={async () => {

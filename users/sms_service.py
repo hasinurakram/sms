@@ -41,7 +41,6 @@ class SMSService:
             logger.error("No message provided")
             return False, "No message provided"
         
-        # Remove spaces and format phone number
         phone_number = phone_number.replace(' ', '').replace('-', '')
         
         # Route to appropriate provider
@@ -84,6 +83,14 @@ class SMSService:
     def _send_via_bulksms(self, phone_number, message):
         """Send SMS via BulkSMS Bangladesh"""
         try:
+            d = ''.join(ch for ch in str(phone_number) if ch.isdigit() or ch == '+')
+            if d.startswith('+'):
+                d = d[1:]
+            if d.startswith('01') and len(d) == 11:
+                d = f"880{d[1:]}"
+            elif d.startswith('0'):
+                d = f"880{d.lstrip('0')}"
+            phone_number = d
             url = "http://bulksmsbd.net/api/smsapi"
             
             params = {
@@ -115,6 +122,14 @@ class SMSService:
     def _send_via_ssl_wireless(self, phone_number, message):
         """Send SMS via SSL Wireless Bangladesh"""
         try:
+            d = ''.join(ch for ch in str(phone_number) if ch.isdigit() or ch == '+')
+            if d.startswith('+'):
+                d = d[1:]
+            if d.startswith('01') and len(d) == 11:
+                d = f"880{d[1:]}"
+            elif d.startswith('0'):
+                d = f"880{d.lstrip('0')}"
+            phone_number = d
             url = "https://smsplus.sslwireless.com/api/v3/send-sms"
             
             payload = {

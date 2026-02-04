@@ -1236,7 +1236,7 @@ class StudentDashboard extends React.Component {
                       )}
                       {student.classroom?.name && (
                         <Chip 
-                          label={`শ্রেণী: ${student.classroom.name}`} 
+                          label={`শ্রেণি: ${student.classroom.name}`} 
                           color="primary" 
                           variant="outlined" 
                           sx={{ 

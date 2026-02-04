@@ -10,8 +10,8 @@ export default function ResultCard({ studentData, results, overallResult, examin
   const user = student.user || {};
   const studentName = `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.username;
   const guardianName = (
+    (student.guardian ? `${student.guardian.first_name || ''} ${student.guardian.last_name || ''}`.trim() : '') ||
     student.guardian_name || student.parent_name || student.father_name || student.mother_name ||
-    student.guardian?.name || student.guardian?.full_name || student.father?.name || student.mother?.name ||
     user.guardian_name || user.parent_name || ''
   );
   

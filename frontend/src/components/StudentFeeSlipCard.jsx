@@ -121,6 +121,7 @@ export default function StudentFeeSlipCard({ school, student, rows = [], totals 
     'Student'
   );
   const guardianName = (
+    (student?.guardian ? `${student?.guardian?.first_name || ''} ${student?.guardian?.last_name || ''}`.trim() : '') ||
     student?.guardian_name || student?.parent_name || student?.father_name || student?.mother_name || student?.user?.guardian_name || ''
   );
   const className = student?.classroom?.name || student?.class?.name || '';

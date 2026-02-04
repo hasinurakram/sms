@@ -65,14 +65,31 @@ class ClassRoomViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['get'])
     def subjects(self, request, pk=None):
-        """Get all subjects for a specific class with assigned teachers"""
         classroom = self.get_object()
-        # Get all subjects for this school
-        subjects = Subject.objects.filter(school=classroom.school)
+        from django.db.models import Q
+        subjects = Subject.objects.filter(school=classroom.school).filter(
+            Q(classrooms=classroom) | Q(assignments__classroom=classroom)
+        ).distinct()
+        name = classroom.name or ''
+        import re
+        g = None
+        m = re.search(r'(\d+)', name)
+        if m:
+            try:
+                g = int(m.group(1))
+            except Exception:
+                g = None
+        if g is None:
+            bn_map = {'প্রথম':1,'দ্বিতীয়':2,'তৃতীয়':3,'চতুর্থ':4,'পঞ্চম':5,'ষষ্ঠ':6,'সপ্তম':7,'অষ্টম':8,'নবম':9,'দশম':10,'একাদশ':11,'দ্বাদশ':12}
+            for k,v in bn_map.items():
+                if k in name:
+                    g = v
+                    break
+        if g and g <= 8:
+            subjects = subjects.exclude(name__iregex=r'(physics|পদার্থ|chemistry|রসায়ন)')
         
         result = []
         for subject in subjects:
-            # Get teachers assigned to this subject and class
             assignments = TeacherAssignment.objects.filter(
                 subject=subject,
                 classroom=classroom
@@ -125,7 +142,7 @@ class SectionViewSet(viewsets.ModelViewSet):
         try:
             count = Section.objects.filter(classroom_id=classroom_id).count()
             if count >= 3:
-                return Response({"detail": "প্রতি শ্রেণীতে সর্বোচ্চ তিনটি সেকশন (ক, খ, গ)"}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"detail": "প্রতি শ্রেণিতে সর্বোচ্চ তিনটি সেকশন (ক, খ, গ)"}, status=status.HTTP_400_BAD_REQUEST)
         except Exception:
             pass
         return super().create(request, *args, **kwargs)
@@ -422,8 +439,16 @@ class TeacherAssignmentViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = TeacherAssignment.objects.select_related('teacher','subject','classroom','section').all()
         classroom_id = self.request.query_params.get('classroom')
+        school_id = (self.request.query_params.get('classroom__school') 
+                     or self.request.query_params.get('school') 
+                     or self.request.query_params.get('school_id'))
         if classroom_id:
             queryset = queryset.filter(classroom_id=classroom_id)
+        if school_id:
+            # Primary: filter by classroom's school
+            queryset = queryset.filter(classroom__school_id=school_id)
+            # Fallback: also restrict by subject's school to be safe
+            queryset = queryset.filter(subject__school_id=school_id)
         return queryset
 
 

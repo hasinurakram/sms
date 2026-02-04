@@ -577,7 +577,7 @@ const FeePaymentReceipt = () => {
           </Grid>
           <Grid item xs={6}>
             <Typography variant="body2"><strong>শিক্ষার্থীর নাম:</strong> {data.student?.user?.first_name} {data.student?.user?.last_name}</Typography>
-            <Typography variant="body2"><strong>শ্রেণী:</strong> {data.student?.classroom?.name || '-'}</Typography>
+            <Typography variant="body2"><strong>শ্রেণি:</strong> {data.student?.classroom?.name || '-'}</Typography>
             <Typography variant="body2"><strong>শাখা:</strong> {data.student?.section?.name || '-'}</Typography>
             <Typography variant="body2"><strong>রোল:</strong> {data.student?.roll_number || '-'}</Typography>
           </Grid>
@@ -977,11 +977,11 @@ const FeePaymentReceipt = () => {
             <Grid container spacing={2}>
               <Grid item xs={12} md={3}>
                 <FormControl fullWidth>
-                  <InputLabel>শ্রেণী</InputLabel>
+                  <InputLabel>শ্রেণি</InputLabel>
                   <Select
                     value={selectedClass}
                     onChange={(e) => handleClassChange(e.target.value)}
-                    label="শ্রেণৄ"
+                    label="শ্রেণি"
                   >
                     {classes.length === 0 ? (
                       <MenuItem disabled>

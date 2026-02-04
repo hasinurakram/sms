@@ -19,6 +19,10 @@ from .views import (
     UsernameAvailabilityView,
     CreateProfileView,
     SoftwareAssistantView,
+    VoiceUploadView,
+    WhatsAppSendView,
+    TelegramSendView,
+    AutoRuleSuggestionView,
 )
 
 router = DefaultRouter()
@@ -53,4 +57,8 @@ urlpatterns = [
     path('sms/bulk/', send_bulk_sms_view, name='send-bulk-sms'),
     path('sms/template/', send_template_sms_view, name='send-template-sms'),
     path('assistant/', SoftwareAssistantView.as_view(), name='software-assistant'),
+    path('assistant/auto-rules/', AutoRuleSuggestionView.as_view(), name='assistant-auto-rules'),
+    path('voice/upload/', VoiceUploadView.as_view(), name='voice-upload'),
+    path('whatsapp/send/', WhatsAppSendView.as_view(), name='whatsapp-send'),
+    path('telegram/send/', TelegramSendView.as_view(), name='telegram-send'),
 ]
