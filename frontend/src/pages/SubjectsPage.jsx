@@ -80,8 +80,28 @@ export default function SubjectsPage() {
     loadSections();
   }, [id]);
 
-  // Bangla number words mapping for sorting
   const banglaNumberMap = {
+    'প্লে': -3,
+    'Play': -3,
+    'play': -3,
+    'নার্সারি': -2,
+    'Nursery': -2,
+    'nursery': -2,
+    'কেজি': -1,
+    'KG': -1,
+    'kg': -1,
+    'কে.জি': -1,
+    'কে.জি.': -1,
+    '১ম': 1,
+    '২য়': 2,
+    '৩য়': 3,
+    '৪র্থ': 4,
+    '৫ম': 5,
+    '৬ষ্ঠ': 6,
+    '৭ম': 7,
+    '৮ম': 8,
+    '৯ম': 9,
+    '১০ম': 10,
     'প্রথম': 1,
     'দ্বিতীয়': 2,
     'দ্বিতীয়': 2,
@@ -124,20 +144,15 @@ export default function SubjectsPage() {
   };
 
   const getClassOrder = (className) => {
-    // Check for Bangla numbers
+    const lowerName = String(className || '').toLowerCase();
+    if (lowerName.includes('play') || lowerName.includes('প্লে')) return -3;
+    if (lowerName.includes('nursery') || lowerName.includes('নার্সারি') || lowerName.includes('শিশু')) return -2;
+    if (lowerName.includes('kg') || lowerName.includes('কেজি') || lowerName.includes('কে.জি')) return -1;
     for (const [bangla, num] of Object.entries(banglaNumberMap)) {
-      if (className.includes(bangla)) {
-        return num;
-      }
+      if (String(className || '').includes(bangla)) return num;
     }
-    
-    // Check for English numbers (Class 6, Class 7, etc.)
-    const match = className.match(/\d+/);
-    if (match) {
-      return parseInt(match[0]);
-    }
-    
-    // Default: return a high number so it goes to the end
+    const match = String(className || '').match(/\d+/);
+    if (match) return parseInt(match[0]);
     return 999;
   };
 

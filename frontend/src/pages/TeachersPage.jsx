@@ -218,16 +218,28 @@ export default function TeachersPage() {
   const loadAssignments = () => {
     if (!id) return;
     setLoading(true);
-    Promise.all([
-      api.get(`/api/academics/assignments/?classroom__school=${id}`),
-      api.get(`/api/users/teachers/?school=${id}`)
-    ])
-      .then(([assignRes, teacherRes]) => {
-        const rawAssignments = Array.isArray(assignRes.data)
+    (async () => {
+      let rawAssignments = [];
+      let teacherProfiles = [];
+      try {
+        const assignRes = await api.get(`/api/academics/assignments/?classroom__school=${id}`);
+        rawAssignments = Array.isArray(assignRes.data)
           ? assignRes.data
           : (assignRes.data?.results || []);
+      } catch (e) {
+        console.warn('Assignments fetch failed:', e?.response?.data || e?.message);
+        rawAssignments = [];
+      }
+      try {
+        const teacherRes = await api.get(`/api/users/teachers/?school=${id}`);
+        const teacherData = teacherRes.data || [];
+        teacherProfiles = Array.isArray(teacherData) ? teacherData : (teacherData.results || []);
+      } catch (e) {
+        console.warn('Teachers fetch failed:', e?.response?.data || e?.message);
+        teacherProfiles = [];
+      }
 
-        const filteredAssignments = rawAssignments.filter(a => {
+      const filteredAssignments = rawAssignments.filter(a => {
           const schoolId =
             a.classroom?.school?.id ||
             a.classroom?.school_id ||
@@ -240,9 +252,7 @@ export default function TeachersPage() {
           return String(schoolId) === String(id);
         });
 
-        const teacherData = teacherRes.data || [];
-        const teacherProfiles = Array.isArray(teacherData) ? teacherData : (teacherData.results || []);
-        const filteredProfiles = teacherProfiles.filter(p => {
+      const filteredProfiles = (teacherProfiles || []).filter(p => {
           const schoolId =
             p.school?.id ||
             p.school_id ||
@@ -255,18 +265,15 @@ export default function TeachersPage() {
           return String(schoolId) === String(id);
         });
 
-        const combined = buildAssignments(filteredAssignments, filteredProfiles);
-        setAssignments(combined);
-        setLoading(false);
-        if (combined.length > 0) {
-          toast.success(`Loaded ${combined.length} teacher${combined.length === 1 ? '' : 's'} (including unassigned)`);
-        }
-      })
-      .catch(err => {
-        console.error(err);
-        toast.error('Failed to load teachers/assignments');
-        setLoading(false);
-      });
+      const combined = buildAssignments(filteredAssignments, filteredProfiles);
+      setAssignments(combined);
+      setLoading(false);
+      if (combined.length > 0) {
+        toast.success(`Loaded ${combined.length} teacher${combined.length === 1 ? '' : 's'} (including unassigned)`);
+      } else {
+        toast.warning('No assignments found for this school');
+      }
+    })();
   };
 
   useEffect(() => {
@@ -771,6 +778,7 @@ export default function TeachersPage() {
           subjects: new Set(),
           classes: new Set(),
           sectionsByClass: new Map(),
+          subjectClassesMap: new Map(),
           assignmentCount: 0
         };
         byUser.set(uid, g);
@@ -785,6 +793,12 @@ export default function TeachersPage() {
           sec.add(a.section.name);
           g.sectionsByClass.set(key, sec);
         }
+        if (a.subject?.name) {
+          const subj = a.subject.name;
+          const existing = g.subjectClassesMap.get(subj) || new Set();
+          existing.add(a.classroom.name);
+          g.subjectClassesMap.set(subj, existing);
+        }
       }
       g.assignmentCount += 1;
     });
@@ -795,7 +809,7 @@ export default function TeachersPage() {
 
   const normalizeClassBase = (name) => {
     const s = String(name || '').toLowerCase();
-    return s.replace(/\s*শ্রেণি\s*$/i, '').trim();
+    return s.replace(/\s*(শ্রেণী|শ্রেণি|শেণি)\s*$/i, '').trim();
   };
   const classOrder = ['প্রথম','দ্বিতীয়','দ্বিতীয়','তৃতীয়','তৃতীয়','চতুর্থ','পঞ্চম','ষষ্ঠ','সপ্তম','অষ্টম','নবম','দশম','একাদশ','দ্বাদশ'];
   const classIndex = (name) => {
@@ -943,11 +957,24 @@ export default function TeachersPage() {
               <Card sx={{ borderRadius: 2, boxShadow: { xs: 2, sm: 3 }, transition: 'transform 0.2s', '&:hover': { transform: 'translateY(-4px)', boxShadow: 6 }, p: { xs: 1, sm: 2 } }}>
                 <CardHeader
                       onClick={async () => {
-                        // Load detailed data for this teacher (assignments, etc.)
                         setSelectedTeacher(a.teacher);
                         setSelectedTeacherProfile(a.teacherProfile || null);
-                        setSelectedTeacherSubjects(Array.from(a.subjects || []));
-                        setSelectedTeacherClasses(Array.from(a.classes || []));
+                        try {
+                          const tid = a.teacher?.user?.id || a.teacher?.id;
+                          const resp = await api.get(`/api/academics/assignments/?classroom__school=${id}${tid ? `&teacher=${tid}` : ''}`);
+                          const arr = Array.isArray(resp.data) ? resp.data : (resp.data?.results || []);
+                          const subs = new Set();
+                          const cls = new Set();
+                          arr.forEach(it => {
+                            if (it.subject?.name) subs.add(it.subject.name);
+                            if (it.classroom?.name) cls.add(it.classroom.name);
+                          });
+                          setSelectedTeacherSubjects(Array.from(subs));
+                          setSelectedTeacherClasses(Array.from(cls));
+                        } catch (e) {
+                          setSelectedTeacherSubjects(Array.from(a.subjects || []));
+                          setSelectedTeacherClasses(Array.from(a.classes || []));
+                        }
                         setDetailOpen(true);
                       }}
                       sx={{ cursor: 'pointer' }}
@@ -961,16 +988,29 @@ export default function TeachersPage() {
                           {`${a.teacher?.first_name || ''} ${a.teacher?.last_name || ''}`.trim() || a.teacher?.username || 'Unknown Teacher'}
                         </Typography>
                       }
-                      subheader={null}
+                      subheader={`(${a.teacher?.username || a.teacher?.user?.username || ''})`}
                       titleTypographyProps={{ variant: 'h5' }}
                     />
 
                 <CardContent onClick={async () => {
-                  // Load detailed data for this teacher (assignments, etc.)
                   setSelectedTeacher(a.teacher);
                   setSelectedTeacherProfile(a.teacherProfile || null);
-                  setSelectedTeacherSubjects(Array.from(a.subjects || []));
-                  setSelectedTeacherClasses(Array.from(a.classes || []));
+                  try {
+                    const tid = a.teacher?.user?.id || a.teacher?.id;
+                    const resp = await api.get(`/api/academics/assignments/?classroom__school=${id}${tid ? `&teacher=${tid}` : ''}`);
+                    const arr = Array.isArray(resp.data) ? resp.data : (resp.data?.results || []);
+                    const subs = new Set();
+                    const cls = new Set();
+                    arr.forEach(it => {
+                      if (it.subject?.name) subs.add(it.subject.name);
+                      if (it.classroom?.name) cls.add(it.classroom.name);
+                    });
+                    setSelectedTeacherSubjects(Array.from(subs));
+                    setSelectedTeacherClasses(Array.from(cls));
+                  } catch (e) {
+                    setSelectedTeacherSubjects(Array.from(a.subjects || []));
+                    setSelectedTeacherClasses(Array.from(a.classes || []));
+                  }
                   setDetailOpen(true);
                 }} sx={{ cursor: 'pointer' }}>
                   <Stack spacing={1.25}>
@@ -984,30 +1024,32 @@ export default function TeachersPage() {
                         {qualificationText || 'এম.এস.এস. ও এম.এড.'}
                       </Typography>
                     </Box>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
-                      {Array.from(a.subjects).length > 0
-                        ? Array.from(a.subjects).map((s, i) => (
-                            <Chip
-                              key={`${s}-${i}`}
-                              label={s}
-                              color={['primary','secondary','success','warning','info','error'][i % 6]}
-                              size="medium"
-                              sx={{ '& .MuiChip-label': { fontSize: '0.95rem', fontWeight: 600 } }}
-                            />
-                          ))
-                        : <Chip label="No subjects" size="medium" sx={{ '& .MuiChip-label': { fontSize: '0.9rem' } }} />}
-                    </Box>
-                    <Typography variant="body1" sx={{ wordBreak: 'break-word', overflowWrap: 'anywhere', fontWeight: 600 }}>
-                      {hasHyphen ? (
-                        <>
-                          <Box component="span" sx={{ color: 'primary.main' }}>{classParts[0]}</Box>
-                          <Box component="span" sx={{ color: 'primary.main' }}>{' - '}</Box>
-                          <Box component="span" sx={{ color: 'secondary.main' }}>{classParts[1]}</Box>
-                        </>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+                      {Array.from(a.subjects).length > 0 ? (
+                        Array.from(a.subjects).map((s, i) => {
+                          const clsSet = a.subjectClassesMap?.get(s) || new Set();
+                          const range = formatClassRange(clsSet);
+                          const colorKey = ['primary','secondary','success','warning','info','error'][i % 6];
+                          return (
+                            <Box key={`${s}-${i}`} sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
+                              <Chip
+                                label={s}
+                                color={colorKey}
+                                size="medium"
+                                sx={{ '& .MuiChip-label': { fontSize: '0.95rem', fontWeight: 600 } }}
+                              />
+                              {range && (
+                                <Typography variant="body2" sx={{ fontWeight: 600, color: `${colorKey}.main` }}>
+                                  • {range}
+                                </Typography>
+                              )}
+                            </Box>
+                          );
+                        })
                       ) : (
-                        <Box component="span" sx={{ color: 'info.main' }}>{classTextRaw}</Box>
+                        <Chip label="No subjects" size="medium" sx={{ '& .MuiChip-label': { fontSize: '0.9rem' } }} />
                       )}
-                    </Typography>
+                    </Box>
                     <Typography variant="body1" color="textSecondary">
                       <strong>Mobile:</strong> {a.teacher?.phone_number || a.teacher?.mobile_number || 'Not available'}
                     </Typography>

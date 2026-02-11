@@ -46,6 +46,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import ProtectedButton from '../components/ProtectedButton';
 import { scopedGet } from '../utils/schoolApi';
 import { isAuthenticated } from '../utils/auth';
+import { useAuth } from '../context/AuthContext';
 
 // Examination types mapping (labels)
 const EXAM_TYPES = [
@@ -64,6 +65,10 @@ const getExamTypeLabel = (type) => {
 export default function ResultsPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const role = ((user && (user.profile?.role || user.role)) || '').toLowerCase();
+  const currentUserId = (user && (user.user?.id || user.id)) || null;
+  const [assignments, setAssignments] = useState([]);
   const [tabValue, setTabValue] = useState(0);
   
   // Examinations
@@ -283,7 +288,12 @@ export default function ResultsPage() {
     scopedGet('/api/academics/classrooms/', id, {}, { timeout: 30000 })
       .then(res => {
         const data = Array.isArray(res.data) ? res.data : res.data.results || [];
-        setClasses(data);
+        if (role === 'teacher' && assignments.length) {
+          const allowedClassIds = Array.from(new Set(assignments.map(a => a.classroom)));
+          setClasses(data.filter(c => allowedClassIds.includes(c.id)));
+        } else {
+          setClasses(data);
+        }
         if (selectedClass && !data.some(c => String(c.id) === String(selectedClass))) {
           setSelectedClass('');
         }
@@ -395,7 +405,12 @@ export default function ResultsPage() {
     scopedGet('/api/academics/subjects/', id, {}, { timeout: 30000 })
       .then(res => {
         const data = Array.isArray(res.data) ? res.data : res.data.results || [];
-        setSubjects(data);
+        if (role === 'teacher' && assignments.length) {
+          const allowedSubjectIds = new Set(assignments.filter(a => String(a.classroom) === String(classId)).map(a => a.subject));
+          setSubjects(data.filter(s => allowedSubjectIds.has(s.id)));
+        } else {
+          setSubjects(data);
+        }
         const initial = {};
         for (const s of data) {
         initial[s.id] = { written: '', mcq: '', practical: '' };
@@ -496,6 +511,10 @@ export default function ResultsPage() {
   const handleOpenAddResultsDialog = () => {
     if (!isAuthenticated()) {
       navigate('/login');
+      return;
+    }
+    if (!(role === 'admin' || role === 'teacher')) {
+      toast.error('শুধু এ্যাডমিন বা শিক্ষক ফলাফল ইনপুট দিতে পারবেন');
       return;
     }
     // Reset saving spinner
@@ -689,6 +708,10 @@ export default function ResultsPage() {
   const handleSaveResult = () => {
     if (!isAuthenticated()) {
       navigate('/login');
+      return;
+    }
+    if (!(role === 'admin' || role === 'teacher')) {
+      toast.error('অননুমোদিত');
       return;
     }
     if (!selectedExam || !selectedClass || !selectedStudent || !selectedSubject) {
@@ -1008,6 +1031,10 @@ export default function ResultsPage() {
   };
 
   const openBulkDialog = () => {
+    if (!(role === 'admin' || role === 'teacher')) {
+      toast.error('শুধু এ্যাডমিন বা শিক্ষক বাল্ক ইনপুট দিতে পারবেন');
+      return;
+    }
     setBulkDialogOpen(true);
     const cls = selectedClass || (classes[0]?.id || '');
     const ex = selectedExam || (getExamsForClass(cls)[0]?.id || '');
@@ -1038,6 +1065,24 @@ export default function ResultsPage() {
       setSelectedExam('');
     }
   }, [examinations]);
+
+  useEffect(() => {
+    if (role === 'teacher' && currentUserId && id) {
+      api.get(`/api/academics/assignments/?teacher=${currentUserId}&school=${id}`)
+        .then(res => {
+          const arr = Array.isArray(res.data) ? res.data : (res.data?.results || []);
+          const normalized = arr.map(a => ({
+            classroom: a.classroom?.id || a.classroom,
+            section: a.section?.id || a.section || null,
+            subject: a.subject?.id || a.subject
+          })).filter(x => x.classroom && x.subject);
+          setAssignments(normalized);
+        })
+        .catch(() => setAssignments([]));
+    } else {
+      setAssignments([]);
+    }
+  }, [role, currentUserId, id]);
 
   useEffect(() => {
     if (selectedClass && !selectedExam) {
@@ -1103,6 +1148,7 @@ export default function ResultsPage() {
   };
 
   const saveBulkMarks = async () => {
+    if (!(role === 'admin' || role === 'teacher')) { toast.error('অননুমোদিত'); return; }
     const examId = parseInt(bulkForm.exam || selectedExam);
     const subjectId = parseInt(bulkForm.subject);
     const classroomId = parseInt(bulkForm.classroom);

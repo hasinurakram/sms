@@ -585,7 +585,7 @@ const Certificate = ({ data, school, session }) => {
           <Box className="seal-container" sx={{ mb: 1 }}>
             <img 
               className="seal-stamp"
-              src="/images/seals/school-seal.png" 
+              src={(school?.id && String(school.id) === '19') ? `${(api?.defaults?.baseURL || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/+$/,'')}/media/BHS/seal.png` : '/images/seals/school-seal.png'} 
               alt="School Seal"
               style={{ 
                 width: '80px',
@@ -613,7 +613,7 @@ const Certificate = ({ data, school, session }) => {
           <Box className="seal-container" sx={{ mb: 1 }}>
             <img 
               className="seal-stamp"
-              src="/images/seals/school-seal.png" 
+              src={(school?.id && String(school.id) === '19') ? `${(api?.defaults?.baseURL || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/+$/,'')}/media/BHS/seal.png` : '/images/seals/school-seal.png'} 
               alt="School Seal"
               style={{ 
                 width: '80px',

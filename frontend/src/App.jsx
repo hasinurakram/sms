@@ -28,6 +28,7 @@ const StudentDashboard = React.lazy(() => import('./pages/StudentDashboard'));
 const ResultsPage = React.lazy(() => import('./pages/ResultsPage'));
 const ResultCardGenerator = React.lazy(() => import('./pages/ResultCardGenerator'));
 const RankListPage = React.lazy(() => import('./pages/RankListPage'));
+const ClassResultsPage = React.lazy(() => import('./pages/ClassResultsPage'));
 const IDCardGenerator = React.lazy(() => import('./pages/IDCardGenerator'));
 const CertificateGenerator = React.lazy(() => import('./pages/CertificateGenerator'));
 const AdmissionCardGenerator = React.lazy(() => import('./pages/AdmissionCardGenerator'));
@@ -54,9 +55,10 @@ const StartupRedirect = () => {
     try {
       const unauth = !isAuthenticated();
       const path = location.pathname || '/';
-      const protectedMatch = /^\/school\/[^/]+\/(results|examinations)(\/|$)/.test(path);
-      if (unauth && (protectedMatch || path === '/login')) {
-        navigate('/', { replace: true });
+      const protectedMatch = /^\/school\/[^/]+\/(results|examinations|fees|fee-receipt|receipt-book|groups|schools|id-card|certificate|admission-cards|sms|academics|attendance\/records|attendance\/report-card)(\/|$)/.test(path);
+      if (unauth && protectedMatch && window.location.pathname === path) {
+        const next = encodeURIComponent(path + location.search);
+        navigate(`/login?next=${next}`, { replace: true });
       }
     } catch (_) {}
     // run once on mount
@@ -89,23 +91,24 @@ function App() {
           <Route path="subjects" element={<SubjectsPage />} />
           <Route path="classes" element={<ClassroomsPage />} />
           <Route path="attendance" element={<AttendancePageNew />} />
-          <Route path="attendance/records" element={<AttendanceRecordsPage />} />
-          <Route path="attendance/report-card" element={<AttendanceReportCard />} />
-          <Route path="academics" element={<AcademicsPage />} />
-          <Route path="results" element={<ProtectedRoute><ResultsPage /></ProtectedRoute>} />
-          <Route path="examinations" element={<ProtectedRoute><ExaminationsPage /></ProtectedRoute>} />
-          <Route path="fees" element={<FeesPage />} />
-          <Route path="fee-receipt" element={<FeePaymentReceipt />} />
-          <Route path="receipt-book" element={<ReceiptBook />} />
-          <Route path="groups" element={<GroupsPage />} />
-          <Route path="schools" element={<SchoolsPage />} />
+          <Route path="attendance/records" element={<ProtectedRoute allowedRoles={['admin','teacher']}><AttendanceRecordsPage /></ProtectedRoute>} />
+          <Route path="attendance/report-card" element={<ProtectedRoute allowedRoles={['admin','teacher']}><AttendanceReportCard /></ProtectedRoute>} />
+          <Route path="academics" element={<ProtectedRoute allowedRoles={['admin','teacher']}><AcademicsPage /></ProtectedRoute>} />
+          <Route path="results" element={<ProtectedRoute allowedRoles={['admin','teacher']}><ResultsPage /></ProtectedRoute>} />
+          <Route path="examinations" element={<ProtectedRoute allowedRoles={['admin','teacher']}><ExaminationsPage /></ProtectedRoute>} />
+          <Route path="fees" element={<ProtectedRoute allowedRoles={['admin','teacher']}><FeesPage /></ProtectedRoute>} />
+          <Route path="fee-receipt" element={<ProtectedRoute allowedRoles={['admin','teacher']}><FeePaymentReceipt /></ProtectedRoute>} />
+          <Route path="receipt-book" element={<ProtectedRoute allowedRoles={['admin','teacher']}><ReceiptBook /></ProtectedRoute>} />
+          <Route path="groups" element={<ProtectedRoute allowedRoles={['admin','teacher']}><GroupsPage /></ProtectedRoute>} />
+          <Route path="schools" element={<ProtectedRoute allowedRoles={['admin','teacher']}><SchoolsPage /></ProtectedRoute>} />
           <Route path="result-card" element={<ResultCardGenerator />} />
+          <Route path="class-results" element={<ProtectedRoute allowedRoles={['admin','teacher']}><ClassResultsPage /></ProtectedRoute>} />
           <Route path="rank-list" element={<RankListPage />} />
-          <Route path="id-card" element={<IDCardGenerator />} />
-          <Route path="certificate" element={<CertificateGenerator />} />
-          <Route path="admission-cards" element={<AdmissionCardGenerator />} />
+          <Route path="id-card" element={<ProtectedRoute allowedRoles={['admin','teacher']}><IDCardGenerator /></ProtectedRoute>} />
+          <Route path="certificate" element={<ProtectedRoute allowedRoles={['admin','teacher']}><CertificateGenerator /></ProtectedRoute>} />
+          <Route path="admission-cards" element={<ProtectedRoute allowedRoles={['admin','teacher']}><AdmissionCardGenerator /></ProtectedRoute>} />
           <Route path="assistant" element={<SoftwareAssistant />} />
-          <Route path="sms" element={<SMSPage />} />
+          <Route path="sms" element={<ProtectedRoute allowedRoles={['admin','teacher']}><SMSPage /></ProtectedRoute>} />
           <Route path="profile" element={<ProfilePage />} />
           <Route path="admin" element={<RoleDashboard role="admin" />} />
           <Route path="parent" element={<ParentsPage />} />

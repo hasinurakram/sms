@@ -45,6 +45,27 @@ export default function AdmissionCard({ data, school, exam }) {
     timestamp: new Date().toISOString()
   });
 
+  const toBnDigits = (v) => {
+    const bn = ['০','১','২','৩','৪','৫','৬','৭','৮','৯'];
+    return String(v ?? '').replace(/[0-9]/g, d => bn[d] ?? d);
+  };
+  const getExamTypeBn = () => {
+    const raw = String(exam?.name || exam?.exam_type || '').toLowerCase();
+    if (/(half|mid|অর্ধ)/.test(raw)) return 'অর্ধ-বার্ষিক';
+    if (/(annual|final|yearly|বার্ষিক)/.test(raw)) return 'বার্ষিক';
+    if (/(terminal|term|টার্মিনাল)/.test(raw)) return 'টার্মিনাল';
+    if (/(model|মডেল)/.test(raw)) return 'মডেল টেস্ট';
+    if (/(test|টেস্ট|বিশেষ)/.test(raw)) return 'বিশেষ মূল্যায়ন';
+    return '';
+  };
+  const getExamYearBn = () => {
+    const yr =
+      (exam?.academic_year && parseInt(exam.academic_year, 10)) ||
+      (exam?.start_date && (() => { const d = new Date(exam.start_date); return d.getFullYear(); })()) ||
+      new Date().getFullYear();
+    return toBnDigits(yr);
+  };
+
   return (
     <Box 
       key={`admission-card-${rollNumber || 'unknown'}`}
@@ -81,7 +102,9 @@ export default function AdmissionCard({ data, school, exam }) {
         color: 'white'
       }}>
         {/* School Logo */}
-        <Box sx={{ 
+        <Box 
+          className="school-logo-box"
+          sx={{ 
           width: '60px',
           height: '60px',
           border: '1px solid #e0e0e0',
@@ -107,14 +130,15 @@ export default function AdmissionCard({ data, school, exam }) {
         </Box>
         
         {/* School Info */}
-        <Box sx={{ textAlign: 'center', flex: 1, px: 2 }}>
+        <Box className="school-info-box" sx={{ textAlign: 'center', flex: 1, px: 1, minWidth: 0 }}>
           <Typography variant="h6" sx={{ 
             fontWeight: 'bold', 
-            fontSize: '1.2rem',
+            fontSize: '1.1rem',
             mb: 0.5,
-            lineHeight: 1.2
+            lineHeight: 1.2,
+            wordBreak: 'break-word'
           }}>
-            {school?.name || 'স্কুল নাম'}
+            {school?.bn_name || 'বহরিয়া উচ্চ বিদ্যালয়'}
           </Typography>
           <Typography variant="h5" sx={{ 
             fontSize: '1.3rem',
@@ -129,12 +153,14 @@ export default function AdmissionCard({ data, school, exam }) {
             fontWeight: 500,
             lineHeight: 1.2
           }}>
-            {exam?.name || 'বার্ষিক পরীক্ষা - ২০২৫'}
+            {(getExamTypeBn() || 'পরিক্ষা') + ' পরিক্ষা-' + getExamYearBn() + 'ইং'}
           </Typography>
         </Box>
         
         {/* Student Photo */}
-        <Box sx={{ 
+        <Box 
+          className="student-photo-box"
+          sx={{ 
           width: '60px',
           height: '75px',
           border: '1px solid #e0e0e0',
@@ -208,7 +234,7 @@ export default function AdmissionCard({ data, school, exam }) {
         </Typography>
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
           <Typography variant="body2" sx={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span>তারিখ:</span> <span>২৬/১১/২০২৫</span>
+            <span>তারিখ:</span> <span>{exam?.start_date ? new Date(exam.start_date).toLocaleDateString() : toBnDigits(new Date().toLocaleDateString())}</span>
           </Typography>
           <Typography variant="body2" sx={{ display: 'flex', justifyContent: 'space-between' }}>
             <span>সময়:</span> <span>সকাল ১০:০০</span>
@@ -226,16 +252,7 @@ export default function AdmissionCard({ data, school, exam }) {
         </Box>
       </Box>
 
-      {/* Valid For */}
-      <Box sx={{ 
-        textAlign: 'center',
-        mb: 2,
-        mt: 2,
-        fontSize: '0.85rem',
-        color: '#555'
-      }}>
-        Valid for: Annual Exam 2025
-      </Box>
+      {/* Valid For removed per requirement */}
 
       {/* Footer */}
       <Box sx={{

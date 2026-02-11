@@ -257,6 +257,27 @@ export default function ClassroomsPage() {
 
   // Bangla number words mapping for sorting
   const banglaNumberMap = {
+    'প্লে': -3,
+    'Play': -3,
+    'play': -3,
+    'নার্সারি': -2,
+    'Nursery': -2,
+    'nursery': -2,
+    'কেজি': -1,
+    'KG': -1,
+    'kg': -1,
+    'কে.জি': -1,
+    'কে.জি.': -1,
+    '১ম': 1,
+    '২য়': 2,
+    '৩য়': 3,
+    '৪র্থ': 4,
+    '৫ম': 5,
+    '৬ষ্ঠ': 6,
+    '৭ম': 7,
+    '৮ম': 8,
+    '৯ম': 9,
+    '১০ম': 10,
     'প্রথম': 1,
     'দ্বিতীয়': 2,
     'দ্বিতীয়': 2,
@@ -269,11 +290,20 @@ export default function ClassroomsPage() {
     'অষ্টম': 8,
     'নবম': 9,
     'দশম': 10,
+    'এসএসসি': 10.5,
+    'এস.এস.সি': 10.5,
     'একাদশ': 11,
     'দ্বাদশ': 12
   };
 
   const getClassOrder = (className) => {
+    const lowerName = className.toLowerCase();
+    
+    // Check for specific keywords first (Play, Nursery, KG)
+    if (lowerName.includes('play') || lowerName.includes('প্লে')) return -3;
+    if (lowerName.includes('nursery') || lowerName.includes('নার্সারি') || lowerName.includes('শিশু')) return -2;
+    if (lowerName.includes('kg') || lowerName.includes('কেজি') || lowerName.includes('কে.জি')) return -1;
+    
     // Check for Bangla numbers
     for (const [bangla, num] of Object.entries(banglaNumberMap)) {
       if (className.includes(bangla)) {

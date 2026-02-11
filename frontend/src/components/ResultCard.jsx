@@ -5,7 +5,7 @@ import ImageWithFallback from './ImageWithFallback';
 import api from '../utils/api';
 import fallbackLogo from './fallback_logo.png';
 
-export default function ResultCard({ studentData, results, overallResult, examination, school }) {
+export default function ResultCard({ studentData, results, overallResult, examination, school, schoolId }) {
   const student = studentData?.student || {};
   const user = student.user || {};
   const studentName = `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.username;
@@ -14,6 +14,46 @@ export default function ResultCard({ studentData, results, overallResult, examin
     student.guardian_name || student.parent_name || student.father_name || student.mother_name ||
     user.guardian_name || user.parent_name || ''
   );
+  const isSchool19 = String(schoolId || school?.id || '') === '19';
+  const [resolvedSchool, setResolvedSchool] = React.useState(school || null);
+  React.useEffect(() => {
+    let active = true;
+    const syncSchool = async () => {
+      try {
+        if (school && active) { setResolvedSchool(school); return; }
+        if (!schoolId) { setResolvedSchool(null); return; }
+        const res = await api.get(`/api/schools/${schoolId}/`, { timeout: 15000 });
+        if (active) setResolvedSchool(res.data);
+      } catch (_) {
+        try {
+          const listRes = await api.get('/api/schools/', { timeout: 15000 });
+          const arr = Array.isArray(listRes.data) ? listRes.data : (listRes.data?.results || []);
+          const found = arr.find(s => String(s.id) === String(schoolId));
+          if (active && found) setResolvedSchool(found);
+        } catch (__){ if (active) setResolvedSchool(null); }
+      }
+    };
+    syncSchool();
+    return () => { active = false; };
+  }, [schoolId, school]);
+  React.useEffect(() => {
+    if (!resolvedSchool && schoolId) {
+      const t = setTimeout(async () => {
+        try {
+          const res = await api.get(`/api/schools/${schoolId}/`, { timeout: 15000 });
+          if (res?.data) setResolvedSchool(res.data);
+        } catch (_) {
+          try {
+            const listRes = await api.get('/api/schools/', { timeout: 15000 });
+            const arr = Array.isArray(listRes.data) ? listRes.data : (listRes.data?.results || []);
+            const found = arr.find(s => String(s.id) === String(schoolId));
+            if (found) setResolvedSchool(found);
+          } catch (__){}
+        }
+      }, 1000);
+      return () => clearTimeout(t);
+    }
+  }, [resolvedSchool, schoolId]);
   
   // Subject order according to specified sequence
   const subjectOrder = [
@@ -139,14 +179,65 @@ export default function ResultCard({ studentData, results, overallResult, examin
   };
 
   // School logo URL handling with relative path
-  const logoSrc = (() => {
-    // First try to use the school logo from the school data
-    const schoolLogo = school?.logo || school?.img || school?.logo_url || school?.image;
-    if (schoolLogo) {
-      return resolveMediaUrl(schoolLogo);
+  const logoCandidates = (() => {
+    const candidates = [
+      resolvedSchool?.logo,
+      resolvedSchool?.img,
+      resolvedSchool?.logo_url,
+      resolvedSchool?.image,
+      resolvedSchool?.logoUrl,
+      resolvedSchool?.photo,
+      resolvedSchool?.image_url,
+      resolvedSchool?.photo_url,
+      resolvedSchool?.logo_path,
+      resolvedSchool?.logoUri,
+      resolvedSchool?.logoURL,
+      examination?.school?.logo,
+      examination?.school?.logo_url,
+      examination?.school?.image,
+      examination?.school?.photo,
+      examination?.school?.image_url,
+      examination?.school_logo,
+      student?.school_logo,
+      student?.classroom?.school?.logo,
+      student?.classroom?.school?.logo_url,
+      student?.classroom?.school?.image,
+      student?.classroom?.school?.photo,
+      student?.classroom?.school?.image_url
+    ].filter(v => v != null);
+    const urls = [];
+    for (const val of candidates) {
+      const raw = (typeof val === 'string') ? val : (typeof val?.url === 'string' ? val.url : null);
+      if (!raw) continue;
+      const resolved = resolveMediaUrl(String(raw).trim());
+      if (resolved && String(resolved).trim().length > 0) urls.push(resolved);
     }
-    
-    return '';
+    if (isSchool19) urls.push(resolveMediaUrl('school_logos/bohoria.jpg'));
+    urls.push(fallbackLogo);
+    return urls;
+  })();
+  const headerSchoolName = (() => {
+    const candidates = [
+      resolvedSchool?.name,
+      resolvedSchool?.school_name,
+      resolvedSchool?.display_name,
+      resolvedSchool?.title,
+      resolvedSchool?.short_name,
+      examination?.school?.name,
+      examination?.school?.display_name,
+      examination?.school?.title,
+      student?.classroom?.school?.name,
+      student?.classroom?.school?.display_name,
+      student?.classroom?.school?.title,
+      examination?.school_name,
+      student?.school_name
+    ].map(v => String(v || '').trim()).filter(v => v);
+    const bnCandidates = candidates.filter(v => /[\u0980-\u09FF]/.test(v));
+    if (bnCandidates.length > 0) return bnCandidates.sort((a, b) => b.length - a.length)[0];
+    if (candidates.length > 0) return candidates.sort((a, b) => b.length - a.length)[0];
+    if (isSchool19) return 'বহরিয়া উচ্চ বিদ্যালয়';
+    if (schoolId) return `School #${schoolId}`;
+    return 'School Name';
   })();
 
   // Resolve student photo URL similar to StudentCard
@@ -419,11 +510,17 @@ export default function ResultCard({ studentData, results, overallResult, examin
           aria-label="School Logo"
         >
           <ImageWithFallback
-            src={logoSrc}
-            alt={school?.name || 'School Logo'}
+            srcCandidates={logoCandidates}
+            alt={headerSchoolName || 'School Logo'}
             width="100%"
             height="100%"
-            fallback={<></>}
+            fallback={
+              <img
+                src={fallbackLogo}
+                alt="School Logo"
+                style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }}
+              />
+            }
           />
         </Box>
 
@@ -448,7 +545,7 @@ export default function ResultCard({ studentData, results, overallResult, examin
         </Box>
         
         <Typography variant="h4" sx={{ fontWeight: 'bold', color: '#1976d2', mb: 0.5, fontSize: { xs: '1.1rem', sm: '1.6rem' } }}>
-          {school?.name || ''}
+          {headerSchoolName}
         </Typography>
         {/* Address Removed */}
         <Typography variant="h5" sx={{ mt: 1, fontWeight: 'bold', color: '#424242', fontSize: { xs: '0.95rem', sm: '1.3rem' } }}>
@@ -671,7 +768,7 @@ export default function ResultCard({ studentData, results, overallResult, examin
           <Grid size={{ xs: 4 }} sx={{ textAlign: 'center' }}>
             <Box sx={{ height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 0.25 }}>
               <img
-                src="/images/signatures/seal.png"
+            src={isSchool19 ? resolveMediaUrl('BHS/seal.png') : '/images/signatures/seal.png'}
                 alt="School Seal"
                 style={{
                   maxHeight: '100%',
@@ -687,26 +784,26 @@ export default function ResultCard({ studentData, results, overallResult, examin
           <Grid size={{ xs: 4 }} sx={{ textAlign: 'center' }}>
             <Box sx={{ height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 0.5, position: 'relative' }}>
               <img
-                src="/images/signatures/seal.png"
+            src={isSchool19 ? resolveMediaUrl('BHS/seal.png') : '/images/signatures/seal.png'}
                 alt="School Seal"
                 style={{
                   position: 'absolute',
                   left: '50%',
                   top: '50%',
                   transform: 'translate(-50%, -50%)',
-                  width: '70%',
-                  height: '70%',
+                  width: '100%',
+                  height: '100%',
                   objectFit: 'contain',
-                  opacity: 0.25,
+                  opacity: 0.5,
                   zIndex: 1
                 }}
                 onError={(e) => { e.target.style.display = 'none'; }}
               />
               <img
-                src={(school?.id && String(school.id) === '19') ? resolveMediaUrl('BHS/signature.png') : ''}
+            src={isSchool19 ? resolveMediaUrl('BHS/signature.png') : '/images/signatures/signature.png'}
                 alt="Headmaster's Signature"
                 style={{
-                  display: (school?.id && String(school.id) === '19') ? 'block' : 'none',
+              display: 'block',
                   maxHeight: '100%',
                   maxWidth: '100%',
                   objectFit: 'contain',
@@ -715,7 +812,7 @@ export default function ResultCard({ studentData, results, overallResult, examin
                 }}
                 onError={(e) => {
                   e.target.onerror = null; // Prevent infinite loop
-                  e.target.style.display = 'none';
+              e.target.style.display = 'none';
                 }}
               />
             </Box>

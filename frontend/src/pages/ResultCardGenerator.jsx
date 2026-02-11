@@ -59,6 +59,8 @@ export default function ResultCardGenerator() {
   const [overallResult, setOverallResult] = useState(null);
   const [school, setSchool] = useState(null);
   const [examination, setExamination] = useState(null);
+  const [overrideLogo, setOverrideLogo] = useState('');
+
 
   const isMounted = React.useRef(true);
 
@@ -90,6 +92,7 @@ export default function ResultCardGenerator() {
     const qExam = qs.get('exam_type');
     const qExamId = qs.get('exam');
     const qSection = qs.get('section');
+    const qLogo = qs.get('logo') || qs.get('school_logo');
     const qAuto = qs.get('auto');
     let timeout;
     (async () => {
@@ -145,6 +148,16 @@ export default function ResultCardGenerator() {
           setSelectedStudent(Number.isNaN(numStudent) ? '' : numStudent);
         }
         if (qExam) setSelectedExamType(qExam);
+        if (qLogo) {
+          const raw = String(qLogo || '').trim();
+          if (raw) {
+            setOverrideLogo(raw);
+            setSchool(prev => {
+              const base = prev && typeof prev === 'object' ? prev : {};
+              return { ...base, logo: raw };
+            });
+          }
+        }
         if (qAuto === '1' && qClass && qStudent && (qExam || qExamId)) {
           timeout = setTimeout(() => handleSearch(qExamId || null), 200);
         }
@@ -552,7 +565,7 @@ export default function ResultCardGenerator() {
       // Get student details
       const studentRes = await api.get(`/api/academics/students/${selectedStudent}/`);
       const student = studentRes.data;
-      setStudentData({ student });
+      setStudentData({ student: overrideLogo ? { ...student, school_logo: overrideLogo } : student });
 
       let matchingExams = [];
       if (examIdOverride) {
@@ -729,9 +742,47 @@ export default function ResultCardGenerator() {
             url += `&section=${selectedSection}`;
         }
         const overallRes = await api.get(url);
-        setOverallResult(overallRes.data);
+        let combined = overallRes.data;
+        // If rank is missing, try to derive it from examination-level overall list
+        if (!combined || combined.rank == null) {
+          const exId = chosenExam?.id || null;
+          if (exId) {
+            try {
+              const classOverallRes = await scopedGet('/api/results/overall/', id, { examination: exId, page_size: 500 }, { timeout: 15000 });
+              const list = Array.isArray(classOverallRes.data) ? classOverallRes.data : (classOverallRes.data?.results || []);
+              const me = (list || []).find(item => {
+                const sid = item?.student?.id ?? item?.student_id;
+                return String(sid) === String(student.id);
+              });
+              if (me && me.rank != null) {
+                combined = { ...(combined || {}), rank: me.rank };
+              }
+            } catch (_) { /* ignore fallback failure */ }
+          }
+          if (!combined || combined.rank == null) {
+            try {
+              const params = { 
+                exam_type: normalizeExamType(selectedExamType), 
+                classroom: selectedClass, 
+                school: id, 
+                page_size: 500 
+              };
+              if (selectedSection) params.section = selectedSection;
+              const rankListRes = await scopedGet('/api/results/overall/combined_rank_list_by_exam_type/', id, params, { timeout: 15000 });
+              const arr = Array.isArray(rankListRes.data) ? rankListRes.data : (rankListRes.data?.results || []);
+              const me2 = (arr || []).find(row => {
+                const sid = row?.student?.id ?? row?.student_id;
+                return String(sid) === String(student.id);
+              });
+              if (me2 && me2.rank != null) {
+                combined = { ...(combined || {}), rank: me2.rank };
+              }
+            } catch (_) { /* ignore fallback failure */ }
+          }
+        }
+        setOverallResult(combined);
       } catch (err) {
-        console.error('Error fetching combined overall result:', err);
+        /* ignore errors for combined overall; fallback calculation below */
         // Fallback: Calculate on frontend without rank
         if (fetchedResults.length > 0) {
           const totalObtained = fetchedResults.reduce((sum, r) => sum + (parseFloat(r.total_obtained) || 0), 0);
@@ -1073,16 +1124,18 @@ export default function ResultCardGenerator() {
         )}
       </Paper>
 
+      
+
       {/* Result Card Display */}
       {studentData ? (
         <>
-          {console.log('Rendering ResultCard with:', { school, studentSchool: studentData?.student?.school_name, examSchool: examination?.school_name })}
           <ResultCard
             studentData={studentData}
             results={results}
             overallResult={overallResult}
-            examination={examination}
+            examination={overrideLogo ? { ...(examination || {}), school_logo: overrideLogo } : examination}
             school={school || {}}
+            schoolId={id}
           />
         </>
       ) : (

@@ -442,6 +442,8 @@ class TeacherAssignmentViewSet(viewsets.ModelViewSet):
         school_id = (self.request.query_params.get('classroom__school') 
                      or self.request.query_params.get('school') 
                      or self.request.query_params.get('school_id'))
+        teacher_id = self.request.query_params.get('teacher') or self.request.query_params.get('teacher_id')
+        subject_id = self.request.query_params.get('subject') or self.request.query_params.get('subject_id')
         if classroom_id:
             queryset = queryset.filter(classroom_id=classroom_id)
         if school_id:
@@ -449,6 +451,10 @@ class TeacherAssignmentViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(classroom__school_id=school_id)
             # Fallback: also restrict by subject's school to be safe
             queryset = queryset.filter(subject__school_id=school_id)
+        if teacher_id:
+            queryset = queryset.filter(teacher_id=teacher_id)
+        if subject_id:
+            queryset = queryset.filter(subject_id=subject_id)
         return queryset
 
 

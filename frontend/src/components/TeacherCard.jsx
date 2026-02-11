@@ -105,10 +105,78 @@ export default function TeacherCard({ teacher, onPhotoUploaded }) {
   const photoUrl = getPhotoUrl(teacher);
   const [imageError, setImageError] = useState(false);
   
-  // Get subject from multiple possible sources
-  const subject = teacher.subject?.name || 
-                 (teacher.assignments && teacher.assignments.length > 0 ? teacher.assignments[0].subject?.name : null) ||
-                 'Not assigned';
+  // Get subjects from multiple possible sources
+  const getSubjects = (teacherObj) => {
+    // Check if teacher has subjects array
+    if (teacherObj.subjects && Array.isArray(teacherObj.subjects) && teacherObj.subjects.length > 0) {
+      return teacherObj.subjects;
+    }
+    
+    // Check assignments for subjects
+    if (teacherObj.assignments && Array.isArray(teacherObj.assignments)) {
+      const subjects = teacherObj.assignments
+        .map(a => a.subject)
+        .filter(s => s);
+      if (subjects.length > 0) {
+        return subjects;
+      }
+    }
+    
+    // Check single subject
+    if (teacherObj.subject) {
+      return [teacherObj.subject];
+    }
+    
+    return [];
+  };
+  
+  const subjects = getSubjects(teacher);
+  const subject = subjects.length > 0 ? subjects.map(s => s.name).join(', ') : 'No subjects';
+  
+  // Get classes from multiple possible sources
+  const getClasses = (teacherObj) => {
+    // Check if teacher has classes array
+    if (teacherObj.classes && Array.isArray(teacherObj.classes) && teacherObj.classes.length > 0) {
+      return teacherObj.classes;
+    }
+    
+    // Check assignments for classes
+    if (teacherObj.assignments && Array.isArray(teacherObj.assignments)) {
+      const classes = teacherObj.assignments
+        .map(a => a.classroom)
+        .filter(c => c);
+      if (classes.length > 0) {
+        return classes;
+      }
+    }
+    
+    return [];
+  };
+  
+  const classes = getClasses(teacher);
+  
+  // Generate class range string
+  const getClassRange = (classList) => {
+    if (!classList || classList.length === 0) return '';
+    
+    // Sort classes by name
+    const sortedClasses = [...classList].sort((a, b) => a.name.localeCompare(b.name));
+    
+    // Extract class names and create range
+    const classNames = sortedClasses.map(c => c.name);
+    
+    if (classNames.length === 1) {
+      return classNames[0];
+    }
+    
+    if (classNames.length === 2) {
+      return `${classNames[0]} - ${classNames[1]}`;
+    }
+    
+    return `${classNames[0]} - ${classNames[classNames.length - 1]}`;
+  };
+  
+  const classRange = getClassRange(classes);
                  
   // Get mobile number from multiple possible sources
   const mobileNumber = teacher.mobile_number || 
@@ -203,6 +271,16 @@ export default function TeacherCard({ teacher, onPhotoUploaded }) {
             >
               {fullName}
             </Typography>
+            <Typography 
+              variant="body2"
+              sx={{
+                color: 'rgba(255,255,255,0.9)',
+                mb: 1,
+                textShadow: '0 1px 2px rgba(0,0,0,0.2)'
+              }}
+            >
+              ({teacher?.username || teacher?.user?.username || 'unknown'})
+            </Typography>
             {qualification && (
               <Typography 
                 variant="body2" 
@@ -216,6 +294,8 @@ export default function TeacherCard({ teacher, onPhotoUploaded }) {
                 {qualification}
               </Typography>
             )}
+            
+            {/* Subjects */}
             <Chip 
               icon={<SchoolIcon sx={{ color: 'white !important' }} />}
               label={subject} 
@@ -225,11 +305,27 @@ export default function TeacherCard({ teacher, onPhotoUploaded }) {
                 fontWeight: 'bold',
                 backdropFilter: 'blur(10px)',
                 border: '1px solid rgba(255,255,255,0.3)',
+                mb: 1,
                 '& .MuiChip-icon': {
                   color: 'white'
                 }
               }}
             />
+            
+            {/* Class Range */}
+            {classRange && (
+              <Typography 
+                variant="body2" 
+                sx={{ 
+                  color: 'rgba(255,255,255,0.8)',
+                  fontWeight: '500',
+                  textShadow: '0 1px 2px rgba(0,0,0,0.2)',
+                  fontSize: '0.9rem'
+                }}
+              >
+                {classRange}
+              </Typography>
+            )}
           </Box>
           
           {/* Contact Information Card */}

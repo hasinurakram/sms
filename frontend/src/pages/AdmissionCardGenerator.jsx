@@ -29,13 +29,6 @@ import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import AdmissionCard from '../components/AdmissionCard';
 
-// Sample exam data (replace with actual API call)
-const sampleExams = [
-  { id: 1, name: 'Annual Examination 2024', exam_id: 'ANNUAL-2024', academic_year: '2024', start_date: '2024-12-01', start_time: '09:00 AM', center: 'Main Campus' },
-  { id: 2, name: 'Half Yearly Exam 2024', exam_id: 'HY-2024', academic_year: '2024', start_date: '2024-06-15', start_time: '09:00 AM', center: 'Main Campus' },
-  { id: 3, name: 'Test Exam 2024', exam_id: 'TEST-2024', academic_year: '2024', start_date: '2024-03-01', start_time: '09:00 AM', center: 'Main Campus' },
-];
-
 export default function AdmissionCardGenerator() {
   const { id } = useParams();
   const [loading, setLoading] = useState(false);
@@ -50,6 +43,8 @@ export default function AdmissionCardGenerator() {
   const [openPreview, setOpenPreview] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
+  const [exams, setExams] = useState([]);
+  const [loadingExams, setLoadingExams] = useState(false);
 
   // Load school data
   useEffect(() => {
@@ -79,6 +74,27 @@ export default function AdmissionCardGenerator() {
     loadSchool();
     loadClassrooms();
   }, [id]);
+
+  // Load examinations for the school (and optionally for selected class)
+  useEffect(() => {
+    if (!id) return;
+    const fetchExams = async () => {
+      setLoadingExams(true);
+      try {
+        let url = `/api/results/examinations/?school=${id}`;
+        if (classFilter) url += `&classroom=${classFilter}`;
+        const res = await api.get(url, { timeout: 15000 });
+        const data = Array.isArray(res.data) ? res.data : (res.data?.results || []);
+        setExams(data);
+      } catch (err) {
+        console.error('Failed to load examinations:', err);
+        setExams([]);
+      } finally {
+        setLoadingExams(false);
+      }
+    };
+    fetchExams();
+  }, [id, classFilter]);
 
   // Load sections when class is selected
   const loadSections = async (classroomId) => {
@@ -189,44 +205,55 @@ export default function AdmissionCardGenerator() {
         return;
       }
 
-      // Generate HTML content for 4-card layout optimized for A4
+      // Collect styles from the main window
+      const styles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+        .map(style => style.outerHTML)
+        .join('\n');
+
+      // Generate HTML content for 3-card layout optimized for A4 Landscape
       let htmlContent = `
         <html>
           <head>
             <title>Admission Cards</title>
+            ${styles}
             <style>
               @page {
-                size: A4;
-                margin: 8mm; /* Smaller margins for more space */
+                size: landscape;
+                margin: 0mm; /* Zero margins for maximum space */
               }
               body { 
                 margin: 0; 
                 padding: 0; 
-                font-family: Arial, sans-serif;
+                font-family: 'Hind Siliguri', Arial, sans-serif;
                 background: white;
                 -webkit-print-color-adjust: exact;
                 print-color-adjust: exact;
               }
+              /* Ensure MUI styles don't conflict or need overrides */
+              .admission-card {
+                 break-inside: avoid;
+                 page-break-inside: avoid;
+              }
               .print-page {
-                width: 210mm; /* A4 width */
-                height: 297mm; /* A4 height */
+                width: 297mm; /* A4 Landscape width */
+                height: 210mm; /* A4 Landscape height */
                 box-sizing: border-box;
-                padding: 5mm;
+                padding: 10mm; /* Padding inside the page */
                 page-break-after: always;
                 page-break-inside: avoid;
               }
               .print-container {
                 display: grid;
-                grid-template-columns: 1fr 1fr;
-                grid-template-rows: 1fr 1fr;
-                gap: 4mm; /* Consistent gap between cards */
+                grid-template-columns: repeat(3, 1fr); /* 3 columns */
+                grid-template-rows: 1fr; /* 1 row */
+                gap: 5mm;
                 width: 100%;
                 height: 100%;
                 box-sizing: border-box;
               }
               .card-slot {
-                border: 1px solid #333;
-                padding: 2mm;
+                /* Removed dashed border */
+                padding: 0;
                 background: white;
                 box-sizing: border-box;
                 width: 100%;
@@ -235,16 +262,49 @@ export default function AdmissionCardGenerator() {
                 page-break-inside: avoid;
                 break-inside: avoid;
                 position: relative;
+                display: flex;
+                align-items: center;
+                justify-content: center;
               }
               .card-content {
-                transform: scale(0.85); /* Optimized scale for A4 */
-                transform-origin: top left;
-                width: 120%;
-                height: 120%;
-                overflow: hidden;
-                position: absolute;
-                top: 0;
-                left: 0;
+                transform: scale(0.95); /* Increased scale significantly */
+                transform-origin: center center;
+                width: 100%;
+                height: auto;
+                position: relative;
+                display: flex;
+                justify-content: center;
+              }
+              /* Override any fixed width on the card to make it responsive to the slot */
+              .admission-card {
+                width: 100% !important;
+                max-width: none !important;
+                box-shadow: none !important;
+                border: 1px solid #eee !important;
+              }
+              /* Print specific overrides for images */
+              .print-logo-size,
+              .school-logo-box.print-logo-size {
+                width: 70px !important;
+                height: 85px !important;
+                min-width: 70px !important;
+                min-height: 85px !important;
+                flex-shrink: 0 !important;
+              }
+              .print-photo-size,
+              .student-photo-box.print-photo-size {
+                width: 85px !important;
+                height: 100px !important;
+                min-width: 85px !important;
+                min-height: 100px !important;
+                flex-shrink: 0 !important;
+              }
+              /* Allow text wrapping in print to avoid pushing elements out */
+              .school-info-box h6 {
+                white-space: normal !important;
+                word-wrap: break-word !important;
+                font-size: 13px !important; /* Further reduced font size */
+                line-height: 1.1 !important;
               }
               @media print {
                 body { margin: 0; padding: 0; }
@@ -257,7 +317,7 @@ export default function AdmissionCardGenerator() {
                 .card-slot {
                   page-break-inside: avoid;
                   break-inside: avoid;
-                  border: 1px solid #333;
+                  border: none; /* No border in print */
                 }
               }
             </style>
@@ -265,8 +325,8 @@ export default function AdmissionCardGenerator() {
           <body>
         `;
 
-      // Add up to 4 admission cards per page
-      const cardsPerPage = 4;
+      // Add up to 3 admission cards per page (Landscape)
+      const cardsPerPage = 3;
       const totalPages = Math.ceil(studentsToPrint.length / cardsPerPage);
       
       for (let page = 0; page < totalPages; page++) {
@@ -283,10 +343,16 @@ export default function AdmissionCardGenerator() {
           const element = document.getElementById(`admission-card-${student.id}`);
           
           if (element) {
+            let cardHtml = element.innerHTML;
+            
+            // Force replace styles for print view - this ensures the sizes are correct regardless of CSS specificity or loss
+            cardHtml = cardHtml.replace(/school-logo-box/g, 'school-logo-box print-logo-size');
+            cardHtml = cardHtml.replace(/student-photo-box/g, 'student-photo-box print-photo-size');
+            
             htmlContent += `
               <div class="card-slot">
                 <div class="card-content">
-                  ${element.innerHTML}
+                  ${cardHtml}
                 </div>
               </div>
             `;
@@ -414,7 +480,7 @@ export default function AdmissionCardGenerator() {
     setSnackbar({ ...snackbar, open: false });
   };
 
-  const selectedExamData = sampleExams.find(exam => exam.id.toString() === selectedExam) || {};
+  const selectedExamData = exams.find(exam => String(exam.id) === String(selectedExam)) || {};
 
   return (
     <Box sx={{ p: 3 }}>
@@ -498,13 +564,23 @@ export default function AdmissionCardGenerator() {
               variant="outlined"
               size="small"
               required
+              disabled={loadingExams}
             >
               <MenuItem value="">Select an exam</MenuItem>
-              {sampleExams.map((exam) => (
-                <MenuItem key={exam.id} value={exam.id}>
-                  {exam.name} ({exam.academic_year})
-                </MenuItem>
-              ))}
+              {exams.map((exam) => {
+                const yr = (() => {
+                  const ay = parseInt(exam.academic_year, 10);
+                  if (!Number.isNaN(ay) && ay > 0) return ay;
+                  const d = exam.exam_date || exam.start_date;
+                  const dt = d ? new Date(d) : null;
+                  return dt && !Number.isNaN(dt.getTime()) ? dt.getFullYear() : new Date().getFullYear();
+                })();
+                return (
+                  <MenuItem key={exam.id} value={String(exam.id)}>
+                    {exam.name || 'Exam'} ({yr})
+                  </MenuItem>
+                );
+              })}
             </TextField>
           </Grid>
           

@@ -106,6 +106,67 @@ export default function StudentsPage() {
   });
   const [photoFile, setPhotoFile] = useState(null);
 
+  const banglaNumberMap = {
+    'প্লে': -3,
+    'play': -3,
+    'নার্সারি': -2,
+    'nursery': -2,
+    'কেজি': -1,
+    'kg': -1,
+    'কে.জি': -1,
+    'কে.জি.': -1,
+    '১ম': 1,
+    '২য়': 2,
+    '২য়': 2,
+    '৩য়': 3,
+    '৩য়': 3,
+    '৪র্থ': 4,
+    '৫ম': 5,
+    '৬ষ্ঠ': 6,
+    '৭ম': 7,
+    '৮ম': 8,
+    '৯ম': 9,
+    '১০ম': 10,
+    'প্রথম': 1,
+    'দ্বিতীয়': 2,
+    'দ্বিতীয়': 2,
+    'তৃতীয়': 3,
+    'তৃতীয়': 3,
+    'চতুর্থ': 4,
+    'পঞ্চম': 5,
+    'ষষ্ঠ': 6,
+    'সপ্তম': 7,
+    'অষ্টম': 8,
+    'নবম': 9,
+    'দশম': 10,
+    'এসএসসি': 10.5,
+    'এস.এস.সি': 10.5,
+    'একাদশ': 11,
+    'দ্বাদশ': 12
+  };
+  const getClassOrder = (className) => {
+    const s = String(className || '').toLowerCase();
+    if (s.includes('play') || s.includes('প্লে')) return -3;
+    if (s.includes('nursery') || s.includes('নার্সারি') || s.includes('শিশু')) return -2;
+    if (s.includes('kg') || s.includes('কেজি') || s.includes('কে.জি')) return -1;
+    for (const [k, v] of Object.entries(banglaNumberMap)) {
+      if (String(className || '').includes(k)) return v;
+    }
+    const m = String(className || '').match(/\d+/);
+    if (m) return parseInt(m[0], 10);
+    return 999;
+  };
+  const sortedClasses = useMemo(() => {
+    const arr = Array.isArray(contextClassrooms) ? contextClassrooms.slice() : [];
+    arr.sort((a, b) => {
+      const oa = getClassOrder(a?.name);
+      const ob = getClassOrder(b?.name);
+      if (oa !== ob) return oa - ob;
+      return String(a?.name || '').localeCompare(String(b?.name || ''));
+    });
+    return arr;
+  }, [contextClassrooms]);
+
   // Resolve various possible user photo fields to an absolute URL
   const resolvePhotoUrl = (raw) => {
     try {
@@ -198,11 +259,10 @@ export default function StudentsPage() {
         return g ? g : 1000;
       };
       const sortedClassrooms = [...contextClassrooms].sort((a, b) => {
-        const oa = orderKey(a);
-        const ob = orderKey(b);
+        const oa = getClassOrder(a?.name);
+        const ob = getClassOrder(b?.name);
         if (oa !== ob) return oa - ob;
-        // Stable tie-breaker
-        return String(a.name || '').localeCompare(String(b.name || ''));
+        return String(a?.name || '').localeCompare(String(b?.name || ''));
       });
 
       const summary = sortedClassrooms.map(c => ({
@@ -1500,7 +1560,7 @@ export default function StudentsPage() {
                 helperText={newStudentErrors.classroom_id || ''}
               >
                 <MenuItem value="">শ্রেণি নির্বাচন করুন</MenuItem>
-                {contextClassrooms.map(c => (
+                {sortedClasses.map(c => (
                   <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
                 ))}
               </TextField>
@@ -1733,7 +1793,7 @@ export default function StudentsPage() {
                     fullWidth
                   >
                     <MenuItem value="">No Class</MenuItem>
-                    {contextClassrooms.map(c => (
+                  {sortedClasses.map(c => (
                       <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>
                     ))}
                   </TextField>

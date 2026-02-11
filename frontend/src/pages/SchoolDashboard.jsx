@@ -122,6 +122,7 @@ const menuItems = [
   { label: 'বিষয়/সাবজেক্ট', icon: <BookIcon />, key: 'subjects' },
   { label: 'হাজিরা', icon: <CheckCircleIcon />, key: 'attendance' },
   { label: 'রেজাল্ট', icon: <AssessmentIcon />, key: 'results' },
+  { label: 'ক্লাস রেজাল্টস', icon: <AssessmentIcon />, key: 'class-results' },
   { label: 'রেজাল্ট কার্ড', icon: <CardMembershipIcon />, key: 'result-card' },
   { label: 'Rank List', icon: <CardMembershipIcon />, key: 'rank-list' },
   { label: 'আইডি কার্ড', icon: <CardMembershipIcon />, key: 'id-card' },

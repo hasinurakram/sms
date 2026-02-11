@@ -4,15 +4,22 @@ import { useNavigate } from 'react-router-dom';
 import { isAuthenticated } from '../utils/auth';
 import { useAuth } from '../context/AuthContext';
 
-const ProtectedButton = ({ children, onClick, ...props }) => {
+const ProtectedButton = ({ children, onClick, allowedRoles, ...props }) => {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const role = ((user && (user.profile?.role || user.role)) || '').toLowerCase();
 
   const handleClick = (e) => {
     if (!(isAuthenticated() || !!user)) {
       e.preventDefault();
       navigate('/login');
       return;
+    }
+    if (Array.isArray(allowedRoles) && allowedRoles.length > 0) {
+      if (!role || !allowedRoles.map(r => String(r).toLowerCase()).includes(role)) {
+        e.preventDefault();
+        return;
+      }
     }
     if (onClick) {
       onClick(e);

@@ -32,31 +32,34 @@ export default function TeacherCardsPage() {
       // Get teacher assignments for this school
       const res = await api.get(`/api/academics/assignments/?classroom__school=${id}`);
       
-      // Extract unique teachers with their subjects
+      // Extract unique teachers with their subjects and classes
       const teacherMap = {};
       res.data.forEach(assignment => {
         if (!assignment.teacher) return;
         
         const teacherId = assignment.teacher.id;
         if (!teacherMap[teacherId]) {
-          // Use the teacher data directly from the assignment
-          const teacherData = {
+          // Initialize teacher with basic info
+          teacherMap[teacherId] = {
             ...assignment.teacher,
-            subject: assignment.subject
+            subjects: [],
+            classes: [],
+            assignments: []
           };
-          
-          // Debug: Log what we're getting from the API
-          console.log('Assignment teacher data:', {
-            id: assignment.teacher.id,
-            name: `${assignment.teacher.first_name} ${assignment.teacher.last_name}`,
-            photo_url: assignment.teacher.photo_url,
-            photo: assignment.teacher.photo,
-            phone_number: assignment.teacher.phone_number,
-            mobile_number: assignment.teacher.mobile_number
-          });
-          
-          teacherMap[teacherId] = teacherData;
         }
+        
+        // Add subject if not already added
+        if (assignment.subject && !teacherMap[teacherId].subjects.find(s => s.id === assignment.subject.id)) {
+          teacherMap[teacherId].subjects.push(assignment.subject);
+        }
+        
+        // Add class if not already added
+        if (assignment.classroom && !teacherMap[teacherId].classes.find(c => c.id === assignment.classroom.id)) {
+          teacherMap[teacherId].classes.push(assignment.classroom);
+        }
+        
+        // Add assignment for reference
+        teacherMap[teacherId].assignments.push(assignment);
       });
       
       const teacherList = Object.values(teacherMap);

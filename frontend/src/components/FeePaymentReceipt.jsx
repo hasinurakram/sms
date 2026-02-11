@@ -890,7 +890,7 @@ const FeePaymentReceipt = () => {
             position: 'relative'
           }}>
             <img 
-              src="/images/signatures/seal.png" 
+              src={(schoolId && String(schoolId) === '19') ? `${(api?.defaults?.baseURL || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/+$/,'')}/media/BHS/seal.png` : '/images/signatures/seal.png'} 
               alt="School Seal"
               style={{ 
                 position: 'absolute',

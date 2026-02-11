@@ -689,7 +689,7 @@ export default function ProfileCard({
                   </Typography>
                 )}
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                  @{user?.username}
+                  ({user?.username || 'unknown'})
                 </Typography>
               </Box>
 

@@ -42,6 +42,7 @@ import { useToast } from '../components/Toast';
 import ConfirmDialog from '../components/ConfirmDialog';
 import ProtectedButton from '../components/ProtectedButton';
 import { isAuthenticated } from '../utils/auth';
+import { useAuth } from '../context/AuthContext';
 
 const EXAM_TYPES = [
   { value: 'half_yearly', label: 'অর্ধবার্ষিক' },
@@ -51,9 +52,19 @@ const EXAM_TYPES = [
   { value: 'model', label: 'মডেল টেস্ট' }
 ];
 
+const DEFAULT_SUBJECTS = [
+  'বাংলা', 'বাংলা-১ম', 'বাংলা-২য়',
+  'ইংরেজি', 'ইংরেজি-১ম', 'ইংরেজি-২য়',
+  'গণিত', 'বিজ্ঞান',
+  'বাংলাদেশ ও বিশ্বপরিচয়',
+  'ICT', 'ধর্ম'
+].map(n => ({ name: n }));
+
 export default function ExaminationsPage() {
   const { id } = useParams(); // school id
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const role = ((user && (user.profile?.role || user.role)) || '').toLowerCase();
   const [examinations, setExaminations] = useState([]);
   const [classrooms, setClassrooms] = useState([]);
   const [sections, setSections] = useState([]);
@@ -131,15 +142,36 @@ export default function ExaminationsPage() {
     (async () => {
       try {
         if (!bulkDialogOpen) return;
-        if (classrooms && classrooms.length > 0) return;
         const res = await api.get(`/api/academics/classrooms/?school=${id}`);
-        const data = Array.isArray(res.data) ? res.data : res.data?.results || [];
-        setClassrooms(data);
+        const allCls = Array.isArray(res.data) ? res.data : res.data?.results || [];
+        if (role === 'teacher' && user?.id) {
+          try {
+            const aRes = await api.get(`/api/academics/assignments/?classroom__school=${id}`);
+            const assignments = Array.isArray(aRes.data) ? aRes.data : (aRes.data?.results || []);
+            const allowed = new Set(
+              assignments
+                .filter(a => {
+                  const tId = a.teacher?.user?.id ?? a.teacher?.id;
+                  return Number(tId) === Number(user.id);
+                })
+                .map(a => a.classroom?.id ?? a.classroom)
+                .filter(v => v !== undefined && v !== null)
+            );
+            const filtered = allCls.filter(c => allowed.has(c.id));
+            setClassrooms(filtered);
+            setBulkForm(prev => ({ ...prev, classrooms: (prev.classrooms || []).filter(cid => filtered.some(fc => fc.id === cid)) }));
+          } catch (_) {
+            setClassrooms([]);
+            setBulkForm(prev => ({ ...prev, classrooms: [] }));
+          }
+        } else {
+          setClassrooms(allCls);
+        }
       } catch (_) {
         setClassrooms([]);
       }
     })();
-  }, [bulkDialogOpen, id]);
+  }, [bulkDialogOpen, id, role, user?.id]);
 
   // Load subjects for subject dropdown on bulk dialog open
   useEffect(() => {
@@ -155,12 +187,44 @@ export default function ExaminationsPage() {
           all.push(...items);
           url = Array.isArray(data) ? null : (data?.next || null);
         }
-        setBulkSubjects(all);
+        const dedup = [];
+        const seen = new Set();
+        for (const s of all) {
+          const key = String(s.name || s.title || '').trim().toLowerCase();
+          if (!key || seen.has(key)) continue;
+          seen.add(key);
+          dedup.push(s);
+        }
+        if (role === 'teacher' && user?.id) {
+          try {
+            const aRes = await api.get(`/api/academics/assignments/?classroom__school=${id}`);
+            const assignments = Array.isArray(aRes.data) ? aRes.data : (aRes.data?.results || []);
+            const mySet = new Set(
+              assignments
+                .filter(a => {
+                  const tId = a.teacher?.user?.id ?? a.teacher?.id;
+                  return Number(tId) === Number(user.id);
+                })
+                .map(a => String(a.subject?.name || a.subject_name || '').trim().toLowerCase())
+                .filter(Boolean)
+            );
+            const filtered = dedup.filter(s => mySet.has(String(s.name || s.title || '').trim().toLowerCase()));
+            setBulkSubjects(filtered);
+          } catch (_) {
+            setBulkSubjects([]);
+          }
+        } else {
+          setBulkSubjects(dedup.length > 0 ? dedup : DEFAULT_SUBJECTS);
+        }
       } catch (_) {
-        setBulkSubjects([]);
+        if (role === 'teacher') {
+          setBulkSubjects([]);
+        } else {
+          setBulkSubjects(DEFAULT_SUBJECTS);
+        }
       }
     })();
-  }, [bulkDialogOpen, id]);
+  }, [bulkDialogOpen, id, role, user?.id]);
 
   // Load sections for selected classes in bulk dialog
   useEffect(() => {
@@ -564,6 +628,7 @@ export default function ExaminationsPage() {
                           size="small"
                           onClick={() => handleDialogOpen(exam)}
                           color="primary"
+                          allowedRoles={['admin']}
                         >
                           <EditIcon />
                         </ProtectedButton>
@@ -571,6 +636,7 @@ export default function ExaminationsPage() {
                           size="small"
                           onClick={() => setDeleteDialog({ open: true, exam })}
                           color="error"
+                          allowedRoles={['admin']}
                         >
                           <DeleteIcon />
                         </ProtectedButton>
@@ -586,6 +652,7 @@ export default function ExaminationsPage() {
                             }
                           }}
                           color="secondary"
+                          allowedRoles={['admin']}
                         >
                           <RecalcIcon />
                         </ProtectedButton>
