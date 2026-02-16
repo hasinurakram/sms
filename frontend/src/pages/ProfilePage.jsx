@@ -42,6 +42,7 @@ export default function ProfilePage() {
   const [editing, setEditing] = useState(false);
   
   const [formData, setFormData] = useState({
+    username: '',
     first_name: '',
     last_name: '',
     email: '',
@@ -51,6 +52,7 @@ export default function ProfilePage() {
     section: '',
     category: ''
   });
+  const [passwordForm, setPasswordForm] = useState({ old_password: '', new_password: '', confirm_password: '' });
   const [formErrors, setFormErrors] = useState({});
 
   useEffect(() => {
@@ -101,6 +103,7 @@ export default function ProfilePage() {
       setProfile(profileData);
       
       setFormData({
+        username: userData.username || '',
         first_name: userData.first_name || '',
         last_name: userData.last_name || '',
         email: userData.email || '',
@@ -185,6 +188,9 @@ export default function ProfilePage() {
       [e.target.name]: e.target.value
     });
   };
+  const handlePasswordChange = (e) => {
+    setPasswordForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
+  };
 
   const handleSave = async () => {
     try {
@@ -245,16 +251,42 @@ export default function ProfilePage() {
         setFormErrors({});
         toast.success('Profile created successfully!');
       } else {
-        // Update existing profile
-        const res = await api.patch(`/api/users/${user.id}/`, formData);
-        
-        // Handle different API response formats
-        const userData = res.data.user || res.data;
+        // Update existing profile (user fields)
+        const userPayload = {
+          username: formData.username,
+          first_name: formData.first_name,
+          last_name: formData.last_name,
+          email: formData.email,
+          phone_number: formData.phone_number
+        };
+        const ures = await api.patch('/api/users/me/', userPayload);
+        const userData = ures.data.user || ures.data;
         setUser(userData);
-        
+
+        // Change password if provided
+        if (passwordForm.new_password) {
+          if (!passwordForm.old_password) {
+            toast.error('পুরানো পাসওয়ার্ড দিন');
+          } else if (passwordForm.new_password !== passwordForm.confirm_password) {
+            toast.error('নতুন পাসওয়ার্ড মিলছে না');
+          } else {
+            try {
+              const pres = await api.post('/api/users/password/change/', passwordForm);
+              if (pres.data?.success) {
+                toast.success('পাসওয়ার্ড সফলভাবে পরিবর্তন হয়েছে');
+                setPasswordForm({ old_password: '', new_password: '', confirm_password: '' });
+              } else {
+                toast.error(pres.data?.error || 'পাসওয়ার্ড পরিবর্তন ব্যর্থ');
+              }
+            } catch (e) {
+              toast.error(e.response?.data?.error || 'পাসওয়ার্ড পরিবর্তন ব্যর্থ');
+            }
+          }
+        }
+
         setEditing(false);
         setFormErrors({});
-        toast.success('Profile updated successfully!');
+        toast.success('প্রোফাইল আপডেট হয়েছে');
       }
       
       // Reload profile to ensure we have the latest data
@@ -513,10 +545,14 @@ export default function ProfilePage() {
               </Grid>
               <Grid size={{ xs: 12 }}>
                 <TextField
-                  label="Username"
-                  value={user.username}
+                  label="Username (Login ID)"
+                  name="username"
+                  value={formData.username}
+                  onChange={handleInputChange}
                   fullWidth
-                  disabled
+                  disabled={!editing}
+                  error={!!formErrors.username}
+                  helperText={formErrors.username || ''}
                 />
               </Grid>
 
@@ -620,11 +656,17 @@ export default function ProfilePage() {
                   onClick={() => {
                     setEditing(false);
                     setFormData({
+                      username: user.username || '',
                       first_name: user.first_name || '',
                       last_name: user.last_name || '',
                       email: user.email || '',
-                      phone_number: user.phone_number || ''
+                      phone_number: user.phone_number || '',
+                      school: profile?.school?.id || '',
+                      classroom: profile?.classroom?.id || '',
+                      section: profile?.section?.id || '',
+                      category: profile?.category || ''
                     });
+                    setPasswordForm({ old_password: '', new_password: '', confirm_password: '' });
                   }}
                 >
                   Cancel
@@ -633,6 +675,49 @@ export default function ProfilePage() {
             )}
           </Paper>
         </Grid>
+        {/* Password change section */}
+        {editing && (
+          <Grid size={{ xs: 12, md: 8 }} sx={{ mt: 3 }}>
+            <Paper sx={{ p: 3, borderRadius: 3, boxShadow: 3 }}>
+              <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold' }}>Change Password</Typography>
+              <Grid container spacing={2}>
+                <Grid size={{ xs: 12 }}>
+                  <TextField
+                    type="password"
+                    label="Old Password"
+                    name="old_password"
+                    value={passwordForm.old_password}
+                    onChange={handlePasswordChange}
+                    fullWidth
+                  />
+                </Grid>
+                <Grid size={{ xs: 12, sm: 6 }}>
+                  <TextField
+                    type="password"
+                    label="New Password"
+                    name="new_password"
+                    value={passwordForm.new_password}
+                    onChange={handlePasswordChange}
+                    fullWidth
+                  />
+                </Grid>
+                <Grid size={{ xs: 12, sm: 6 }}>
+                  <TextField
+                    type="password"
+                    label="Confirm New Password"
+                    name="confirm_password"
+                    value={passwordForm.confirm_password}
+                    onChange={handlePasswordChange}
+                    fullWidth
+                  />
+                </Grid>
+              </Grid>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                নোট: পাসওয়ার্ড পরিবর্তন করতে চাইলে উপরের ফিল্ডগুলো পূরণ করুন; না হলে ফাঁকা রাখুন।
+              </Typography>
+            </Paper>
+          </Grid>
+        )}
       </Grid>
     </Box>
   );

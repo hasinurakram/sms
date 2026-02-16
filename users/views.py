@@ -1,5 +1,5 @@
 from rest_framework import generics, permissions, status, viewsets, serializers
-from users.permissions import AdminOrReadOnly, RolePermission
+from users.permissions import AdminOrReadOnly, RolePermission, TeacherSelfOrAdminChange
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.decorators import action, api_view, permission_classes
@@ -24,6 +24,10 @@ import os
 import time
 import requests
 import re
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from django.utils.encoding import force_bytes, force_str
+from django.contrib.auth.tokens import PasswordResetTokenGenerator
+import secrets, string, io, datetime, csv
 
 User = get_user_model()
 
@@ -249,9 +253,13 @@ class CurrentUserView(APIView):
         user = request.user
         try:
             profile = Profile.objects.get(user=user)
+            user_data = UserSerializer(user, context={'request': request}).data
+            prof_data = ProfileSerializer(profile).data
+            if getattr(user, 'is_superuser', False) or getattr(user, 'is_staff', False):
+                prof_data['role'] = 'admin'
             return Response({
-                "user": UserSerializer(user, context={'request': request}).data,
-                "profile": ProfileSerializer(profile).data
+                "user": user_data,
+                "profile": prof_data
             })
         except Profile.DoesNotExist:
             return Response({
@@ -260,18 +268,47 @@ class CurrentUserView(APIView):
             }, status=status.HTTP_404_NOT_FOUND)
     
     def patch(self, request):
-        """Update user photo"""
+        """Update user fields and/or photo"""
         user = request.user
-        
+        updated = False
+        # Photo upload
         if 'photo' in request.FILES:
             user.photo = request.FILES['photo']
+            updated = True
+        # Basic fields
+        username = (request.data.get('username') or '').strip()
+        first_name = request.data.get('first_name')
+        last_name = request.data.get('last_name')
+        email = request.data.get('email')
+        phone_number = request.data.get('phone_number')
+        if username:
+            exists = User.objects.filter(username__iexact=username).exclude(pk=user.pk).exists()
+            if exists:
+                return Response({"error": "Username is already taken.", "field": "username"}, status=status.HTTP_400_BAD_REQUEST)
+            user.username = username
+            updated = True
+        if first_name is not None:
+            user.first_name = first_name
+            updated = True
+        if last_name is not None:
+            user.last_name = last_name
+            updated = True
+        if email is not None:
+            user.email = email
+            updated = True
+        if phone_number is not None and hasattr(user, 'phone_number'):
+            try:
+                user.phone_number = phone_number
+                updated = True
+            except Exception:
+                pass
+        if updated:
             user.save()
             return Response({
-                "message": "Photo uploaded successfully",
+                "message": "User updated successfully",
                 "user": UserSerializer(user, context={'request': request}).data
             })
-        
-        return Response({"error": "No photo provided"}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"error": "No updatable fields provided"}, status=status.HTTP_400_BAD_REQUEST)
         
 
 
@@ -311,6 +348,16 @@ class CreateProfileView(APIView):
             "user": UserSerializer(user, context={'request': request}).data,
             "profile": ProfileSerializer(profile).data
         }, status=status.HTTP_201_CREATED)
+
+class VerifyPasswordView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    def post(self, request):
+        pwd = (request.data.get('password') or '').strip()
+        if not pwd:
+            return Response({"valid": False, "error": "Password required"}, status=status.HTTP_400_BAD_REQUEST)
+        if request.user.check_password(pwd):
+            return Response({"valid": True}, status=status.HTTP_200_OK)
+        return Response({"valid": False, "error": "Invalid password"}, status=status.HTTP_401_UNAUTHORIZED)
 
 class SoftwareAssistantView(APIView):
     permission_classes = [RolePermission]
@@ -490,6 +537,8 @@ class SoftwareAssistantView(APIView):
                 return 'blood_group_count'
             if any(w in ql for w in ['blood', 'রক্ত', 'ব্লাড']) and any(w in ql for w in ['most', 'max', 'highest', 'বেশি', 'সর্বোচ্চ', 'সবচেয়ে বেশি', 'majority']):
                 return 'blood_group_max'
+            if any(w in ql for w in ['blood', 'রক্ত', 'ব্লাড']) and any(w in ql for w in ['name', 'নাম', 'list', 'তালিকা', 'দাও', 'dao', 'give']):
+                return 'blood_group_list'
             if any(w in ql for w in ['attendance', 'এটেনড্যান্স', 'উপস্থিতি']):
                 if any(w in ql for w in ['monthly', 'মাসিক', 'month', 'মাস']):
                     return 'attendance_monthly'
@@ -700,6 +749,76 @@ class SoftwareAssistantView(APIView):
                 pass
             return Response({"text": text})
 
+        if it == 'blood_group_list':
+            bg_map_items = [
+                ('ab positive', 'AB+'), ('ab negative', 'AB-'),
+                ('a positive', 'A+'), ('a negative', 'A-'),
+                ('b positive', 'B+'), ('b negative', 'B-'),
+                ('o positive', 'O+'), ('o negative', 'O-'),
+                ('এবি পজেটিভ', 'AB+'), ('এবি নেগেটিভ', 'AB-'),
+                ('এ পজেটিভ', 'A+'), ('এ নেগেটিভ', 'A-'),
+                ('বি পজেটিভ', 'B+'), ('বি নেগেটিভ', 'B-'),
+                ('ও পজেটিভ', 'O+'), ('ও নেগেটিভ', 'O-'),
+                ('ab+', 'AB+'), ('ab-', 'AB-'),
+                ('a+', 'A+'), ('a-', 'A-'),
+                ('b+', 'B+'), ('b-', 'B-'),
+                ('o+', 'O+'), ('o-', 'O-')
+            ]
+            bg = None
+            for k, v in bg_map_items:
+                if k in ql:
+                    bg = v
+                    break
+            if not bg:
+                return Response({"text": "রক্তের গ্রুপ বুঝতে পারিনি।"}, status=status.HTTP_200_OK)
+            from academics.models import StudentProfile
+            qs_profile = Profile.objects.filter(blood_group=bg)
+            qs_student = StudentProfile.objects.filter(blood_group=bg)
+            if school_id:
+                qs_profile = qs_profile.filter(school_id=school_id)
+                qs_student = qs_student.filter(school_id=school_id)
+            user_ids = set(qs_profile.values_list('user_id', flat=True))
+            student_user_ids = set(qs_student.values_list('user_id', flat=True))
+            all_user_ids = user_ids.union(student_user_ids)
+            role_map = {'student': 'শিক্ষার্থী', 'teacher': 'শিক্ষক', 'admin': 'অ্যাডমিন', 'parent': 'অভিভাবক', 'committee': 'কমিটি'}
+            profiles = Profile.objects.filter(user_id__in=all_user_ids)
+            user_role_map = {}
+            for p in profiles:
+                user_role_map[p.user.id] = p.role
+            for uid in student_user_ids:
+                if uid not in user_role_map:
+                    user_role_map[uid] = 'student'
+            want_teachers = any(w in ql for w in ['teacher', 'শিক্ষক', 'টিচার'])
+            users_objs = User.objects.filter(id__in=all_user_ids).values('id', 'first_name', 'last_name', 'username', 'phone_number')
+            users_list = []
+            for u in users_objs:
+                uid = u['id']
+                role_key = user_role_map.get(uid, 'unknown')
+                if want_teachers and role_key != 'teacher':
+                    continue
+                full_name = f"{u['first_name']} {u['last_name']}".strip() or u['username']
+                users_list.append({
+                    'name': full_name,
+                    'phone': u['phone_number'],
+                    'role': role_map.get(role_key, role_key)
+                })
+            count = len(users_list) if want_teachers else len(all_user_ids)
+            if want_teachers:
+                text = f"{bg} রক্তের গ্রুপের শিক্ষকদের নামের তালিকা ({count} জন):"
+            else:
+                text = f"{bg} রক্তের গ্রুপের নামের তালিকা ({count} জন):"
+            try:
+                AssistantLog.objects.create(
+                    user=getattr(request, 'user', None),
+                    school_id=school_id if school_id else None,
+                    query_text=q,
+                    intent=it,
+                    params={'blood_group': bg, 'teachers_only': want_teachers},
+                    result_summary=text
+                )
+            except Exception:
+                pass
+            return Response({"text": text, "users_list": users_list})
         # Removed duplicate basic 'school_counts' handler in favor of enhanced handler below
 
         if it == 'attendance_daily':
@@ -1538,7 +1657,7 @@ class AdminProfileViewSet(viewsets.ModelViewSet):
 class ParentProfileViewSet(viewsets.ModelViewSet):
     queryset = Profile.objects.select_related('user', 'school').filter(role='parent')
     serializer_class = ParentProfileSerializer
-    permission_classes = [AdminOrReadOnly]
+    permission_classes = [RolePermission]
     filterset_fields = ['school']
     parser_classes = [MultiPartParser, FormParser]
     
@@ -1566,7 +1685,7 @@ class CommitteeProfileViewSet(viewsets.ModelViewSet):
 class TeacherProfileViewSet(viewsets.ModelViewSet):
     queryset = Profile.objects.select_related('user', 'school').filter(role='teacher')
     serializer_class = TeacherProfileSerializer
-    permission_classes = [AdminOrReadOnly]
+    permission_classes = [TeacherSelfOrAdminChange]
     filterset_fields = ['school', 'user']
     parser_classes = [MultiPartParser, FormParser]
     
@@ -1713,6 +1832,158 @@ def send_template_sms_view(request):
         return Response({
             "error": f"Invalid template data: {str(e)}"
         }, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ForgotPasswordView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        identifier = (request.data.get('username') or request.data.get('email') or '').strip()
+        # Always respond with generic message to avoid account enumeration
+        resp = {"message": "If the account exists, a reset link will be sent."}
+        if not identifier:
+            return Response(resp)
+        try:
+            user = None
+            if '@' in identifier:
+                user = User.objects.filter(email__iexact=identifier).first()
+            if not user:
+                user = User.objects.filter(username__iexact=identifier).first()
+            if user:
+                uid = urlsafe_base64_encode(force_bytes(user.pk))
+                token = PasswordResetTokenGenerator().make_token(user)
+                base = getattr(settings, 'SITE_BASE_URL', '').rstrip('/') or 'http://localhost:3000'
+                reset_url = f"{base}/reset-password/{uid}/{token}"
+                if getattr(settings, 'DEBUG', False):
+                    resp['debug_reset_url'] = reset_url
+        except Exception:
+            pass
+        return Response(resp)
+
+
+class ResetPasswordConfirmView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        uidb64 = (request.data.get('uid') or request.data.get('uidb64') or '').strip()
+        token = (request.data.get('token') or '').strip()
+        new_password = (request.data.get('new_password') or '').strip()
+        confirm_password = (request.data.get('confirm_password') or '').strip()
+        if not uidb64 or not token or not new_password:
+            return Response({"success": False, "error": "Invalid request."}, status=status.HTTP_400_BAD_REQUEST)
+        if new_password != confirm_password:
+            return Response({"success": False, "error": "Passwords do not match."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            uid = force_str(urlsafe_base64_decode(uidb64))
+            user = User.objects.get(pk=uid)
+        except Exception:
+            return Response({"success": False, "error": "Invalid reset link."}, status=status.HTTP_400_BAD_REQUEST)
+        if not PasswordResetTokenGenerator().check_token(user, token):
+            return Response({"success": False, "error": "Invalid or expired token."}, status=status.HTTP_400_BAD_REQUEST)
+        user.set_password(new_password)
+        user.save()
+        return Response({"success": True, "message": "Password has been reset successfully."})
+
+
+class ChangePasswordView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        old_password = (request.data.get('old_password') or '').strip()
+        new_password = (request.data.get('new_password') or '').strip()
+        confirm_password = (request.data.get('confirm_password') or '').strip()
+        if not old_password or not new_password:
+            return Response({"success": False, "error": "Old and new password required."}, status=status.HTTP_400_BAD_REQUEST)
+        if new_password != confirm_password:
+            return Response({"success": False, "error": "Passwords do not match."}, status=status.HTTP_400_BAD_REQUEST)
+        if not user.check_password(old_password):
+            return Response({"success": False, "error": "Old password is incorrect."}, status=status.HTTP_400_BAD_REQUEST)
+        user.set_password(new_password)
+        user.save()
+        return Response({"success": True, "message": "Password changed successfully."})
+
+
+class ExportSchoolCredentialsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        try:
+            school_id = int(request.data.get('school') or request.query_params.get('school') or 0)
+        except Exception:
+            school_id = 0
+        confirm_reset = str(request.data.get('reset') or request.query_params.get('reset') or '').lower() in ['1', 'true', 'yes', 'y']
+        out_format = str(request.data.get('format') or request.query_params.get('format') or '').lower()
+        if not school_id:
+            return Response({"success": False, "error": "school is required"}, status=status.HTTP_400_BAD_REQUEST)
+        # Authorization: allow superusers OR school admins
+        user = request.user
+        is_super = getattr(user, 'is_superuser', False) or getattr(user, 'is_staff', False)
+        is_school_admin = False
+        try:
+            prof = getattr(user, 'profile', None)
+            is_school_admin = prof and prof.role == 'admin' and (prof.school_id == school_id or prof.school_id is None)
+        except Exception:
+            is_school_admin = False
+        if not (is_super or is_school_admin):
+            return Response({"success": False, "error": "Not authorized"}, status=status.HTTP_403_FORBIDDEN)
+        from .models import Profile
+        qs = Profile.objects.select_related('user').filter(school_id=school_id)
+        if not qs.exists():
+            return Response({"success": False, "error": "No users found for this school"}, status=status.HTTP_404_NOT_FOUND)
+        rows = []
+        if confirm_reset:
+            alphabet = string.ascii_letters + string.digits
+        for p in qs:
+            u = p.user
+            pwd = None
+            if confirm_reset:
+                pwd = ''.join(secrets.choice(alphabet) for _ in range(10))
+                try:
+                    u.set_password(pwd)
+                    u.save(update_fields=['password'])
+                except Exception:
+                    continue
+            try:
+                mobile = getattr(p, 'mobile_number', None) or getattr(p, 'phone_number', None) or getattr(u, 'phone_number', None) or getattr(u, 'mobile_number', None)
+            except Exception:
+                mobile = None
+            try:
+                email = getattr(u, 'email', None) or getattr(p, 'email', None)
+            except Exception:
+                email = None
+            rows.append({
+                "username": u.username,
+                "role": p.role,
+                "password": pwd if confirm_reset else None,
+                "name": f"{u.first_name} {u.last_name}".strip() or u.username,
+                "mobile": mobile or '',
+                "email": email or ''
+            })
+        # If JSON format requested, return structured data (no file)
+        if out_format == 'json':
+            return Response({"success": True, "count": len(rows), "rows": rows, "reset_applied": bool(confirm_reset)})
+        # Build CSV (UTF-8 with BOM) with Bangla headers for better readability in Windows/Excel
+        sio = io.StringIO(newline='')
+        # Write BOM explicitly to ensure Windows Notepad/Excel detect UTF-8
+        sio.write('\ufeff')
+        writer = csv.writer(sio)
+        writer.writerow(["নাম", "ইউজারনেম", "রোল", "মোবাইল", "ইমেইল", "পাসওয়ার্ড"])
+        for r in rows:
+            writer.writerow([r.get('name',''), r.get('username',''), r.get('role',''), r.get('mobile',''), r.get('email',''), r.get('password') or ''])
+        content = sio.getvalue().encode('utf-8')
+        # Save to storage
+        ts = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"exports/credentials_school_{school_id}_{ts}.csv"
+        saved_path = default_storage.save(filename, io.BytesIO(content))
+        base_url = getattr(settings, 'MEDIA_URL', '/media/')
+        url = f"{base_url}{saved_path}"
+        site_base = (getattr(settings, 'SITE_BASE_URL', '') or '').rstrip('/')
+        if site_base:
+            if not url.startswith('/'):
+                url = '/' + url
+            url = f"{site_base}{url}"
+        return Response({"success": True, "count": len(rows), "file_url": url, "reset_applied": bool(confirm_reset)})
 
 class AutoRuleSuggestionView(APIView):
     permission_classes = [permissions.IsAuthenticated]

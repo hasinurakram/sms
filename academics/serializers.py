@@ -223,6 +223,20 @@ class StudentProfileSerializer(serializers.ModelSerializer):
         return sp
 
     def create(self, validated_data):
+        # Ensure school present (support write via school_id or initial_data fallback)
+        school = validated_data.get('school')
+        if not school and isinstance(getattr(self, 'initial_data', None), dict):
+            sid = self.initial_data.get('school') or self.initial_data.get('school_id')
+            if sid:
+                try:
+                    from schools.models import School
+                    school = School.objects.get(pk=sid)
+                    validated_data['school'] = school
+                except Exception:
+                    pass
+        from rest_framework import serializers as drf_serializers
+        if not validated_data.get('school'):
+            raise drf_serializers.ValidationError({'school': 'This field is required.'})
         # Extract related objects
         user = validated_data.pop('user', None)
         classroom = validated_data.pop('classroom', None)
@@ -323,16 +337,18 @@ class StudentProfileSerializer(serializers.ModelSerializer):
         return sp
     
     def update(self, instance, validated_data):
-        """Update student profile and optionally update user fields (including photo)."""
         # Extract related objects
         classroom = validated_data.pop('classroom', None)
         section = validated_data.pop('section', None)
+        guardian_name = validated_data.get('guardian_name', None)
         # Check if guardian was in validated_data (meaning guardian_id was provided in request)
         # This allows us to clear guardian by sending guardian_id as null/empty
         guardian_was_provided = 'guardian' in validated_data
         guardian = validated_data.pop('guardian') if guardian_was_provided else None
         
         # Extract user fields if provided
+        username = validated_data.pop('username', None)
+        password = validated_data.pop('password', None)
         first_name = validated_data.pop('first_name', None)
         last_name = validated_data.pop('last_name', None)
         email = validated_data.pop('email', None)
@@ -342,6 +358,12 @@ class StudentProfileSerializer(serializers.ModelSerializer):
         # Update user fields if provided
         if instance.user:
             user_updated = False
+            if username is not None:
+                exists = User.objects.filter(username=username).exclude(pk=instance.user.pk).exists()
+                if exists:
+                    raise serializers.ValidationError({'username': 'This username is already taken.'})
+                instance.user.username = username
+                user_updated = True
             if first_name is not None:
                 instance.user.first_name = first_name
                 user_updated = True
@@ -363,9 +385,33 @@ class StudentProfileSerializer(serializers.ModelSerializer):
                     user_updated = True
                 except Exception:
                     pass
+            if password:
+                try:
+                    instance.user.set_password(password)
+                    user_updated = True
+                except Exception:
+                    pass
             
             if user_updated:
                 instance.user.save()
+        
+        # If guardian_name provided, set it on student profile immediately
+        if guardian_name is not None:
+            try:
+                instance.guardian_name = guardian_name
+            except Exception:
+                pass
+        # If guardian_name provided, update linked guardian user's name too
+        if guardian_name is not None and getattr(instance, 'guardian', None):
+            try:
+                parts = str(guardian_name).strip().split()
+                first = parts[0] if parts else ''
+                last = ' '.join(parts[1:]) if len(parts) > 1 else ''
+                instance.guardian.first_name = first
+                instance.guardian.last_name = last
+                instance.guardian.save(update_fields=['first_name', 'last_name'])
+            except Exception:
+                pass
         
         # Update student profile fields
         if classroom is not None:

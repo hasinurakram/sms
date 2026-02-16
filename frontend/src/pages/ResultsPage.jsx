@@ -123,6 +123,16 @@ export default function ResultsPage() {
   const toast = useToast();
 
   useEffect(() => {
+    if (!isAuthenticated()) {
+      navigate('/login');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated()) {
+      navigate('/login');
+      return;
+    }
     if (!id) return;
     // Load classes and all examinations initially
     loadClasses();
@@ -405,11 +415,23 @@ export default function ResultsPage() {
     scopedGet('/api/academics/subjects/', id, {}, { timeout: 30000 })
       .then(res => {
         const data = Array.isArray(res.data) ? res.data : res.data.results || [];
+        let filtered = data;
         if (role === 'teacher' && assignments.length) {
           const allowedSubjectIds = new Set(assignments.filter(a => String(a.classroom) === String(classId)).map(a => a.subject));
-          setSubjects(data.filter(s => allowedSubjectIds.has(s.id)));
-        } else {
-          setSubjects(data);
+          filtered = data.filter(s => allowedSubjectIds.has(s.id));
+        }
+        setSubjects(filtered);
+        if (selectedSubject && !filtered.some(s => String(s.id) === String(selectedSubject))) {
+          setSelectedSubject('');
+        }
+        if (bulkForm.subject && !filtered.some(s => String(s.id) === String(bulkForm.subject))) {
+          setBulkForm(prev => ({ ...prev, subject: '' }));
+        }
+        if (!selectedSubject && filtered.length > 0) {
+          setSelectedSubject(filtered[0].id);
+        }
+        if (!bulkForm.subject && filtered.length > 0) {
+          setBulkForm(prev => ({ ...prev, subject: filtered[0].id }));
         }
         const initial = {};
         for (const s of data) {
@@ -723,6 +745,11 @@ export default function ResultsPage() {
     if (!examObj || getClassroomId(examObj.classroom) !== parseInt(selectedClass)) {
       toast.error('Selected examination does not belong to the chosen class');
       return;
+    }
+    if (role === 'teacher') {
+      const secAdd = selectedSectionAdd ? parseInt(selectedSectionAdd) : null;
+      const ok = assignments.some(a => parseInt(a.classroom) === parseInt(selectedClass) && parseInt(a.subject) === parseInt(selectedSubject) && (a.section == null || (secAdd != null && parseInt(a.section) === secAdd)));
+      if (!ok) { toast.error('আপনি এই বিষয়ে ইনপুট দিতে অনুমোদিত নন'); return; }
     }
     
     setSavingResult(true);
@@ -1155,6 +1182,11 @@ export default function ResultsPage() {
     if (!examId || !subjectId || !classroomId) { toast.error('পরীক্ষা, শ্রেণি ও বিষয় নির্বাচন করুন'); return; }
     const examObj = examinations.find(ex => ex.id === examId);
     if (!examObj || examObj.classroom !== classroomId) { toast.error('নির্বাচিত পরীক্ষা ওই শ্রেণির নয়'); return; }
+    if (role === 'teacher') {
+      const sec = bulkForm.section ? parseInt(bulkForm.section) : null;
+      const ok = assignments.some(a => parseInt(a.classroom) === classroomId && parseInt(a.subject) === subjectId && (a.section == null || (sec != null && parseInt(a.section) === sec)));
+      if (!ok) { toast.error('আপনি এই বিষয়ে ইনপুট দিতে অনুমোদিত নন'); return; }
+    }
     if (examObj && examObj.total_marks) {
       toast.info(`এই বাল্ক ইনপুটে হিসাব হবে মোট ${examObj.total_marks} ধরে`);
     }

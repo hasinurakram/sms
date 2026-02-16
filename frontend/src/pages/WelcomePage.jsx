@@ -11,6 +11,7 @@ import welcomeBg from "../components/welcome_bg.jpg";
 const WelcomePage = () => {
   const [schools, setSchools] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const navigate = useNavigate();
 
@@ -29,10 +30,16 @@ const WelcomePage = () => {
           img: school?.logo || school?.img || fallbackLogo
         }));
         setSchools(schoolsWithImg);
-        
+        setLoadError('');
       } catch (err) {
         console.error("Error fetching schools:", err);
         setSchools([]);
+        const status = err?.response?.status;
+        if (status) {
+          setLoadError(`সার্ভার রেসপন্স কোড: ${status} — ব্যাকএন্ড পরীক্ষা করুন`);
+        } else {
+          setLoadError('ব্যাকএন্ডে সংযোগ পাওয়া যাচ্ছে না — সার্ভার/নেটওয়ার্ক দেখুন');
+        }
       } finally {
         setLoading(false);
       }
@@ -113,7 +120,9 @@ const WelcomePage = () => {
         <Typography variant="h5" color="white">Loading Schools...</Typography>
       ) : (
         <>
-          {schools.length > 0 ? (
+          {loadError ? (
+            <Typography variant="h6" color="white">{loadError}</Typography>
+          ) : schools.length > 0 ? (
             <>
               {/* Carousel view */}
               <Box sx={{ mb: 4, width: "100%", maxWidth: 1200 }}>

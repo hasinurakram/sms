@@ -23,6 +23,11 @@ from .views import (
     WhatsAppSendView,
     TelegramSendView,
     AutoRuleSuggestionView,
+    ForgotPasswordView,
+    ResetPasswordConfirmView,
+    ChangePasswordView,
+    ExportSchoolCredentialsView,
+    VerifyPasswordView,
 )
 
 router = DefaultRouter()
@@ -52,6 +57,12 @@ urlpatterns = [
     path('me/', CurrentUserView.as_view(), name='current-user'),
     path('me/create_profile/', CreateProfileView.as_view(), name='create-profile'),
     path('username-availability/', UsernameAvailabilityView.as_view(), name='username-availability'),
+    # Password endpoints
+    path('password/forgot/', ForgotPasswordView.as_view(), name='forgot-password'),
+    path('password/reset-confirm/', ResetPasswordConfirmView.as_view(), name='reset-password-confirm'),
+    path('password/change/', ChangePasswordView.as_view(), name='change-password'),
+    path('password/verify/', VerifyPasswordView.as_view(), name='verify-password'),
+    path('credentials/export/', ExportSchoolCredentialsView.as_view(), name='export-credentials'),
     # SMS endpoints
     path('sms/send/', send_sms_view, name='send-sms'),
     path('sms/bulk/', send_bulk_sms_view, name='send-bulk-sms'),

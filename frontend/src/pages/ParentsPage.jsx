@@ -41,6 +41,40 @@ export default function ParentsPage() {
   const toast = useToast();
   const { classrooms, students, sections, refreshAll } = useAcademics();
 
+  const classOrderRank = (nameRaw) => {
+    const name = String(nameRaw || '').trim().toLowerCase();
+    const bn = {'০':'0','১':'1','২':'2','৩':'3','৪':'4','৫':'5','৬':'6','৭':'7','৮':'8','৯':'9'};
+    const digits = name.replace(/[০-৯]/g, (ch) => bn[ch] || ch).match(/\b(10|[1-9])\b/);
+    const romanMap = {'i':1,'ii':2,'iii':3,'iv':4,'v':5,'vi':6,'vii':7,'viii':8,'ix':9,'x':10};
+    const words = {'one':1,'two':2,'three':3,'four':4,'five':5,'six':6,'seven':7,'eight':8,'nine':9,'ten':10,
+      'প্রথম':1,'দ্বিতীয়':2,'দ্বিতীয়':2,'তৃতীয়':3,'তৃতীয়':3,'চতুর্থ':4,'পঞ্চম':5,'ষষ্ঠ':6,'সপ্তম':7,'অষ্টম':8,'নবম':9,'দশম':10,
+      '১ম':1,'২য়':2,'২য়':2,'৩য়':3,'৩য়':3,'৪র্থ':4,'৫ম':5,'৬ষ্ঠ':6,'৭ম':7,'৮ম':8,'৯ম':9,'১০ম':10,
+      'six':6,'seven':7,'eight':8,'nine':9,'ten':10
+    };
+    if (/\bplay|প্লে|playgroup|play group|kg-?1?\b/.test(name)) return 0;
+    if (/\bnursery|নার্সারি\b/.test(name)) return 1;
+    if (/\bkg|কে?জি\b/.test(name)) return 2;
+    const roman = name.replace(/[^ivx]/g, '');
+    if (roman && romanMap[roman]) return romanMap[roman] + 2;
+    for (const k in words) {
+      if (name.includes(k)) return words[k] + 2;
+    }
+    if (digits) {
+      return parseInt(digits[0], 10) + 2;
+    }
+    return 999;
+  };
+  const sortedClassrooms = React.useMemo(() => {
+    const arr = Array.isArray(classrooms) ? [...classrooms] : [];
+    arr.sort((a, b) => {
+      const ra = classOrderRank(a?.name);
+      const rb = classOrderRank(b?.name);
+      if (ra !== rb) return ra - rb;
+      return String(a?.name || '').localeCompare(String(b?.name || ''), undefined, { numeric: true, sensitivity: 'base' });
+    });
+    return arr;
+  }, [classrooms]);
+
   // Determine if the selected classroom requires sections (only for class 6–10)
   const requiresSectionForSelectedClass = React.useMemo(() => {
     try {
@@ -353,18 +387,56 @@ export default function ParentsPage() {
   });
 
   // If a specific parent is provided, bring them to the top
+  const getMinRollForParent = (parent) => {
+    try {
+      const pid = parent?.user?.id ?? parent?.id;
+      const pun = parent?.user?.username;
+      const clsIdStr = selectedClassroom ? String(selectedClassroom) : null;
+      const secIdStr = selectedSection ? String(selectedSection) : null;
+      const rolls = (students || []).filter(st => {
+        const g = st.guardian;
+        const gid = g && (g.id || g.user?.id || g);
+        const gun = g && (g.username || g.user?.username);
+        const matchParent = (pid != null && String(gid) === String(pid)) || (pun && gun && String(gun) === String(pun));
+        if (!matchParent) return false;
+        const stClassId = st.classroom?.id ?? st.classroom;
+        const stSectionId = st.section?.id ?? st.section;
+        const clsOk = clsIdStr ? String(stClassId) === clsIdStr : true;
+        const secOk = secIdStr ? String(stSectionId) === secIdStr : true;
+        return clsOk && secOk;
+      }).map(st => st?.roll_number).filter(v => v !== undefined && v !== null);
+      const toNum = (r) => {
+        const s = String(r).trim();
+        const m = s.match(/\d+/);
+        return m ? parseInt(m[0], 10) : Number.MAX_SAFE_INTEGER;
+      };
+      if (rolls.length === 0) return Number.MAX_SAFE_INTEGER;
+      return Math.min(...rolls.map(toNum));
+    } catch (_) { return Number.MAX_SAFE_INTEGER; }
+  };
   const displayedParents = (() => {
-    if (!focusParent) return filtered;
+    let base = [...filtered];
+    if (selectedClassroom) {
+      base.sort((a, b) => {
+        const ra = getMinRollForParent(a);
+        const rb = getMinRollForParent(b);
+        if (ra !== rb) return ra - rb;
+        const an = (a.user?.first_name || '') + ' ' + (a.user?.last_name || '');
+        const bn = (b.user?.first_name || '') + ' ' + (b.user?.last_name || '');
+        return an.localeCompare(bn, undefined, { sensitivity: 'base' });
+      });
+    }
+    if (!focusParent) return base;
     try {
       const fp = String(focusParent);
-      const arr = [...filtered];
+      const arr = [...base];
       arr.sort((a, b) => {
         const aid = String(a.user?.id || a.id || '');
         const bid = String(b.user?.id || b.id || '');
         return (aid === fp ? -1 : 0) + (bid === fp ? 1 : 0);
       });
       return arr;
-    } catch (_) { return filtered; }
+    } catch (_) { return base; }
   })();
 
   return (
@@ -468,7 +540,7 @@ export default function ParentsPage() {
               onChange={(e) => { setSelectedClassroom(e.target.value); setSelectedSection(''); setShowAll(false); setFocusParent(''); }}
             >
               <MenuItem value="">সব শ্রেণি</MenuItem>
-              {(classrooms || []).map(c => (
+              {sortedClassrooms.map(c => (
                 <MenuItem key={c.id} value={String(c.id)}>{c.name}</MenuItem>
               ))}
             </Select>
@@ -514,7 +586,7 @@ export default function ParentsPage() {
 
       {!loading && !effectiveShowAll && !selectedClassroom && (
         <Grid container spacing={2}>
-          {(classrooms || []).map((c) => (
+          {sortedClassrooms.map((c) => (
             <Grid size={{ xs: 12, sm: 6, md: 4, lg: 3 }} key={c.id}>
               <Box onClick={() => { setSelectedClassroom(String(c.id)); setSelectedSection(''); setShowAll(false); setFocusParent(''); }} sx={{ cursor: 'pointer' }}>
                 <ClassCard classroom={c} />

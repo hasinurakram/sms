@@ -252,18 +252,39 @@ export default function TeachersPage() {
           return String(schoolId) === String(id);
         });
 
-      const filteredProfiles = (teacherProfiles || []).filter(p => {
-          const schoolId =
-            p.school?.id ||
-            p.school_id ||
-            p.school ||
-            p.user?.school?.id ||
-            p.user?.school_id ||
-            p.user?.school;
-          if (!id) return true;
-          if (!schoolId) return false;
-          return String(schoolId) === String(id);
-        });
+      let filteredProfiles = (teacherProfiles || []).filter(p => {
+        const schoolId =
+          p.school?.id ||
+          p.school_id ||
+          p.school ||
+          p.user?.school?.id ||
+          p.user?.school_id ||
+          p.user?.school;
+        if (!id) return true;
+        if (!schoolId) return false;
+        return String(schoolId) === String(id);
+      });
+
+      // Fallback: ensure every assigned teacher has a profile attached
+      try {
+        const assignedUserIds = new Set(
+          filteredAssignments
+            .map(a => a?.teacher?.user?.id || a?.teacher?.id)
+            .filter(Boolean)
+        );
+        const presentUserIds = new Set(
+          (filteredProfiles || [])
+            .map(p => p?.user?.id)
+            .filter(Boolean)
+        );
+        if (assignedUserIds.size > presentUserIds.size) {
+          const missing = Array.from(assignedUserIds).filter(uid => !presentUserIds.has(uid));
+          if (missing.length > 0) {
+            const fillIns = (teacherProfiles || []).filter(p => missing.includes(p?.user?.id));
+            filteredProfiles = [...filteredProfiles, ...fillIns];
+          }
+        }
+      } catch (_) {}
 
       const combined = buildAssignments(filteredAssignments, filteredProfiles);
       setAssignments(combined);

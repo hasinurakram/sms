@@ -8,6 +8,7 @@ class RolePermission(permissions.BasePermission):
     """
 
     role_map = {
+        'super_admin': ['view', 'create', 'change', 'delete'],
         'student': ['view'],
         'parent': ['view'],
         'teacher': ['view', 'create', 'change', 'delete'],
@@ -96,12 +97,49 @@ class SubjectResultWritePermission(permissions.BasePermission):
                     return False
                 subject_id = getattr(target, 'subject_id', None)
                 classroom_id = getattr(getattr(target, 'examination', None), 'classroom_id', None)
-                section_id = getattr(getattr(target, 'examination', None), 'section_id', None
-                )
-            qs = TeacherAssignment.objects.filter(teacher=user, subject_id=subject_id, classroom_id=classroom_id)
+                section_id = getattr(getattr(target, 'examination', None), 'section_id', None)
+            # Strict subject, but section handling:
+            # - If exam has a section, allow assignments for that section OR assignments with no section (applies to all)
+            # - If exam has no section, allow any assignment in the classroom regardless of assignment section
+            from django.db.models import Q
+            base = TeacherAssignment.objects.filter(teacher=user, subject_id=subject_id, classroom_id=classroom_id)
             if section_id is not None:
-                qs = qs.filter(section_id=section_id)
-            return qs.exists()
+                return base.filter(Q(section_id=section_id) | Q(section__isnull=True)).exists()
+            return base.exists()
+        except Exception:
+            return False
+
+class TeacherSelfOrAdminChange(permissions.BasePermission):
+    def has_permission(self, request, view):
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        user = getattr(request, 'user', None)
+        if not user or not user.is_authenticated:
+            return False
+        if getattr(user, 'is_superuser', False) or getattr(user, 'is_staff', False):
+            return True
+        profile = getattr(user, 'profile', None)
+        role = getattr(profile, 'role', None) if profile else None
+        if role == 'admin':
+            return True
+        if request.method == 'POST':
+            return False
+        return True
+
+    def has_object_permission(self, request, view, obj):
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        user = getattr(request, 'user', None)
+        if not user or not user.is_authenticated:
+            return False
+        if getattr(user, 'is_superuser', False) or getattr(user, 'is_staff', False):
+            return True
+        profile = getattr(user, 'profile', None)
+        role = getattr(profile, 'role', None) if profile else None
+        if role == 'admin':
+            return True
+        try:
+            return getattr(obj, 'user_id', None) == getattr(user, 'id', None)
         except Exception:
             return False
     def has_object_permission(self, request, view, obj):
@@ -121,9 +159,10 @@ class SubjectResultWritePermission(permissions.BasePermission):
             subject_id = getattr(obj, 'subject_id', None)
             classroom_id = getattr(getattr(obj, 'examination', None), 'classroom_id', None)
             section_id = getattr(getattr(obj, 'examination', None), 'section_id', None)
-            qs = TeacherAssignment.objects.filter(teacher=user, subject_id=subject_id, classroom_id=classroom_id)
+            from django.db.models import Q
+            base = TeacherAssignment.objects.filter(teacher=user, subject_id=subject_id, classroom_id=classroom_id)
             if section_id is not None:
-                qs = qs.filter(section_id=section_id)
-            return qs.exists()
+                return base.filter(Q(section_id=section_id) | Q(section__isnull=True)).exists()
+            return base.exists()
         except Exception:
             return False

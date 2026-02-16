@@ -450,13 +450,18 @@ export default function StudentsPage() {
         blood_group: selectedStudent.blood_group || '',
         guardian_id: selectedStudent.guardian?.id || '',
         profile_picture: selectedStudent.user?.photo_url || '',
-        guardian_name: ''
+        guardian_name: (selectedStudent.guardian_name || `${(selectedStudent.guardian?.user?.first_name||'').trim()} ${(selectedStudent.guardian?.user?.last_name||'').trim()}`.trim()).trim()
       });
+      setEditPassword('');
+      setEditPasswordConfirm('');
       setPhotoFile(null); // Reset photo file when dialog opens
     }
   }, [selectedStudent, editDialogOpen]);
 
   // Handle updating a student profile
+  const [editPassword, setEditPassword] = useState('');
+  const [editPasswordConfirm, setEditPasswordConfirm] = useState('');
+
   const handleUpdateStudent = async () => {
     if (!selectedStudent?.id) {
       toast.error('No student selected');
@@ -511,14 +516,25 @@ export default function StudentsPage() {
       };
       
       // Use FormData for multipart/form-data content type
-      const formData = new FormData();
+    const formData = new FormData();
       Object.keys(studentData).forEach(key => {
         if (studentData[key] !== null && studentData[key] !== undefined && studentData[key] !== '') {
           formData.append(key, studentData[key]);
         }
       });
-      if (guardianIdToUse) {
-        formData.append('guardian_name', '');
+    if (editFormData.username && editFormData.username !== (selectedStudent?.user?.username || '')) {
+      formData.append('username', editFormData.username);
+    }
+    if (editPassword) {
+      if (editPassword !== editPasswordConfirm) {
+        toast.error('নতুন পাসওয়ার্ড নিশ্চিতকরণ মেলেনি');
+        setLoading(false);
+        return;
+      }
+      formData.append('password', editPassword);
+    }
+      if (typedGuardianName) {
+        formData.append('guardian_name', typedGuardianName);
       }
       
       // If there's a photo file, add it to the form data
@@ -827,7 +843,11 @@ export default function StudentsPage() {
             });
             createdGuardianId = resp.data?.user?.id || '';
           } catch (pgErr) {
-            toast.warning('অভিভাবক তৈরি করতে সমস্যা হয়েছে');
+            const status = pgErr?.response?.status;
+            // If not admin (403), silently continue; backend student serializer will auto-create parent
+            if (status !== 403) {
+              toast.warning('অভিভাবক তৈরি করতে সমস্যা হয়েছে');
+            }
           }
         }
       }
@@ -900,16 +920,21 @@ export default function StudentsPage() {
       refreshAll(id);
     } catch (err) {
       const backend = err.response?.data;
-      console.error('Add student failed. Response:', backend || err);
-      const n = err.normalized || { message: 'Failed to add student', suggestions: [], fieldErrors: {} };
-      // Merge DRF non_field_errors/detail if present
-      const nonField = (Array.isArray(backend?.non_field_errors) && backend?.non_field_errors[0]) || backend?.detail || null;
-      if (nonField && !n.message) n.message = nonField;
-      setNewStudentErrors(n.fieldErrors || {});
-      toast.error(n.message);
-      if (n.suggestions?.length) {
-        toast.info('Suggestions: ' + n.suggestions.join(', '));
+      const fieldErrors = typeof backend === 'object' ? backend : {};
+      let msg = '';
+      if (typeof backend === 'object') {
+        if (Array.isArray(backend?.non_field_errors) && backend.non_field_errors.length) {
+          msg = String(backend.non_field_errors[0] || '');
+        } else if (typeof backend?.detail === 'string' && backend.detail) {
+          msg = backend.detail;
+        } else {
+          const firstKey = Object.keys(backend || {}).find(k => Array.isArray(backend[k]) && backend[k].length);
+          if (firstKey) msg = String(backend[firstKey][0] || '');
+        }
       }
+      if (!msg) msg = err.message || 'Failed to add student';
+      setNewStudentErrors(fieldErrors || {});
+      toast.error(msg);
     } finally {
       setSaving(false);
     }
@@ -1773,6 +1798,24 @@ export default function StudentsPage() {
                     value={editFormData.username}
                     onChange={(e) => setEditFormData({...editFormData, username: e.target.value})}
                     helperText="Username for login"
+                  />
+                </Grid>
+                <Grid size={{ xs: 12, sm: 6 }}>
+                  <TextField
+                    type="password"
+                    label="New Password"
+                    fullWidth
+                    value={editPassword}
+                    onChange={(e) => setEditPassword(e.target.value)}
+                  />
+                </Grid>
+                <Grid size={{ xs: 12, sm: 6 }}>
+                  <TextField
+                    type="password"
+                    label="Confirm New Password"
+                    fullWidth
+                    value={editPasswordConfirm}
+                    onChange={(e) => setEditPasswordConfirm(e.target.value)}
                   />
                 </Grid>
 

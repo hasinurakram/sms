@@ -17,13 +17,16 @@ import {
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import PrintIcon from '@mui/icons-material/Print';
+import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import BadgeIcon from '@mui/icons-material/Badge';
+import html2canvas from 'html2canvas';
+import jsPDF from 'jspdf';
 import IDCard from '../components/IDCard';
 import EmptyState from '../components/EmptyState';
 import { useToast } from '../components/Toast';
 import { CardSkeleton } from '../components/LoadingSkeleton';
 
-export default function IDCardGenerator() {
+function IDCardGenerator() {
   const { id } = useParams();
   const toast = useToast();
   
@@ -37,6 +40,7 @@ export default function IDCardGenerator() {
   const [school, setSchool] = useState(null);
   const [classrooms, setClassrooms] = useState([]);
   const [sections, setSections] = useState([]);
+  const [hmPhone, setHmPhone] = useState('');
   
   // Generated cards
   const [cards, setCards] = useState([]);
@@ -49,8 +53,33 @@ export default function IDCardGenerator() {
 
   const loadSchool = () => {
     api.get(`/api/schools/${id}/`)
-      .then(res => setSchool(res.data))
+      .then(res => {
+        setSchool(res.data);
+      })
       .catch(err => console.error(err));
+    api.get(`/api/users/teachers/?school=${id}`)
+      .then(res => {
+        const arr = Array.isArray(res.data) ? res.data : (res.data?.results || []);
+        const pickPhone = (t) => t?.phone_number || t?.mobile_number || t?.user?.phone_number || t?.user?.mobile_number || '';
+        const isHM = (d) => {
+          const s = String(d || '').toLowerCase();
+          return s.includes('প্রধান') || s.includes('head') || s.includes('হেড') || s.includes('principal');
+        };
+        let phone = '';
+        for (const p of arr) {
+          const desig = p?.designation || p?.user?.designation || '';
+          if (isHM(desig)) {
+            phone = pickPhone(p) || pickPhone(p?.user || {});
+            if (phone) break;
+          }
+        }
+        if (!phone && arr.length) {
+          const any = arr.find(p => isHM(p?.user?.designation));
+          if (any) phone = pickPhone(any) || pickPhone(any?.user || {});
+        }
+        if (phone) setHmPhone(phone);
+      })
+      .catch(() => {});
   };
 
   const loadClassrooms = () => {
@@ -231,12 +260,114 @@ export default function IDCardGenerator() {
     }, 300);
   };
 
+  const handleDownloadAll = async () => {
+    if (cards.length === 0) {
+      toast.warning('Please generate ID cards first');
+      return;
+    }
+    try {
+      toast.info('Generating PDF... Please wait');
+      // Hide no-print elements during capture
+      const tempStyle = document.createElement('style');
+      tempStyle.id = 'hide-no-print';
+      tempStyle.innerHTML = `.no-print{display:none !important;}`;
+      document.head.appendChild(tempStyle);
+      
+      const wrappers = document.querySelectorAll('.id-card-wrapper');
+      if (!wrappers.length) {
+        document.head.removeChild(tempStyle);
+        toast.error('No ID cards found to export');
+        return;
+      }
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const desiredWidthMM = 70; // Bigger than CR80 for better visibility on A4
+      const marginTopMM = 12;
+      const marginBottomMM = 12;
+      const gapMM = 6;
+      for (let i = 0; i < wrappers.length; i++) {
+        const wrapper = wrappers[i];
+        const frontEl = wrapper.querySelector('.id-card-front');
+        const backEl = wrapper.querySelector('.id-card-back');
+
+        if (!frontEl && !backEl) continue;
+
+        // Render canvases
+        const renderCard = async (el) => {
+          if (!el) return null;
+          const cnv = await html2canvas(el, { 
+            scale: Math.min(3, window.devicePixelRatio || 2),
+            useCORS: true, 
+            backgroundColor: '#ffffff', 
+            logging: false 
+          });
+          const img = cnv.toDataURL('image/png');
+          return { img, wpx: cnv.width, hpx: cnv.height };
+        };
+
+        const front = await renderCard(frontEl);
+        const back = await renderCard(backEl);
+
+        // Compute scaled dimensions keeping aspect ratio, place both on ONE page
+        let fw = 0, fh = 0, bw = 0, bh = 0;
+        if (front) {
+          fw = desiredWidthMM;
+          fh = (front.hpx / front.wpx) * fw;
+        }
+        if (back) {
+          bw = desiredWidthMM;
+          bh = (back.hpx / back.wpx) * bw;
+        }
+        let totalH = (front ? fh : 0) + (front && back ? gapMM : 0) + (back ? bh : 0);
+        const availableH = pageHeight - marginTopMM - marginBottomMM;
+        if (totalH > availableH) {
+          const scale = availableH / totalH;
+          fw *= scale; fh *= scale;
+          bw *= scale; bh *= scale;
+          totalH = availableH; // now fits
+        }
+
+        if (i > 0) pdf.addPage();
+        const x = (pageWidth - Math.max(fw, bw)) / 2;
+        let y = marginTopMM + Math.max(0, (availableH - ((front ? fh : 0) + (front && back ? gapMM : 0) + (back ? bh : 0))) / 2);
+        if (front) {
+          pdf.addImage(front.img, 'PNG', x, y, fw, fh);
+          y += fh + (back ? gapMM : 0);
+        }
+        if (back) {
+          pdf.addImage(back.img, 'PNG', x, y, bw, bh);
+        }
+      }
+      const fileName = `id-cards-${id}-${new Date().toISOString().slice(0,10)}.pdf`;
+      pdf.save(fileName);
+      document.head.removeChild(tempStyle);
+      toast.success('PDF downloaded successfully');
+    } catch (e) {
+      console.error('PDF generation error:', e);
+      toast.error('Failed to generate PDF');
+    }
+  };
+
   const handleReset = () => {
     setSearchQuery('');
     setClassFilter('');
     setSectionFilter('');
     setCards([]);
     toast.info('Form reset');
+  };
+
+  const handlePromoteByFinal = async () => {
+    if (!id) return;
+    try {
+      toast.info('প্রমোশন প্রসেসিং...');
+      const res = await api.post('/api/academics/students/promote/', { school: id });
+      const d = res.data || {};
+      toast.success(`প্রমোশন সম্পন্ন: ${d.promoted || 0} জন। (ফেল: ${d.skipped_failed || 0}, পরীক্ষা নেই: ${d.skipped_no_exam || 0})`);
+    } catch (e) {
+      console.error('Promotion error', e);
+      toast.error('প্রমোশন ব্যর্থ হয়েছে');
+    }
   };
 
   return (
@@ -286,6 +417,35 @@ export default function IDCardGenerator() {
               }}
             >
               সব কার্ড প্রিন্ট করুন
+            </Button>
+          )}
+          {cards.length > 0 && (
+            <Button
+              variant="contained"
+              startIcon={<PictureAsPdfIcon />}
+              onClick={handleDownloadAll}
+              className="no-print"
+              sx={{ 
+                bgcolor: 'rgba(255,255,255,0.2)', 
+                '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' },
+                backdropFilter: 'blur(10px)'
+              }}
+            >
+              সব কার্ড ডাউনলোড করুন
+            </Button>
+          )}
+          {String(id) === '16' && (
+            <Button
+              variant="contained"
+              onClick={handlePromoteByFinal}
+              className="no-print"
+              sx={{ 
+                bgcolor: 'rgba(255,255,255,0.2)', 
+                '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' },
+                backdropFilter: 'blur(10px)'
+              }}
+            >
+              ফাইনাল রেজাল্ট অনুযায়ী প্রমোশন দিন
             </Button>
           )}
         </Stack>
@@ -429,7 +589,7 @@ export default function IDCardGenerator() {
               type={tabValue === 0 ? 'student' : 'teacher'}
               data={item}
               school={school}
-              overridePhone={String(id) === '16' ? '01712923054' : undefined}
+              overridePhone={hmPhone || (String(id) === '16' ? '01712923054' : undefined)}
               signatureUrl={String(id) === '16' ? `${window.location.origin}/signature.png` : undefined}
             />
           ))}
@@ -438,3 +598,4 @@ export default function IDCardGenerator() {
     </Box>
   );
 }
+export default IDCardGenerator;

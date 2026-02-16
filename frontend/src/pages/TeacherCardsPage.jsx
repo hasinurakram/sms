@@ -44,7 +44,9 @@ export default function TeacherCardsPage() {
             ...assignment.teacher,
             subjects: [],
             classes: [],
-            assignments: []
+            assignments: [],
+            profile: null,
+            designation: ''
           };
         }
         
@@ -62,11 +64,30 @@ export default function TeacherCardsPage() {
         teacherMap[teacherId].assignments.push(assignment);
       });
       
-      const teacherList = Object.values(teacherMap);
+      let teacherList = Object.values(teacherMap);
+      
+      // Merge in teacher profiles to get designation
+      try {
+        const profRes = await api.get(`/api/users/teachers/?school=${id}`);
+        const profData = Array.isArray(profRes.data) ? profRes.data : (profRes.data?.results || []);
+        const byUserId = new Map();
+        for (const p of profData) {
+          const uid = p.user?.id || p.user_id;
+          if (uid) byUserId.set(uid, p);
+        }
+        teacherList = teacherList.map(t => {
+          const prof = byUserId.get(t.id) || null;
+          const designation = prof?.designation || '';
+          return { ...t, profile: prof, designation };
+        });
+      } catch (e) {
+        // profile fetch failure shouldn't block UI
+      }
       console.log('Total unique teachers:', teacherList.length);
       setTeachers(teacherList);
     } catch (error) {
       console.error('Failed to load teachers:', error);
+      toast.error('Failed to load teachers');
       toast.error('Failed to load teachers');
     } finally {
       setLoading(false);

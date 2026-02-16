@@ -25,9 +25,17 @@ api.interceptors.request.use(
       }
 
       const token = getAccessToken();
+      const method = (config.method || 'get').toLowerCase();
+      const urlPath = (config.url || '').toString();
+      const isPublicGet =
+        method === 'get' &&
+        (
+          /^\/?api\/schools\/?(\?.*)?$/i.test(urlPath) || // schools list
+          /^\/?api\/schools\/\d+\/?(\?.*)?$/i.test(urlPath) // single school
+        );
 
-      // Always send token if available, regardless of path
-      if (token) {
+      // For public GET endpoints, avoid sending Authorization to prevent 401 on invalid tokens
+      if (token && !isPublicGet) {
         config.headers.Authorization = `Bearer ${token}`;
       }
 
@@ -96,9 +104,19 @@ api.interceptors.response.use(
         }
       } catch (error) {
         console.error('Token refresh failed:', error);
-        // If refresh fails, clear tokens and redirect to login
+        // If refresh fails and this was a GET, try once without Authorization (public endpoints)
+        const isGet = (originalRequest?.method || '').toLowerCase() === 'get';
+        if (isGet && !originalRequest._retryNoAuth) {
+          originalRequest._retryNoAuth = true;
+          // Remove Authorization header and tokens for this retry only
+          if (originalRequest.headers) {
+            delete originalRequest.headers.Authorization;
+          }
+          return api(originalRequest);
+        }
+        // Otherwise, clear tokens and redirect to login
         clearTokens();
-        if (window.location.pathname !== '/login') {
+        if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
           window.location.href = '/login';
         }
       }

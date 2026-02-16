@@ -60,7 +60,9 @@ import {
   TableContainer,
 } from "@mui/material";
 import MenuIcon from '@mui/icons-material/Menu';
+import LockIcon from '@mui/icons-material/Lock';
 import { useTheme } from '@mui/material/styles';
+import { useAuth } from '../context/AuthContext';
 
 
 
@@ -113,7 +115,6 @@ const getClassOrder = (name) => {
   return 999;
 };
 
-// Menu items in exact order: School → Class → Section → Teacher → Student → Group → Subject → Attendance → Examination → Result → Fees → Users
 const menuItems = [
   { label: 'ড্যাশবোর্ড', icon: <AssessmentIcon />, key: '' },
   { label: 'শ্রেণি', icon: <ClassIcon />, key: 'classes' },
@@ -136,6 +137,7 @@ const menuItems = [
   { label: 'এসএমএস', icon: <SmsIcon />, key: 'sms' },
   { label: 'অভিভাবক', icon: <PeopleIcon />, key: 'parent' },
   { label: 'কমিটি', icon: <GroupIcon />, key: 'committee' },
+  { label: 'আইডি লিস্ট', icon: <LockIcon />, key: 'credentials' },
   { label: 'এডমিন', icon: <AccountBalanceIcon />, key: 'admin' },
   { label: 'প্রোফাইল', icon: <AccountCircleIcon />, key: 'profile' },
 ];
@@ -171,6 +173,7 @@ const SchoolDashboard = () => {
   
   // Check if we're on the main dashboard page with no sub-route
   const isMainDashboard = location.pathname === `/school/${id}` || location.pathname === `/school/${id}/`;
+  const { user, logout } = useAuth();
   const isBanglaFirst = (name) => {
     const n = String(name || '').replace(/\s*\(.*?\)\s*/g, '').trim().toLowerCase();
     // Must contain 'bangla' or 'বাংলা' AND ('1st', 'first', '১ম', etc.)
@@ -933,7 +936,21 @@ const SchoolDashboard = () => {
                 )}
               />
             </Box>
-            <Avatar alt="User" sx={{ bgcolor: '#1565c0' }} />
+            {!user && (
+              <Stack direction="row" spacing={1}>
+                <Button color="inherit" variant="outlined" onClick={() => navigate('/login')}>লগইন</Button>
+                <Button color="inherit" variant="contained" onClick={() => navigate('/signup')}>সাইনআপ</Button>
+              </Stack>
+            )}
+            {user && (
+              <Stack direction="row" spacing={1} alignItems="center">
+                <Avatar alt={user?.username || 'User'} sx={{ bgcolor: '#1565c0' }} />
+                <Typography variant="body1">{user?.first_name || user?.username || 'User'}</Typography>
+                <Button color="inherit" variant="outlined" onClick={() => navigate(`/school/${id}/results`)}>রেজাল্ট ইনপুট</Button>
+                <Button color="inherit" variant="text" onClick={() => navigate('/change-password')}>পাসওয়ার্ড পরিবর্তন</Button>
+                <Button color="inherit" variant="contained" onClick={logout}>লগআউট</Button>
+              </Stack>
+            )}
           </Stack>
         </Toolbar>
       </AppBar>

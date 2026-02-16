@@ -193,6 +193,31 @@ export default function TeacherCard({ teacher, onPhotoUploaded }) {
   const qualification = teacher.educational_qualification || 
                        (teacher.user ? teacher.user.educational_qualification : null) || 
                        '';
+  const designation = teacher.designation || teacher.profile?.designation || '';
+  const [designationState, setDesignationState] = useState(designation || '');
+  React.useEffect(() => {
+    const uid = teacher?.id || teacher?.user?.id;
+    const schoolId =
+      teacher?.assignments?.[0]?.classroom?.school?.id ||
+      teacher?.classes?.[0]?.school?.id ||
+      null;
+    if (!designationState && uid) {
+      const url = schoolId ? `/api/users/teachers/?user=${uid}&school=${schoolId}` : `/api/users/teachers/?user=${uid}`;
+      api.get(url)
+        .then(res => {
+          const arr = Array.isArray(res.data) ? res.data : (res.data?.results || []);
+          const p = Array.isArray(arr) ? arr[0] : null;
+          const d = p?.designation || '';
+          if (d) setDesignationState(d);
+        })
+        .catch(() => {});
+    }
+  }, [teacher, designationState]);
+  React.useEffect(() => {
+    if (designation && designation !== designationState) {
+      setDesignationState(designation);
+    }
+  }, [designation]);
 
   // Debug: Log teacher data
   console.log('Teacher:', fullName);
@@ -281,6 +306,19 @@ export default function TeacherCard({ teacher, onPhotoUploaded }) {
             >
               ({teacher?.username || teacher?.user?.username || 'unknown'})
             </Typography>
+            {(designationState || designation) && (
+              <Typography 
+                variant="subtitle1"
+                sx={{
+                  color: 'white',
+                  fontWeight: 700,
+                  mb: 0.5,
+                  textShadow: '0 1px 2px rgba(0,0,0,0.25)'
+                }}
+              >
+                {designationState || designation}
+              </Typography>
+            )}
             {qualification && (
               <Typography 
                 variant="body2" 

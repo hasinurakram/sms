@@ -31,6 +31,10 @@ export default function ClassResultsPage() {
   const [resultsByStudent, setResultsByStudent] = useState(new Map());
   const [loading, setLoading] = useState(false);
   const [fallbackSubjects, setFallbackSubjects] = useState([]);
+  const [schoolSubjects, setSchoolSubjects] = useState([]);
+  const [overallRanks, setOverallRanks] = useState(new Map());
+  const [overallTotals, setOverallTotals] = useState(new Map());
+  const [activeExamId, setActiveExamId] = useState(null);
 
   useEffect(() => {
     if (!id) return;
@@ -84,7 +88,7 @@ export default function ClassResultsPage() {
   };
 
   useEffect(() => {
-    if (!selectedClass || !selectedExamType) {
+    if (!selectedClass) {
       setExaminations([]);
       setResultsByStudent(new Map());
       return;
@@ -93,9 +97,10 @@ export default function ClassResultsPage() {
     scopedGet('/api/results/examinations/', id, { classroom: selectedClass, page_size: 2000 }, { timeout: 30000 })
       .then(async res => {
         const all = Array.isArray(res.data) ? res.data : (res.data?.results || []);
-    const exams = selectedExamType === 'all'
-      ? all
-      : all.filter(e => normalizeExamType(e.exam_type, e.name) === normalizeExamType(selectedExamType));
+        const filterType = normalizeExamType(selectedExamType || 'all');
+        const exams = filterType === 'all'
+          ? all
+          : all.filter(e => normalizeExamType(e.exam_type, e.name) === filterType);
         setExaminations(exams);
         const byStudent = new Map();
         const fetchResultsByClassPaginated = async () => {
@@ -149,6 +154,13 @@ export default function ClassResultsPage() {
                 arr = await fetchResultsPaginated(ex.id);
               }
               for (const r of arr) {
+                const stuObj = typeof r.student === 'object' ? r.student : null;
+                const clsId = stuObj?.classroom?.id || stuObj?.classroom_id;
+                const secId = stuObj?.section?.id || stuObj?.section_id;
+                if (selectedClass && clsId && String(clsId) !== String(selectedClass)) continue;
+                if (typeof selectedSection === 'number' && Number.isFinite(selectedSection)) {
+                  if (secId != null && String(secId) !== String(selectedSection)) continue;
+                }
                 const sid = typeof r.student === 'object' ? r.student?.id : r.student;
                 if (!sid) continue;
                 const sidStr = String(sid);
@@ -165,6 +177,13 @@ export default function ClassResultsPage() {
         if (byStudent.size === 0) {
           const classArr = await fetchResultsByClassPaginated();
           for (const r of classArr) {
+            const stuObj = typeof r.student === 'object' ? r.student : null;
+            const clsId = stuObj?.classroom?.id || stuObj?.classroom_id;
+            const secId = stuObj?.section?.id || stuObj?.section_id;
+            if (selectedClass && clsId && String(clsId) !== String(selectedClass)) continue;
+            if (typeof selectedSection === 'number' && Number.isFinite(selectedSection)) {
+              if (secId != null && String(secId) !== String(selectedSection)) continue;
+            }
             const sid = typeof r.student === 'object' ? r.student?.id : r.student;
             if (!sid) continue;
             const sidStr = String(sid);
@@ -204,13 +223,79 @@ export default function ClassResultsPage() {
           }
         }
         setResultsByStudent(byStudent);
+        // Load overall ranks/totals for the examination that matches loaded results best
+        try {
+          const examCounts = new Map();
+          for (const arr of byStudent.values()) {
+            for (const r of arr) {
+              const exId = typeof r.examination === 'object' ? r.examination?.id : r.examination;
+              if (!exId) continue;
+              const key = String(exId);
+              examCounts.set(key, (examCounts.get(key) || 0) + 1);
+            }
+          }
+          const examsSorted = [...(Array.isArray(exams) ? exams : [])].sort((a, b) => {
+            const ad = a.exam_date ? new Date(a.exam_date).getTime() : 0;
+            const bd = b.exam_date ? new Date(b.exam_date).getTime() : 0;
+            if (bd !== ad) return bd - ad;
+            return b.id - a.id;
+          });
+          const candidateIds = [];
+          if (examCounts.size > 0) {
+            for (const [k] of [...examCounts.entries()].sort((a, b) => b[1] - a[1])) candidateIds.push(k);
+          }
+          for (const ex of examsSorted) {
+            const k = String(ex.id);
+            if (!candidateIds.includes(k)) candidateIds.push(k);
+          }
+          let pickedId = null;
+          let pickedRanks = new Map();
+          let pickedTotals = new Map();
+          for (const exId of candidateIds) {
+            try {
+              const params = { examination: exId, page_size: 2000 };
+              if (typeof selectedSection === 'number' && Number.isFinite(selectedSection)) params.section = selectedSection;
+              if (selectedClass) params.classroom = selectedClass;
+              const resp = await scopedGet('/api/results/overall/', id, params, { timeout: 30000 });
+              const data = resp.data;
+              const arr = Array.isArray(data) ? data : (data?.results || []);
+              if (!arr.length) continue;
+              const m = new Map();
+              const mt = new Map();
+              for (const o of arr || []) {
+                if (typeof selectedSection === 'number' && Number.isFinite(selectedSection)) {
+                  const secId = o?.student?.section?.id || o?.student?.section_id;
+                  if (secId != null && String(secId) !== String(selectedSection)) continue;
+                }
+                const sid = typeof o.student === 'object' ? o.student?.id : o.student;
+                const rk = o.rank || o.position || null;
+                if (sid && rk) m.set(String(sid), parseInt(rk, 10));
+                const tot = o.total_marks_obtained != null ? parseFloat(o.total_marks_obtained) : null;
+                if (sid && tot != null) mt.set(String(sid), tot);
+              }
+              pickedId = exId;
+              pickedRanks = m;
+              pickedTotals = mt;
+              break;
+            } catch (_) {}
+          }
+          setActiveExamId(pickedId || null);
+          setOverallRanks(pickedRanks);
+          setOverallTotals(pickedTotals);
+        } catch (_) {
+          setActiveExamId(null);
+          setOverallRanks(new Map());
+          setOverallTotals(new Map());
+        }
       })
       .catch(() => {
         setExaminations([]);
         setResultsByStudent(new Map());
+        setOverallRanks(new Map());
+        setOverallTotals(new Map());
       })
       .finally(() => setLoading(false));
-  }, [id, selectedClass, selectedExamType, selectedSection]);
+  }, [id, selectedClass, selectedExamType, selectedSection, students]);
 
   const subjectOrder = [
     'বাংলা','Bangla','Bengali',
@@ -244,17 +329,25 @@ export default function ClassResultsPage() {
     'বাংলা','ইংরেজি','গণিত','বিজ্ঞান','বাংলাদেশ ও বিশ্বপরিচয়',
     'তথ্য ও যোগাযোগ প্রযুক্তি','ধর্ম','কৃষি','পদার্থ','রসায়ন','জীববিজ্ঞান','উচ্চতর গণিত'
   ];
-  const normalizeName = (s) => String(s || '').replace(/\s*\(.*?\)\s*/g, '').trim();
+  const normalizeName = (s) => String(s || '')
+    .replace(/\u200c|\u200d/g, '')
+    .replace(/\s*\(.*?\)\s*/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
   const canonicalSubjectName = (s) => {
     const n = String(s || '').toLowerCase();
     if (!n) return '';
-    if ((/বাংলা|bangla|bengali/.test(n)) && (/প্রথম|1st|first/.test(n))) return 'bangla_1st';
-    if ((/বাংলা|bangla|bengali/.test(n)) && (/দ্বিতীয়|দ্বিতীয়|2nd|second/.test(n))) return 'bangla_2nd';
-    if ((/ইংরেজি|ইংরেজী|english/.test(n)) && (/প্রথম|1st|first/.test(n))) return 'english_1st';
-    if ((/ইংরেজি|ইংরেজী|english/.test(n)) && (/দ্বিতীয়|দ্বিতীয়|2nd|second/.test(n))) return 'english_2nd';
+    if (/বাংলা.*1\+2|bangla.*1\+2|বাংলা\s*১\+২/.test(n)) return 'bangla_combined';
+    if (/english.*1\+2|ইংরেজি.*1\+2|ইংরেজি\s*১\+২|ইংরেজী\s*১\+২/.test(n)) return 'english_combined';
+    if ((/বাংলা|bangla|bengali/.test(n)) && (/প্রথম|1st|first|১ম/.test(n))) return 'bangla_1st';
+    if ((/বাংলা|bangla|bengali/.test(n)) && (/দ্বিতীয়|দ্বিতীয়|2nd|second|২য়/.test(n))) return 'bangla_2nd';
+    if ((/বাংলা|bangla|bengali/.test(n))) return 'bangla';
+    if ((/ইংরেজি|ইংরেজী|english/.test(n)) && (/প্রথম|1st|first|১ম/.test(n))) return 'english_1st';
+    if ((/ইংরেজি|ইংরেজী|english/.test(n)) && (/দ্বিতীয়|দ্বিতীয়|2nd|second|২য়/.test(n))) return 'english_2nd';
+    if ((/ইংরেজি|ইংরেজী|english/.test(n))) return 'english';
     if (/গণিত|mathematics|math|general math/.test(n)) return 'math';
     if (/বিজ্ঞান|science/.test(n)) return 'science';
-    if (/বাংলাদেশ.*বিশ্বপরিচয়|bangladesh.*global studies|bgs/.test(n)) return 'bgs';
+    if (/বাংলাদেশ.*বিশ্ব.*(পরিচ(য়|য়)|পরিয়)|bangladesh.*global studies|bgs|সামাজিক\s*বিজ্ঞান|social\s*science/.test(n)) return 'bgs';
     if (/ict|আইসিটি|তথ্য.*যোগাযোগ প্রযুক্তি/.test(n)) return 'ict';
     if (/ধর্ম|religion|moral education|islam|hindu/.test(n)) return 'religion';
     if (/কৃষি|agriculture/.test(n)) return 'agriculture';
@@ -276,8 +369,12 @@ export default function ClassResultsPage() {
     const map = {
       bangla_1st: 'বাংলা-১ম',
       bangla_2nd: 'বাংলা-২য়',
+      bangla: 'বাংলা',
+      bangla_combined: 'বাংলা ১+২',
       english_1st: 'ইংরেজী-১ম',
       english_2nd: 'ইংরেজি-২য়',
+      english: 'ইংরেজি',
+      english_combined: 'ইংরেজি ১+২',
       math: 'গণিত',
       science: 'বিজ্ঞান',
       bgs: 'বাংলাদেশ ও বিশ্বপরিচয়',
@@ -299,6 +396,93 @@ export default function ClassResultsPage() {
     };
     return map[key] || key;
   };
+  const resultTotal = (res) => {
+    if (!res) return 0;
+    const t = typeof res.total === 'number' ? res.total : undefined;
+    const to = typeof res.total_obtained === 'number' ? res.total_obtained : (typeof res.totalObtained === 'number' ? res.totalObtained : undefined);
+    if (typeof t === 'number') return t;
+    if (typeof to === 'number') return to;
+    const cq = parseFloat(res.written_marks ?? res.cq ?? 0);
+    const mcq = parseFloat(res.mcq_marks ?? res.mcq ?? 0);
+    const pr = parseFloat(res.practical_marks ?? res.practical ?? 0);
+    const sum = (Number.isFinite(cq) ? cq : 0) + (Number.isFinite(mcq) ? mcq : 0) + (Number.isFinite(pr) ? pr : 0);
+    return Number.isFinite(sum) ? sum : 0;
+  };
+  const synonymsForCanonical = (key) => {
+    const maps = {
+      bgs: [
+        'bgs',
+        'বাংলাদেশ ও বিশ্বপরিচয়',
+        'বাংলাদেশ ও বিশ্ব পরিচয়',
+        'Bangladesh and Global Studies',
+        'বাংলাদেশ ও বিশ্বপরিয়',
+        'BGS'
+      ],
+      ict: ['ict','আইসিটি','তথ্য ও যোগাযোগ প্রযুক্তি','Ict','ICT'],
+      science: ['science','বিজ্ঞান','Science'],
+      math: ['math','গণিত','Mathematics','সাধারণ গণিত','General Math'],
+      religion: ['religion','ধর্ম','ধর্ম ও নৈতিক শিক্ষা','Islam and Moral Education','হিন্দু ধর্ম','Hindu Religion'],
+      bangla_1st: ['bangla_1st','বাংলা-১ম','বাংলা প্রথম পত্র','Bangla First Paper'],
+      bangla_2nd: ['bangla_2nd','বাংলা-২য়','বাংলা দ্বিতীয় পত্র','Bangla Second Paper'],
+      english_1st: ['english_1st','ইংরেজী-১ম','ইংরেজি প্রথম পত্র','English First Paper'],
+      english_2nd: ['english_2nd','ইংরেজি-২য়','ইংরেজি দ্বিতীয় পত্র','English Second Paper']
+    };
+    return maps[key] || [key];
+  };
+  const getStudentRawResults = (sid) => {
+    const arrRaw = resultsByStudent.get(String(sid)) || [];
+    return arrRaw;
+  };
+  const resolveResult = (sid, item, map) => {
+    let r = undefined;
+    if (item?.canonical === 'bangla_combined') {
+      const r1 = map.get('bangla_1st');
+      const r2 = map.get('bangla_2nd');
+      if (r1 || r2) r = { total: resultTotal(r1) + resultTotal(r2) };
+      return r;
+    }
+    if (item?.canonical === 'english_combined') {
+      const r1 = map.get('english_1st');
+      const r2 = map.get('english_2nd');
+      if (r1 || r2) r = { total: resultTotal(r1) + resultTotal(r2) };
+      return r;
+    }
+    if (item?.id) r = map.get(`id:${String(item.id)}`);
+    if (!r) {
+      const cand = [item?.canonical, normalizeName(item?.label || '')].filter(Boolean);
+      const syns = synonymsForCanonical(item?.canonical || '');
+      for (const k of [...cand, ...syns]) {
+        const kk = normalizeName(k);
+        r = map.get(k) || map.get(kk);
+        if (r) break;
+      }
+    }
+    if (!r) {
+      const raw = getStudentRawResults(sid);
+      for (const x of raw) {
+        const nm = normalizeName(x.subject?.name || x.subject_name || '');
+        const can = canonicalSubjectName(nm);
+        const subjId = typeof x.subject === 'object' ? x.subject?.id : x.subject;
+        if (item?.canonical && can && can === item.canonical) { r = x; break; }
+        if (!r && item?.id && subjId && String(subjId) === String(item.id)) { r = x; break; }
+        if (!r) {
+          const syns = synonymsForCanonical(item?.canonical || '');
+          const kk = normalizeName(item?.label || '');
+          if (syns.includes(nm) || nm === kk) { r = x; break; }
+        }
+      }
+    }
+    return r;
+  };
+  const isNineTen = useMemo(() => {
+    const cls = classrooms.find(c => String(c.id) === String(selectedClass));
+    const name = String(cls?.name || '').toLowerCase();
+    if (!name) return false;
+    if (/নবম|দশম/.test(name)) return true;
+    if (/class\s*9|class\s*10/.test(name)) return true;
+    if (/\b9\b|\b10\b/.test(name)) return true;
+    return false;
+  }, [classrooms, selectedClass]);
   const subjects = useMemo(() => {
     const set = new Set();
     for (const arr of resultsByStudent.values()) {
@@ -339,42 +523,155 @@ export default function ClassResultsPage() {
       .catch(() => setFallbackSubjects([]));
   }, [id, selectedClass]);
 
+  useEffect(() => {
+    if (!id) { setSchoolSubjects([]); return; }
+    api.get(`/api/academics/subjects/?school=${id}`)
+      .then(res => {
+        const arr = Array.isArray(res.data) ? res.data : (res.data?.results || []);
+        const items = [];
+        const seen = new Set();
+        for (const s of arr || []) {
+          const raw = normalizeName(s.name || s.subject_name || '');
+          const can = canonicalSubjectName(raw);
+          const key = `${s.id}::${can}`;
+          if (!can || seen.has(key)) continue;
+          seen.add(key);
+          items.push({ id: s.id, label: raw || labelForCanonical(can), canonical: can });
+        }
+        setSchoolSubjects(items);
+      })
+      .catch(() => setSchoolSubjects([]));
+  }, [id]);
+
+  const resultsCanonical = useMemo(() => {
+    const set = new Set();
+    for (const arr of resultsByStudent.values()) {
+      for (const r of arr) {
+        let nm = normalizeName(r.subject?.name || r.subject_name || '');
+        let can = canonicalSubjectName(nm);
+        if (!can || can === nm) {
+          const subjId = typeof r.subject === 'object' ? r.subject?.id : r.subject;
+          if (subjId) {
+            const match = (fallbackSubjects || []).find(it => String(it.id) === String(subjId));
+            if (match) {
+              can = match.canonical || canonicalSubjectName(match.label);
+            }
+          }
+        }
+        if (can) set.add(can);
+      }
+    }
+    return set;
+  }, [resultsByStudent, fallbackSubjects]);
+
   const displaySubjects = useMemo(() => {
     const orderKeys = [
-      'bangla_1st','bangla_2nd','english_1st','english_2nd',
+      'bangla_1st','bangla_2nd','bangla','bangla_combined','english_1st','english_2nd','english','english_combined',
       'math','science','bgs','ict','religion','agriculture',
       'physics','chemistry','biology','higher_math','history',
       'geography','civics','economics','business_entrepreneurship',
       'business_studies','accounting','finance'
     ];
+    const endKeys = ['agriculture','physics','chemistry','history','geography','business_entrepreneurship','finance'];
     const sortScore = (label) => {
       const key = canonicalSubjectName(label);
-      const idx = orderKeys.indexOf(key);
-      return idx === -1 ? 9999 : idx;
+      const base = orderKeys.indexOf(key);
+      if (base === -1) return 9999;
+      const endIdx = endKeys.indexOf(key);
+      return endIdx !== -1 ? 10000 + endIdx : base;
     };
     const merged = new Map();
-    for (const s of (subjects || [])) {
-      const can = canonicalSubjectName(s);
-      if (can && !merged.has(can)) merged.set(can, labelForCanonical(can));
-    }
-    for (const item of (fallbackSubjects || [])) {
-      const can = item.canonical;
-      const label = item.label;
-      if (can && !merged.has(can)) merged.set(can, label);
-    }
-    if (!merged.size) {
-      for (const s of defaultSubjects) {
+    const allowed = new Set((fallbackSubjects || []).map(item => item.canonical));
+    const schoolAllowed = new Set((schoolSubjects || []).map(item => item.canonical));
+    const addCan = (can, srcItem = null) => {
+      if (can && !merged.has(can)) {
+        const id = srcItem && srcItem.id ? srcItem.id : undefined;
+        const label = srcItem && srcItem.label ? srcItem.label : labelForCanonical(can);
+        merged.set(can, { id, label, canonical: can });
+      }
+    };
+    const expandGeneric = (can) => {
+      const lower = String(can || '').toLowerCase();
+      if (lower === 'bangla' || lower === 'বাংলা' || lower === 'bengali') {
+        const has1 = resultsCanonical.has('bangla_1st');
+        const has2 = resultsCanonical.has('bangla_2nd');
+        if (has1) addCan('bangla_1st');
+        if (has2) addCan('bangla_2nd');
+        if (!has1 && !has2) addCan('bangla');
+        return true;
+      }
+      if (lower === 'english' || lower === 'ইংরেজি' || lower === 'ইংরেজী') {
+        const has1 = resultsCanonical.has('english_1st');
+        const has2 = resultsCanonical.has('english_2nd');
+        if (has1) addCan('english_1st');
+        if (has2) addCan('english_2nd');
+        if (!has1 && !has2) addCan('english');
+        return true;
+      }
+      return false;
+    };
+    if (allowed.size) {
+      for (const item of fallbackSubjects) {
+        const can = item.canonical;
+        if (!can) continue;
+        if (!expandGeneric(can)) addCan(can, item);
+      }
+      for (const item of schoolSubjects || []) {
+        const can = item.canonical;
+        if (!can) continue;
+        if (!expandGeneric(can)) addCan(can, item);
+      }
+      for (const s of (subjects || [])) {
         const can = canonicalSubjectName(s);
-        if (can && !merged.has(can)) merged.set(can, s);
+        if (!expandGeneric(can)) addCan(can);
+      }
+      for (const key of resultsCanonical) {
+        if (!expandGeneric(key)) addCan(key);
+      }
+    } else {
+      for (const s of (subjects || [])) {
+        const can = canonicalSubjectName(s);
+        if (!expandGeneric(can)) addCan(can);
+      }
+      for (const item of schoolSubjects || []) {
+        const can = item.canonical;
+        if (!can) continue;
+        if (!expandGeneric(can)) addCan(can, item);
+      }
+      for (const key of resultsCanonical) {
+        if (!expandGeneric(key)) addCan(key);
+      }
+      if (merged.size === 0) {
+        for (const s of (defaultSubjects || [])) {
+          const can = canonicalSubjectName(s);
+          if (!expandGeneric(can)) addCan(can);
+        }
       }
     }
+    if (isNineTen) {
+      const hasB = merged.has('bangla_1st') || merged.has('bangla_2nd') || resultsCanonical.has('bangla_1st') || resultsCanonical.has('bangla_2nd');
+      if (hasB) {
+        merged.delete('bangla_1st');
+        merged.delete('bangla_2nd');
+        addCan('bangla_combined');
+      }
+      const hasE = merged.has('english_1st') || merged.has('english_2nd') || resultsCanonical.has('english_1st') || resultsCanonical.has('english_2nd');
+      if (hasE) {
+        merged.delete('english_1st');
+        merged.delete('english_2nd');
+        addCan('english_combined');
+      }
+    }
+    // Ensure BGS column always exists (common mandatory subject)
+    if (!merged.has('bgs')) addCan('bgs');
     const arr = Array.from(merged.values());
-    return arr.sort((a, b) => sortScore(a) - sortScore(b));
-  }, [subjects, fallbackSubjects]);
+    return arr.sort((a, b) => sortScore(a.label) - sortScore(b.label));
+  }, [subjects, fallbackSubjects, resultsCanonical, resultsByStudent, schoolSubjects, isNineTen]);
 
   const getStudentResultsMap = (sid) => {
     const sidStr = String(sid);
-    const arr = resultsByStudent.get(sidStr) || [];
+    const arrRaw = resultsByStudent.get(sidStr) || [];
+    const arr = arrRaw;
     const m = new Map();
     for (const r of arr) {
       let nm = normalizeName(r.subject?.name || r.subject_name || '');
@@ -382,7 +679,8 @@ export default function ClassResultsPage() {
       if (!nm || !key) {
         const subjId = typeof r.subject === 'object' ? r.subject?.id : r.subject;
         if (subjId) {
-          const match = (fallbackSubjects || []).find(it => String(it.id) === String(subjId));
+          let match = (fallbackSubjects || []).find(it => String(it.id) === String(subjId));
+          if (!match) match = (schoolSubjects || []).find(it => String(it.id) === String(subjId));
           if (match) {
             nm = match.label;
             key = match.canonical || canonicalSubjectName(match.label) || match.label;
@@ -395,7 +693,13 @@ export default function ClassResultsPage() {
       const pr = parseFloat(r.practical_marks) || 0;
       const total = r.total_obtained != null && r.total_obtained !== '' ? (parseFloat(r.total_obtained) || 0) : (w + mcq + pr);
       const grade = r.grade || '';
+      // Key by canonical and by normalized label
       m.set(key, { total, grade });
+      const rawKey = normalizeName(nm);
+      if (rawKey && rawKey !== key) m.set(rawKey, { total, grade });
+      // Also key by subject id if available
+      const subjId2 = typeof r.subject === 'object' ? r.subject?.id : r.subject;
+      if (subjId2) m.set(`id:${String(subjId2)}`, { total, grade });
     }
     return m;
   };
@@ -405,9 +709,9 @@ export default function ClassResultsPage() {
     for (const s of students || []) {
       const map = getStudentResultsMap(s.id);
       let sum = 0;
-      for (const sub of displaySubjects) {
-        const r = map.get(canonicalSubjectName(sub)) || map.get(normalizeName(sub));
-        if (r && typeof r.total === 'number') sum += r.total;
+      for (const item of displaySubjects) {
+        const r = resolveResult(s.id, item, map);
+        if (r) sum += resultTotal(r);
       }
       m.set(String(s.id), sum);
     }
@@ -415,23 +719,51 @@ export default function ClassResultsPage() {
   }, [students, resultsByStudent, displaySubjects]);
 
   const newRollMap = useMemo(() => {
-    const arr = (students || []).map(s => {
-      const total = totalsMap.get(String(s.id)) || 0;
-      const rollStr = String(s.roll_number || '');
-      const rollNum = parseInt(rollStr.replace(/\D/g, ''), 10);
-      return { id: s.id, total, rollNum: Number.isNaN(rollNum) ? 999999 : rollNum };
-    });
-    arr.sort((a, b) => {
-      if (b.total !== a.total) return b.total - a.total;
-      return a.rollNum - b.rollNum;
-    });
     const m = new Map();
-    let rank = 1;
-    for (const item of arr) {
-      m.set(String(item.id), rank++);
+    const toAsciiDigits = (s) => {
+      return String(s || '')
+        .replace(/[০-৯]/g, d => String('০১২৩৪৫৬৭৮৯'.indexOf(d)))
+        .replace(/[٠-٩]/g, d => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
+    };
+    const rollNumOf = (s) => {
+      const rollStr = String(s.roll_number || '');
+      const ascii = toAsciiDigits(rollStr);
+      const n = parseInt(ascii.replace(/\D/g, ''), 10);
+      return Number.isNaN(n) ? 999999 : n;
+    };
+    const getSecId = (s) => {
+      const sec = s?.section;
+      if (typeof sec === 'object') return sec?.id ?? sec?.section_id ?? null;
+      return s?.section_id ?? null;
+    };
+    if (typeof selectedSection === 'number' && Number.isFinite(selectedSection)) {
+      const list = (students || []).filter(s => String(getSecId(s)) === String(selectedSection));
+      const arr = list.map(s => ({ s, total: totalsMap.get(String(s.id)) || 0, rollNum: rollNumOf(s) }));
+      arr.sort((a, b) => {
+        if (b.total !== a.total) return b.total - a.total;
+        return a.rollNum - b.rollNum;
+      });
+      let rk = 1;
+      for (const it of arr) m.set(String(it.s.id), rk++);
+      return m;
+    }
+    const bySection = new Map();
+    for (const s of students || []) {
+      const secId = getSecId(s) ?? 'none';
+      if (!bySection.has(secId)) bySection.set(secId, []);
+      bySection.get(secId).push(s);
+    }
+    for (const [secId, list] of bySection.entries()) {
+      const arr = list.map(s => ({ s, total: totalsMap.get(String(s.id)) || 0, rollNum: rollNumOf(s) }));
+      arr.sort((a, b) => {
+        if (b.total !== a.total) return b.total - a.total;
+        return a.rollNum - b.rollNum;
+      });
+      let rk = 1;
+      for (const it of arr) m.set(String(it.s.id), rk++);
     }
     return m;
-  }, [students, totalsMap]);
+  }, [students, totalsMap, selectedSection]);
 
 
   const handlePrint = () => {
@@ -476,9 +808,9 @@ export default function ClassResultsPage() {
             <TableRow>
               <TableCell>Roll</TableCell>
               <TableCell>Student</TableCell>
-                  {displaySubjects.map(sub => <TableCell key={sub} align="center">{sub}</TableCell>)}
               <TableCell align="center">প্রাপ্ত মোট নাম্বার</TableCell>
               <TableCell align="center">নতুন রোল</TableCell>
+                  {displaySubjects.map(item => <TableCell key={item.canonical || item.label} align="center">{item.label}</TableCell>)}
             </TableRow>
           </TableHead>
           <TableBody>
@@ -488,13 +820,13 @@ export default function ClassResultsPage() {
                 <TableRow key={stu.id}>
                   <TableCell>{stu.roll_number || 'N/A'}</TableCell>
                   <TableCell>{`${stu.user?.first_name || ''} ${stu.user?.last_name || ''}`.trim() || stu.user?.username || 'N/A'}</TableCell>
-                  {displaySubjects.map(sub => {
-                    const r = map.get(canonicalSubjectName(sub)) || map.get(normalizeName(sub));
-                    const txt = r ? `${r.total}` : '—';
-                    return <TableCell key={sub} align="center">{txt}</TableCell>;
-                  })}
                   <TableCell align="center">{totalsMap.get(String(stu.id)) || 0}</TableCell>
                   <TableCell align="center">{newRollMap.get(String(stu.id)) || ''}</TableCell>
+                  {displaySubjects.map(item => {
+                    const r = resolveResult(stu.id, item, map);
+                    const txt = r ? `${resultTotal(r)}` : '—';
+                    return <TableCell key={item.canonical || item.label} align="center">{txt}</TableCell>;
+                  })}
                 </TableRow>
               );
             })}

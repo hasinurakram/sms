@@ -29,7 +29,7 @@ import {
 import PersonIcon from '@mui/icons-material/Person';
 import NotificationsIcon from '@mui/icons-material/Notifications';
 import CheckIcon from '@mui/icons-material/Check';
-import { isAuthenticated } from '../utils/auth';
+import { isAuthenticated, login } from '../utils/auth';
 import SchoolIcon from '@mui/icons-material/School';
 import GroupIcon from '@mui/icons-material/Group';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
@@ -79,6 +79,11 @@ const RoleDashboard = ({ role: roleProp }) => {
   const [adminStats, setAdminStats] = useState(null);
   const [adminLoading, setAdminLoading] = useState(false);
   const [adminError, setAdminError] = useState(null);
+  // Re-auth state for admin
+  const [reauthOpen, setReauthOpen] = useState(false);
+  const [reauthPassword, setReauthPassword] = useState('');
+  const [reauthLoading, setReauthLoading] = useState(false);
+  const [reauthError, setReauthError] = useState('');
   const [openModal, setOpenModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
   // Committee add dialog state
@@ -317,6 +322,54 @@ const RoleDashboard = ({ role: roleProp }) => {
     } catch (e) {
       console.error('Payment approve error:', e?.response?.data || e.message);
       toast.error('Failed to approve payment');
+    }
+  };
+
+  // Require fresh credentials when opening Admin dashboard
+  useEffect(() => {
+    try {
+      if (role !== 'admin') { setReauthOpen(false); return; }
+      const key = `adminReauth:${id}`;
+      const ts = Number(sessionStorage.getItem(key) || 0);
+      const now = Date.now();
+      const ttlMs = 10 * 60 * 1000; // 10 minutes
+      const fresh = ts && (now - ts) < ttlMs;
+      if (!fresh) {
+        setReauthOpen(true);
+        setReauthError('');
+        setReauthPassword('');
+      }
+    } catch (_) {
+      setReauthOpen(true);
+    }
+  }, [role, id]);
+
+  const handleReauth = async () => {
+    try {
+      setReauthLoading(true);
+      setReauthError('');
+      if (!reauthPassword) {
+        setReauthError('পাসওয়ার্ড দিন');
+        setReauthLoading(false);
+        return;
+      }
+      await api.post('/api/users/password/verify/', { password: reauthPassword });
+      sessionStorage.setItem(`adminReauth:${id}`, String(Date.now()));
+      setReauthOpen(false);
+      toast.success('অ্যাডমিন যাচাইকরণ সম্পন্ন');
+      // Refresh admin data immediately after reauth
+      if (role === 'admin' && id) {
+        setAdminLoading(true);
+        getDashboardStats(id)
+          .then(stats => setAdminStats(stats))
+          .catch(() => setAdminError('Failed to load admin dashboard stats.'))
+          .finally(() => setAdminLoading(false));
+        fetchPendingPayments();
+      }
+    } catch (e) {
+      setReauthError(e?.response?.data?.error || 'পাসওয়ার্ড সঠিক নয়');
+    } finally {
+      setReauthLoading(false);
     }
   };
 
@@ -1083,6 +1136,37 @@ const RoleDashboard = ({ role: roleProp }) => {
       {renderHeader()}
       {renderCards()}
       {renderCharts()}
+
+      {/* Admin Re-Authentication Dialog */}
+      <Dialog open={reauthOpen} disableEscapeKeyDown aria-labelledby="admin-reauth-title" fullWidth maxWidth="xs">
+        <DialogTitle id="admin-reauth-title">অ্যাডমিন যাচাইকরণ</DialogTitle>
+        <DialogContent dividers>
+          <Typography variant="body2" sx={{ mb: 2 }}>
+            অ্যাডমিন ড্যাশবোর্ডে প্রবেশ করতে আপনার পাসওয়ার্ড দিন।
+          </Typography>
+          <Stack spacing={2}>
+            <TextField
+              label="পাসওয়ার্ড"
+              type="password"
+              value={reauthPassword}
+              onChange={(e) => setReauthPassword(e.target.value)}
+              fullWidth
+              autoFocus
+            />
+            {reauthError ? (
+              <Typography variant="body2" color="error">
+                {reauthError}
+              </Typography>
+            ) : null}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => { setReauthOpen(false); navigate(`/school/${id}`); }} disabled={reauthLoading}>বাতিল</Button>
+          <Button variant="contained" onClick={handleReauth} disabled={reauthLoading}>
+            {reauthLoading ? 'যাচাই হচ্ছে...' : 'যাচাই করুন'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Selected Item Details Dialog */}
       <Dialog open={openModal} onClose={handleCloseModal} fullWidth maxWidth="sm">

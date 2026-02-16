@@ -1,7 +1,6 @@
 import React from 'react';
 import { Box, Typography, Avatar, Divider, IconButton, Tooltip } from '@mui/material';
 import PrintIcon from '@mui/icons-material/Print';
-import QRCode from 'qrcode.react';
 import './IDCard.css';
 import api from '../utils/api';
 
@@ -27,6 +26,10 @@ export default function IDCard({ type = 'student', data, school, overridePhone, 
             <title>ID Card - ${data?.user?.username || 'User'}</title>
             <style>
               body { margin: 0; padding: 20px; font-family: Arial, sans-serif; }
+              .id-card-front, .id-card-back { width: 54mm !important; min-height: 86mm !important; height: auto !important; }
+              .id-card { page-break-inside: avoid; break-inside: avoid; margin: 5mm auto; }
+              .id-card-back { padding-bottom: 12mm !important; position: relative; }
+              * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
               @media print {
                 body { margin: 0; padding: 0; }
                 .no-print { display: none !important; }
@@ -75,6 +78,60 @@ export default function IDCard({ type = 'student', data, school, overridePhone, 
     username: user.username,
     timestamp: new Date().toISOString()
   });
+  const currentYear = new Date().getFullYear();
+  const headPhone = overridePhone || school?.headmaster_phone || school?.head_teacher_phone || school?.principal_phone || school?.phone || null;
+  const digitMapBn = {'০':'0','১':'1','২':'2','৩':'3','৪':'4','৫':'5','৬':'6','৭':'7','৮':'8','৯':'9'};
+  const toLatinDigits = (s) => String(s || '').replace(/[০-৯]/g, ch => digitMapBn[ch] || ch);
+  const classWordMap = {'প্রথম':1,'১ম':1,'দ্বিতীয়':2,'দ্বিতীয়':2,'২য়':2,'২য়':2,'তৃতীয়':3,'তৃতীয়':3,'৩য়':3,'৩য়':3,'চতুর্থ':4,'৪র্থ':4,'পঞ্চম':5,'৫ম':5,'ষষ্ঠ':6,'৬ষ্ঠ':6,'সপ্তম':7,'৭ম':7,'অষ্টম':8,'৮ম':8,'নবম':9,'৯ম':9,'দশম':10,'১০ম':10,'one':1,'two':2,'three':3,'four':4,'five':5,'six':6,'seven':7,'eight':8,'nine':9,'ten':10};
+  const romanMap = {'i':1,'ii':2,'iii':3,'iv':4,'v':5,'vi':6,'vii':7,'viii':8,'ix':9,'x':10};
+  const getClassNumber = (nm) => {
+    const n = String(nm || '').toLowerCase();
+    for (const k in classWordMap) { if (n.includes(k)) return classWordMap[k]; }
+    const roman = n.replace(/[^ivx]/g,'');
+    if (roman && romanMap[roman]) return romanMap[roman];
+    const m = toLatinDigits(n).match(/\b(1[0-2]|[1-9])\b/);
+    if (m) return parseInt(m[0],10);
+    return null;
+  };
+  const getSectionCode = (secName) => {
+    if (!secName) return '00';
+    const raw = String(secName).trim();
+    const s = raw.replace(/[()\[\]{}]/g, '').trim();
+    const sl = s.toLowerCase();
+    // Stream mapping: Science=01, Commerce=02, Humanities=03
+    if (sl.includes('বিজ্ঞান') || sl.includes('science')) return '01';
+    if (sl.includes('ব্যবসা') || sl.includes('ব্যবসায়') || sl.includes('ব্যবসায়') || sl.includes('commerce') || sl.includes('business')) return '02';
+    if (sl.includes('মানবিক') || sl.includes('arts') || sl.includes('humanities')) return '03';
+    const bnLetters = 'কখগঘঙচছজঝটঠডঢণতথদধনপফবভমযরলশষসহ';
+    // Only accept single-letter sections; otherwise fallback to 00
+    if (s.length === 1) {
+      const idxBn = bnLetters.indexOf(s[0]);
+      if (idxBn >= 0) return String(idxBn + 1).padStart(2, '0');
+      const up = s.toUpperCase();
+      if (/^[A-Z]$/.test(up)) return String(up.charCodeAt(0) - 64).padStart(2, '0');
+    }
+    // If numeric section like "1", "02"
+    const md = toLatinDigits(s).match(/^\d+$/) ? [s] : null;
+    if (md) return String(parseInt(toLatinDigits(md[0]), 10)).padStart(2, '0');
+    return '00';
+  };
+  const getStudentIdCode = () => {
+    if (!isStudent) return '';
+    const year = String(new Date().getFullYear());
+    const clsNum = getClassNumber(data?.classroom?.name);
+    const cls = clsNum != null ? String(clsNum).padStart(2,'0') : '00';
+    const sec = getSectionCode(data?.section?.name);
+    const rollDigits = (() => {
+      const val = data?.roll_number;
+      if (val === null || val === undefined) return null;
+      const str = toLatinDigits(String(val));
+      const m = str.match(/\d+/);
+      return m ? m[0] : null;
+    })();
+    const roll = rollDigits != null ? String(parseInt(rollDigits,10)).padStart(2,'0') : '00';
+    return `${year}${cls}${sec}${roll}`;
+  };
+  const studentIdCode = getStudentIdCode();
 
   return (
     <Box className="id-card-wrapper" sx={{ position: 'relative' }}>
@@ -106,10 +163,10 @@ export default function IDCard({ type = 'student', data, school, overridePhone, 
         color: 'white',
         position: 'relative',
         boxShadow: '0 8px 16px rgba(0,0,0,0.2)',
-        overflow: 'hidden',
+        overflow: 'visible',
         display: 'flex',
         flexDirection: 'column',
-        minHeight: '420px' // Ensure enough space for all content
+        minHeight: '360px'
       }}>
         {/* Header Section */}
         <Box sx={{ 
@@ -285,6 +342,13 @@ export default function IDCard({ type = 'student', data, school, overridePhone, 
                     Roll No: <Box component="span" sx={{ fontSize: '1rem' }}>{data?.roll_number || 'N/A'}</Box>
                   </Typography>
                   <Typography variant="body2" sx={{ 
+                    fontWeight: 700, 
+                    mb: 0.3,
+                    fontSize: '0.85rem'
+                  }}>
+                    ID: <Box component="span" sx={{ fontSize: '1rem' }}>{studentIdCode || 'N/A'}</Box>
+                  </Typography>
+                  <Typography variant="body2" sx={{ 
                     fontWeight: 700,
                     fontSize: '0.85rem'
                   }}>
@@ -305,41 +369,7 @@ export default function IDCard({ type = 'student', data, school, overridePhone, 
             </Box>
           </Box>
 
-          {/* QR Code Section */}
-          <Box sx={{ 
-            display: 'flex', 
-            flexDirection: 'column', 
-            alignItems: 'center',
-            gap: 0.5,
-            mt: 1,
-            pt: 1
-          }}>
-            <Typography variant="caption" sx={{ 
-              fontSize: '0.65rem', 
-              fontWeight: 700, 
-              opacity: 0.9,
-              letterSpacing: 0.5,
-              color: 'white'
-            }}>
-              SCAN FOR DETAILS
-            </Typography>
-            <Box sx={{ 
-              bgcolor: 'white', 
-              p: 0.8, 
-              borderRadius: 1.5, 
-              boxShadow: '0 4px 8px rgba(0,0,0,0.3)' 
-            }}>
-              <QRCode value={qrData} size={64} level="M" />
-            </Box>
-            <Typography variant="caption" sx={{ 
-              fontSize: '0.6rem', 
-              opacity: 0.9,
-              color: 'white',
-              mt: 0.5
-            }}>
-              Valid: {new Date().getFullYear()} - {new Date().getFullYear() + 1}
-            </Typography>
-          </Box>
+          {/* QR/Validity removed for compact front side */}
         </Box>
       </Box>
 
@@ -348,12 +378,13 @@ export default function IDCard({ type = 'student', data, school, overridePhone, 
         background: 'linear-gradient(160deg, #14b8a6 0%, #84cc16 100%)',
         borderRadius: 2,
         p: 1.5,
+        pb: 3,
         color: 'white',
         position: 'relative',
         boxShadow: '0 8px 16px rgba(0,0,0,0.2)',
         mt: 2
       }}>
-        <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+        <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-start' }}>
           <Box>
             <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 1, fontSize: '0.8rem', letterSpacing: 0.3 }}>
               গুরুত্বপূর্ণ নির্দেশনা
@@ -377,11 +408,14 @@ export default function IDCard({ type = 'student', data, school, overridePhone, 
               জরুরি যোগাযোগ
             </Typography>
             <Typography variant="caption" sx={{ display: 'block', fontSize: '0.65rem' }}>
-              স্কুল অফিস: {overridePhone || school?.phone || 'N/A'}
+              স্কুল: {school?.name || 'N/A'}
+            </Typography>
+            <Typography variant="caption" sx={{ display: 'block', fontSize: '0.65rem' }}>
+              প্রধান শিক্ষক: {headPhone || 'N/A'}
             </Typography>
           </Box>
 
-          <Box sx={{ textAlign: 'center', borderTop: '1px solid rgba(255,255,255,0.3)', pt: 1 }}>
+          <Box sx={{ textAlign: 'center', borderTop: '1px solid rgba(255,255,255,0.3)', pt: 1, mt: 'auto', mb: '18px' }}>
             <Box sx={{ display: 'flex', justifyContent: 'center', mb: 0.5, height: '30px' }}>
               <img
                 src={signatureUrl}
@@ -400,6 +434,11 @@ export default function IDCard({ type = 'student', data, school, overridePhone, 
               {school?.name || 'School Name'}
             </Typography>
           </Box>
+        </Box>
+        <Box sx={{ position: 'absolute', bottom: 16, left: 0, right: 0, textAlign: 'center', pointerEvents: 'none' }}>
+          <Typography variant="caption" sx={{ fontSize: '0.65rem', opacity: 0.95 }}>
+            Valid: জানুয়ারি {currentYear} - ডিসেম্বর {currentYear}
+          </Typography>
         </Box>
       </Box>
       </Box>

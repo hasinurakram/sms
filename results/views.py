@@ -2,6 +2,7 @@ from rest_framework import viewsets, filters, status, pagination
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from users.permissions import AdminOrReadOnly, RolePermission, SubjectResultWritePermission
+from rest_framework.permissions import IsAuthenticated
 from django.http import HttpResponse
 from .utils import _class_group, get_subject_maxima, SECTION_MAXIMA
 from .models import Examination, Result, StudentOverallResult
@@ -19,9 +20,25 @@ class ResultPagination(pagination.PageNumberPagination):
 class ExaminationViewSet(viewsets.ModelViewSet):
     queryset = Examination.objects.select_related('school', 'classroom', 'section').all()
     serializer_class = ExaminationSerializer
-    permission_classes = [RolePermission]
+    permission_classes = [IsAuthenticated, RolePermission]
     filter_backends = [filters.SearchFilter]
     search_fields = ['name']
+    
+    def get_queryset(self):
+        qs = super().get_queryset()
+        school_id = self.request.query_params.get('school')
+        if school_id:
+            qs = qs.filter(school_id=school_id)
+        classroom_id = self.request.query_params.get('classroom')
+        if classroom_id:
+            qs = qs.filter(classroom_id=classroom_id)
+        section_id = self.request.query_params.get('section')
+        if section_id:
+            qs = qs.filter(section_id=section_id)
+        exam_type = self.request.query_params.get('exam_type')
+        if exam_type:
+            qs = qs.filter(exam_type__iexact=exam_type)
+        return qs
     
     @action(detail=True, methods=['post'], permission_classes=[SubjectResultWritePermission])
     def bulk_results(self, request, pk=None):
@@ -32,11 +49,14 @@ class ExaminationViewSet(viewsets.ModelViewSet):
         is_admin = bool(getattr(user, 'is_superuser', False) or getattr(user, 'is_staff', False) or (prof and getattr(prof, 'role', None) in ('admin','super_admin')))
         if not is_admin:
             from academics.models import TeacherAssignment
-            allow_subjects = set(TeacherAssignment.objects.filter(
+            from django.db.models import Q
+            base_assign_qs = TeacherAssignment.objects.filter(
                 teacher=user,
-                classroom_id=examination.classroom_id,
-                section_id=examination.section_id
-            ).values_list('subject_id', flat=True))
+                classroom_id=examination.classroom_id
+            ).filter(
+                Q(section_id=examination.section_id) | Q(section__isnull=True)
+            )
+            allow_subjects = set(base_assign_qs.values_list('subject_id', flat=True))
             incoming = request.data.get('results', [])
             for item in incoming:
                 sid = item.get('subject_id') or item.get('subject')
@@ -249,12 +269,43 @@ class ExaminationViewSet(viewsets.ModelViewSet):
 class ResultViewSet(viewsets.ModelViewSet):
     queryset = Result.objects.select_related('examination', 'student__user', 'subject').all()
     serializer_class = ResultSerializer
-    permission_classes = [SubjectResultWritePermission]
+    permission_classes = [IsAuthenticated, SubjectResultWritePermission]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['student__user__first_name', 'student__user__last_name', 'student__roll_number']
     ordering_fields = ['student', 'subject', 'examination']
     ordering = ['student', 'subject']
     pagination_class = ResultPagination
+    
+    def get_queryset(self):
+        qs = super().get_queryset()
+        # Manual filtering to support frontend queries without requiring django-filters
+        params = self.request.query_params
+        exam_id = params.get('examination') or params.get('examination_id')
+        exam_type = params.get('exam_type')
+        classroom_id = params.get('classroom') or params.get('classroom_id')
+        section_id = params.get('section') or params.get('section_id')
+        student_id = params.get('student') or params.get('student_id')
+        school_id = params.get('school')
+        try:
+            if exam_id:
+                qs = qs.filter(examination_id=exam_id)
+            if exam_type:
+                qs = qs.filter(examination__exam_type__iexact=exam_type)
+            if classroom_id:
+                qs = qs.filter(examination__classroom_id=classroom_id)
+            if section_id:
+                # allow null section filter only when explicitly provided as 'null'
+                if str(section_id).lower() in ('', 'null', 'none'):
+                    qs = qs.filter(examination__section__isnull=True)
+                else:
+                    qs = qs.filter(examination__section_id=section_id)
+            if student_id:
+                qs = qs.filter(student_id=student_id)
+            if school_id:
+                qs = qs.filter(examination__school_id=school_id)
+        except Exception:
+            pass
+        return qs
     
     def get_queryset(self):
         """Filter results by examination and/or student"""
@@ -274,6 +325,14 @@ class ResultViewSet(viewsets.ModelViewSet):
         school_id = self.request.query_params.get('school')
         if school_id:
             qs = qs.filter(examination__school_id=school_id)
+        
+        classroom_id = self.request.query_params.get('classroom')
+        if classroom_id:
+            qs = qs.filter(student__classroom_id=classroom_id)
+        
+        section_id = self.request.query_params.get('section')
+        if section_id:
+            qs = qs.filter(student__section_id=section_id)
         
         return qs
     
@@ -315,7 +374,7 @@ class ResultViewSet(viewsets.ModelViewSet):
 class StudentOverallResultViewSet(viewsets.ModelViewSet):
     queryset = StudentOverallResult.objects.select_related('examination', 'student__user').all()
     serializer_class = StudentOverallResultSerializer
-    permission_classes = [RolePermission]
+    permission_classes = [IsAuthenticated, RolePermission]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['student__user__first_name', 'student__user__last_name']
     ordering_fields = ['cgpa', 'rank', 'percentage']

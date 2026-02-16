@@ -44,19 +44,17 @@ const LoginPage = () => {
       const next = params.get('next');
       const require = (params.get('require') || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
       if (isAuthenticated()) {
+        const lastSchoolId = localStorage.getItem('currentSchoolId');
+        const goHome = () => {
+          if (lastSchoolId) navigate(`/school/${lastSchoolId}`, { replace: true });
+          else navigate('/', { replace: true });
+        };
         if (require.length > 0 && (!role || !require.includes(role))) {
+          goHome();
           return;
         }
-        if (next) {
-          navigate(next, { replace: true });
-        } else {
-          const lastSchoolId = localStorage.getItem('currentSchoolId');
-          if (lastSchoolId) {
-            navigate(`/school/${lastSchoolId}`, { replace: true });
-          } else {
-            navigate('/', { replace: true });
-          }
-        }
+        if (next) navigate(next, { replace: true });
+        else goHome();
       }
     } catch (_) {}
   }, [location.search, role, navigate]);
@@ -95,6 +93,9 @@ const LoginPage = () => {
 
         <button type="submit" style={{ padding: '10px 20px' }}>Login</button>
       </form>
+      <div style={{ marginTop: '10px' }}>
+        <a href="/forgot-password">Forgot Password?</a>
+      </div>
     </div>
   );
 };

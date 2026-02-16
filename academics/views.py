@@ -6,6 +6,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+from django.db import transaction
 
 from schools.models import School
 from .models import ClassRoom, Section, Subject, StudentProfile, TeacherAssignment
@@ -13,6 +14,8 @@ from .serializers import (
     SchoolSerializer, ClassRoomSerializer, SectionSerializer,
     SubjectSerializer, StudentProfileSerializer, TeacherAssignmentSerializer
 )
+
+from results.models import Examination, StudentOverallResult
 
 
 class SchoolListAPI(APIView):
@@ -291,10 +294,19 @@ class SubjectViewSet(viewsets.ModelViewSet):
 class StudentProfileViewSet(viewsets.ModelViewSet):
     queryset = StudentProfile.objects.select_related('user', 'school', 'classroom', 'section', 'guardian').all()
     serializer_class = StudentProfileSerializer
-    permission_classes = [AdminOrReadOnly]
+    permission_classes = [RolePermission]
     filter_backends = [filters.SearchFilter]
     search_fields = ['user__username','user__first_name','user__last_name','roll_number']
     parser_classes = [MultiPartParser, FormParser]
+
+    def create(self, request, *args, **kwargs):
+        try:
+            return super().create(request, *args, **kwargs)
+        except ValidationError as e:
+            return Response(e.detail, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            msg = str(e)
+            return Response({'detail': msg or 'Unable to create student'}, status=status.HTTP_400_BAD_REQUEST)
     
     def get_queryset(self):
         queryset = StudentProfile.objects.select_related('user', 'school', 'classroom', 'section', 'guardian').all()
@@ -427,6 +439,133 @@ class StudentProfileViewSet(viewsets.ModelViewSet):
             writer.writerow([idx, student_name, user.username, classroom, section, sp.roll_number or '', parent_name, parent_username])
         
         return response
+
+    @action(detail=False, methods=['post'])
+    def promote(self, request):
+        """
+        Promote students to next class based on FINAL (annual) examination result.
+        Rules:
+        - Class 8 -> Class 9: put ALL promoted students into a single section ('ক')
+        - Class 10 -> 'S.S.C. পরীক্ষার্থী' class
+        - Others: promote to next class, preserving section name (ক/খ/গ) when available
+        """
+        school_id = request.data.get('school') or request.query_params.get('school')
+        if not school_id:
+            return Response({"detail": "school parameter is required"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            school = School.objects.get(pk=school_id)
+        except School.DoesNotExist:
+            return Response({"detail": "Invalid school id"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Helpers
+        import re
+        bn_map = {'প্রথম':1,'দ্বিতীয়':2,'তৃতীয়':3,'চতুর্থ':4,'পঞ্চম':5,'ষষ্ঠ':6,'সপ্তম':7,'অষ্টম':8,'নবম':9,'দশম':10,'একাদশ':11,'দ্বাদশ':12}
+        def parse_grade(class_name):
+            if not class_name:
+                return None
+            m = re.search(r'(\d+)', class_name)
+            if m:
+                try:
+                    return int(m.group(1))
+                except Exception:
+                    pass
+            for k, v in bn_map.items():
+                if k in class_name:
+                    return v
+            return None
+
+        def get_or_create_section(classroom, name):
+            try:
+                sec = Section.objects.get(classroom=classroom, name=name)
+            except Section.DoesNotExist:
+                sec = Section.objects.create(classroom=classroom, name=name)
+            return sec
+
+        # Build class lookup by grade and also SSC special class
+        classes = list(ClassRoom.objects.filter(school=school))
+        by_grade = {}
+        ssc_class = None
+        for c in classes:
+            g = parse_grade(c.name or '')
+            if g:
+                by_grade.setdefault(g, []).append(c)
+            name_l = (c.name or '').lower()
+            if ('s.s.c' in name_l) or ('ssc' in name_l) or ('এস.এস.সি' in c.name) or ('এসএসসি' in c.name) or ('পরীক্ষার্থী' in c.name):
+                ssc_class = c
+        if ssc_class is None:
+            ssc_class = ClassRoom.objects.create(school=school, name='S.S.C. পরীক্ষার্থী')
+            classes.append(ssc_class)
+
+        # For determinism, when multiple classes match a grade, pick the first by name
+        for g in list(by_grade.keys()):
+            by_grade[g].sort(key=lambda x: x.name or '')
+
+        promoted, skipped_no_exam, skipped_failed = 0, 0, 0
+        with transaction.atomic():
+            students = StudentProfile.objects.filter(school=school).select_related('classroom','section','user')
+            for sp in students:
+                cls = sp.classroom
+                if not cls:
+                    continue
+                grade = parse_grade(cls.name or '')
+                if not grade:
+                    continue
+                # Find latest 'annual' exam for the student's class (match classroom)
+                exam_qs = Examination.objects.filter(
+                    school=school,
+                    exam_type='annual',
+                    classroom=cls
+                ).order_by('-exam_date', '-id')
+                exam = exam_qs.first()
+                if not exam:
+                    skipped_no_exam += 1
+                    continue
+                overall = StudentOverallResult.objects.filter(examination=exam, student=sp).first()
+                if not overall or not overall.is_passed:
+                    skipped_failed += 1
+                    continue
+
+                # Determine target classroom and section
+                target_class = None
+                target_section = None
+                if grade == 10:
+                    target_class = ssc_class
+                    # Preserve section if exists; else create 'ক'
+                    sec_name = (sp.section.name if sp.section else 'ক')
+                    target_section = get_or_create_section(target_class, sec_name)
+                else:
+                    target_grade = grade + 1
+                    options = by_grade.get(target_grade, [])
+                    if not options:
+                        # If next grade class doesn't exist, create a new one
+                        # Name convention: use Bengali names when possible
+                        rev_bn = {v: k for k, v in bn_map.items()}
+                        name = rev_bn.get(target_grade, f"Class {target_grade}")
+                        target_class = ClassRoom.objects.create(school=school, name=name)
+                        by_grade.setdefault(target_grade, []).append(target_class)
+                    else:
+                        target_class = options[0]
+                    if grade == 8:
+                        # All into single section 'ক'
+                        target_section = get_or_create_section(target_class, 'ক')
+                    else:
+                        # Preserve section name if possible
+                        sec_name = sp.section.name if sp.section else 'ক'
+                        target_section = get_or_create_section(target_class, sec_name)
+
+                # Apply promotion
+                sp.classroom = target_class
+                sp.section = target_section
+                sp.save(update_fields=['classroom','section'])
+                promoted += 1
+
+        return Response({
+            "status": "ok",
+            "school": school.id,
+            "promoted": promoted,
+            "skipped_no_exam": skipped_no_exam,
+            "skipped_failed": skipped_failed
+        }, status=status.HTTP_200_OK)
 
 
 class TeacherAssignmentViewSet(viewsets.ModelViewSet):

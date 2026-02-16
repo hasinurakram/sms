@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { isAuthenticated } from '../utils/auth';
-import { Box, CircularProgress, Typography } from '@mui/material';
+import { Box, CircularProgress, Typography, Button } from '@mui/material';
 import { useAuth } from '../context/AuthContext';
 
 const ProtectedRoute = ({ children, allowedRoles }) => {
@@ -9,7 +9,7 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
   const location = useLocation();
   const [isChecking, setIsChecking] = useState(true);
   const { user, loading } = useAuth();
-  const role = ((user && (user.profile?.role || user.role)) || '').toLowerCase();
+  const role = ((user && (user.profile?.role || user.role)) || '').trim().toLowerCase();
 
   useEffect(() => {
     const checkAuth = () => {
@@ -21,10 +21,10 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
       setIsChecking(false);
       if (Array.isArray(allowedRoles) && allowedRoles.length > 0) {
         const hasRole = !!role;
-        const ok = hasRole ? allowedRoles.map(r => String(r).toLowerCase()).includes(role) : true;
+        const isAdminLike = role === 'admin' || role === 'super_admin';
+        const ok = isAdminLike ? true : (hasRole ? allowedRoles.map(r => String(r).toLowerCase()).includes(role) : true);
         if (hasRole && !ok) {
-          const next = encodeURIComponent(location.pathname + location.search);
-          navigate(`/login?next=${next}&require=${allowedRoles.join(',')}`, { replace: true });
+          setIsChecking(false);
           return;
         }
       }
@@ -57,8 +57,26 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
   if (Array.isArray(allowedRoles) && allowedRoles.length > 0) {
     const hasRole = !!role;
     if (hasRole) {
-      const ok = allowedRoles.map(r => String(r).toLowerCase()).includes(role);
-      if (!ok) return null;
+      const isAdminLike = role === 'admin' || role === 'super_admin';
+      const ok = isAdminLike ? true : allowedRoles.map(r => String(r).toLowerCase()).includes(role);
+      if (!ok) {
+        return (
+          <Box display="flex" flexDirection="column" alignItems="center" justifyContent="center" minHeight="60vh">
+            <Typography variant="h6" sx={{ mb: 1 }}>
+              আপনি এই পেজে প্রবেশের অনুমতি পাচ্ছেন না
+            </Typography>
+            <Typography variant="body2" sx={{ mb: 2 }}>
+              প্রয়োজনীয় ভূমিকা: {allowedRoles.join(', ')}
+            </Typography>
+            <Button variant="contained" onClick={() => navigate(-1)} sx={{ mr: 1 }}>
+              ব্যাক
+            </Button>
+            <Button variant="outlined" onClick={() => navigate('/')}>
+              হোম
+            </Button>
+          </Box>
+        );
+      }
     }
   }
 

@@ -15,8 +15,13 @@ const Dashboard = React.lazy(() => import('./pages/Dashboard'));
 const RoleDashboard = React.lazy(() => import('./pages/RoleDashboard'));
 const RoleDetail = React.lazy(() => import('./pages/RoleDetail'));
 const LoginPage = React.lazy(() => import('./pages/LoginPage'));
+const SignupPage = React.lazy(() => import('./pages/SignupPage'));
+const ForgotPasswordPage = React.lazy(() => import('./pages/ForgotPasswordPage'));
+const ResetPasswordPage = React.lazy(() => import('./pages/ResetPasswordPage'));
+const ChangePasswordPage = React.lazy(() => import('./pages/ChangePasswordPage'));
 const TeachersPage = React.lazy(() => import('./pages/TeachersPage'));
 const AddTeacherPage = React.lazy(() => import('./pages/AddTeacherPage'));
+const CredentialsPage = React.lazy(() => import('./pages/CredentialsPage'));
 const TeacherCardsPage = React.lazy(() => import('./pages/TeacherCardsPage'));
 const SoftwareAssistant = React.lazy(() => import('./pages/SoftwareAssistant.jsx'));
 const StudentsPage = React.lazy(() => import('./pages/StudentsPage'));
@@ -112,6 +117,7 @@ function App() {
           <Route path="profile" element={<ProfilePage />} />
           <Route path="admin" element={<RoleDashboard role="admin" />} />
           <Route path="parent" element={<ParentsPage />} />
+          <Route path="credentials" element={<ProtectedRoute allowedRoles={['admin']}><CredentialsPage /></ProtectedRoute>} />
           <Route path="parent/add" element={<AddParentPage />} />
           <Route path="parent/:parentId/dashboard" element={<ParentDashboard />} />
           <Route path="student/:studentId/dashboard" element={<StudentDashboard />} />
@@ -122,6 +128,10 @@ function App() {
 
         {/* লগইন */}
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/signup" element={<SignupPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password/:uid/:token" element={<ResetPasswordPage />} />
+        <Route path="/change-password" element={<ChangePasswordPage />} />
               </Routes>
             </Suspense>
               </AcademicsProvider>
