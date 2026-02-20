@@ -26,6 +26,7 @@ export default function ClassResultsPage() {
     { value: 'final', label: 'ফাইনাল' }
   ]);
   const [selectedExamType, setSelectedExamType] = useState('annual');
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [students, setStudents] = useState([]);
   const [examinations, setExaminations] = useState([]);
   const [resultsByStudent, setResultsByStudent] = useState(new Map());
@@ -35,6 +36,7 @@ export default function ClassResultsPage() {
   const [overallRanks, setOverallRanks] = useState(new Map());
   const [overallTotals, setOverallTotals] = useState(new Map());
   const [activeExamId, setActiveExamId] = useState(null);
+  const [noYearMessage, setNoYearMessage] = useState('');
 
   useEffect(() => {
     if (!id) return;
@@ -94,7 +96,7 @@ export default function ClassResultsPage() {
       return;
     }
     setLoading(true);
-    scopedGet('/api/results/examinations/', id, { classroom: selectedClass, page_size: 2000 }, { timeout: 30000 })
+    scopedGet('/api/results/examinations/', id, { classroom: selectedClass, page_size: 2000, year: selectedYear }, { timeout: 30000 })
       .then(async res => {
         const all = Array.isArray(res.data) ? res.data : (res.data?.results || []);
         const filterType = normalizeExamType(selectedExamType || 'all');
@@ -110,7 +112,7 @@ export default function ClassResultsPage() {
           const maxPages = 20;
           for (; page <= maxPages; page++) {
             try {
-              const params = { classroom: selectedClass, page, page_size: pageSize };
+              const params = { classroom: selectedClass, page, page_size: pageSize, year: selectedYear };
               if (typeof selectedSection === 'number' && Number.isFinite(selectedSection)) params.section = selectedSection;
               const res = await scopedGet('/api/results/results/', id, params, { timeout: 15000 });
               const data = res.data;
@@ -198,7 +200,7 @@ export default function ClassResultsPage() {
           const maxPages = 20;
           for (; page <= maxPages; page++) {
             try {
-              const params = { student: stuId, page, page_size: pageSize };
+              const params = { student: stuId, page, page_size: pageSize, year: selectedYear };
               const res = await scopedGet('/api/results/results/', id, params, { timeout: 15000 });
               const data = res.data;
               const arr = Array.isArray(data) ? data : (data?.results || []);
@@ -223,6 +225,11 @@ export default function ClassResultsPage() {
           }
         }
         setResultsByStudent(byStudent);
+        if (byStudent.size === 0) {
+          setNoYearMessage(`দুঃখিত ${selectedYear} সালের রেজাল্ট এই স্কুলে এখনও ইনপুট দেওয়া হয়নি, দয়া করে অত্র বিদ্যালয়ের প্রধান শিক্ষক অথবা এ্যাডমিনের সাথে যোগাযোগ করুন। ধন্যবাদ।`);
+        } else {
+          setNoYearMessage('');
+        }
         // Load overall ranks/totals for the examination that matches loaded results best
         try {
           const examCounts = new Map();
@@ -293,9 +300,10 @@ export default function ClassResultsPage() {
         setResultsByStudent(new Map());
         setOverallRanks(new Map());
         setOverallTotals(new Map());
+        setNoYearMessage(`দুঃখিত ${selectedYear} সালের রেজাল্ট এই স্কুলে এখনও ইনপুট দেওয়া হয়নি, দয়া করে অত্র বিদ্যালয়ের প্রধান শিক্ষক অথবা এ্যাডমিনের সাথে যোগাযোগ করুন। ধন্যবাদ।`);
       })
       .finally(() => setLoading(false));
-  }, [id, selectedClass, selectedExamType, selectedSection, students]);
+  }, [id, selectedClass, selectedExamType, selectedSection, students, selectedYear]);
 
   const subjectOrder = [
     'বাংলা','Bangla','Bengali',
@@ -796,6 +804,15 @@ export default function ClassResultsPage() {
           <TextField select label="পরীক্ষার ধরন" value={selectedExamType} onChange={(e) => setSelectedExamType(e.target.value)} sx={{ minWidth: 200 }} disabled={!selectedClass}>
             {examTypes.map(t => <MenuItem key={t.value} value={t.value}>{t.label}</MenuItem>)}
           </TextField>
+          <TextField
+            type="number"
+            label="সাল"
+            value={selectedYear}
+            onChange={(e) => setSelectedYear(parseInt(e.target.value || String(new Date().getFullYear()), 10) || new Date().getFullYear())}
+            sx={{ minWidth: 140 }}
+            disabled={!selectedClass}
+            inputProps={{ min: 2000, max: 2100 }}
+          />
           <Button variant="contained" onClick={() => setSelectedExamType('all')} disabled={!selectedClass}>
             সব দেখাও
           </Button>
@@ -836,8 +853,8 @@ export default function ClassResultsPage() {
       {loading && (
         <Typography variant="body2" sx={{ mt: 2 }}>লোড হচ্ছে...</Typography>
       )}
-      {!loading && selectedClass && subjects.length === 0 && (
-        <Typography variant="body2" sx={{ mt: 2 }}>এই ক্লাসের জন্য কোনো বিষয়ভিত্তিক রেজাল্ট পাওয়া যায়নি।</Typography>
+      {!loading && selectedClass && noYearMessage && (
+        <Typography variant="body2" sx={{ mt: 2, color: 'error.main' }}>{noYearMessage}</Typography>
       )}
     </Box>
   );

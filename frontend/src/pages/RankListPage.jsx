@@ -49,6 +49,7 @@ const RankListPage = () => {
   const [classrooms, setClassrooms] = useState([]);
   const [sections, setSections] = useState([]);
   const [selectedExamType, setSelectedExamType] = useState('');
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [selectedClass, setSelectedClass] = useState('');
   const [selectedSection, setSelectedSection] = useState('');
   const [rankings, setRankings] = useState([]);
@@ -93,7 +94,7 @@ const RankListPage = () => {
     setRankings([]);
     setResultsByStudent(new Map());
     // Prefer examination-level overall for exact totals/ranks
-    scopedGet('/api/results/examinations/', schoolId, { classroom: selectedClass, page_size: 1000 })
+    scopedGet('/api/results/examinations/', schoolId, { classroom: selectedClass, page_size: 1000, year: selectedYear })
       .then(async exRes => {
         const allExams = Array.isArray(exRes.data) ? exRes.data : (exRes.data?.results || []);
         const matching = (allExams || []).filter(e => String(e.exam_type || '') === String(selectedExamType));
@@ -164,6 +165,7 @@ const RankListPage = () => {
             classroom: selectedClass,
             section: selectedSection,
             school: schoolId || undefined,
+            year: selectedYear,
             page_size: 1000
           }
         })
@@ -171,7 +173,7 @@ const RankListPage = () => {
             const data = Array.isArray(res.data) ? res.data : (res.data?.results || res.data?.data || []);
             const list = Array.isArray(data) ? data : [];
             if (!list.length) {
-              setErrorMessage('কোন ডাটা পাওয়া যায়নি');
+              setErrorMessage(`দুঃখিত ${selectedYear} সালের রেজাল্ট অত্র বিদ্যালয়ে এখনও ইনপুট দেওয়া হয়নি, দয়া করে এ্যাডমিন অথবা অত্র বিদ্যালয়ের প্রধান শিক্ষকের সাথে যোগাযোগ করুন। ধন্যবাদ।`);
               setRankings([]);
               return;
             }
@@ -189,7 +191,7 @@ const RankListPage = () => {
                 const collected = [];
                 for (; page <= maxPages; page++) {
                   try {
-                    const params = { student: sid, exam_type: selectedExamType, classroom: selectedClass, section: selectedSection, page, page_size: pageSize };
+                    const params = { student: sid, exam_type: selectedExamType, classroom: selectedClass, section: selectedSection, year: selectedYear, page, page_size: pageSize };
                     const r = await scopedGet('/api/results/results/', schoolId, params, { timeout: 15000 });
                     const arr = Array.isArray(r.data) ? r.data : (r.data?.results || []);
                     if (!arr.length) break;
@@ -648,6 +650,22 @@ const RankListPage = () => {
                   <MenuItem key={cls.id} value={String(cls.id)}>
                     {cls.name || cls.class_name || cls.title || cls.className || `Class ${cls.id}`}
                   </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid item xs={12} md={2}>
+            <FormControl fullWidth>
+              <InputLabel id="ranklist-year-label">Year</InputLabel>
+              <Select
+                labelId="ranklist-year-label"
+                id="ranklist-year"
+                value={String(selectedYear)}
+                label="Year"
+                onChange={(e) => setSelectedYear(parseInt(e.target.value, 10) || new Date().getFullYear())}
+              >
+                {Array.from({ length: 12 }, (_, i) => String(new Date().getFullYear() - i)).map(y => (
+                  <MenuItem key={y} value={y}>{y}</MenuItem>
                 ))}
               </Select>
             </FormControl>

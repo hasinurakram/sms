@@ -580,24 +580,16 @@ const Certificate = ({ data, school, session }) => {
       </Box>
 
       {/* Certificate Footer */}
-      <Box className="certificate-footer" sx={{ display: 'flex', justifyContent: 'space-between', mt: 16, position: 'relative', zIndex: 1 }}>
-        <Box className="footer-section" sx={{ textAlign: 'center' }}>
-          <Box className="seal-container" sx={{ mb: 1 }}>
-            <img 
-              className="seal-stamp"
-              src={(school?.id && String(school.id) === '19') ? `${(api?.defaults?.baseURL || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/+$/,'')}/media/BHS/seal.png` : '/images/seals/school-seal.png'} 
-              alt="School Seal"
-              style={{ 
-                width: '80px',
-                height: '80px',
-                objectFit: 'contain',
-                opacity: 0.8
-              }}
-              onError={(e) => {
-                e.target.style.display = 'none';
-              }}
-            />
-          </Box>
+      <Box className="certificate-footer" sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', mt: 16, position: 'relative', zIndex: 1 }}>
+        <Box className="footer-section" sx={{ textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center', minHeight: 180, mt: 12 }}>
+          <Typography variant="body2" sx={{ 
+            fontFamily: 'Georgia, serif',
+            fontSize: '0.95rem',
+            color: '#2c3e50',
+            mb: 1
+          }}>
+            {new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
+          </Typography>
           <Typography className="footer-text" variant="body2" sx={{ 
             fontFamily: 'Georgia, serif',
             fontSize: '0.9rem',
@@ -609,23 +601,7 @@ const Certificate = ({ data, school, session }) => {
           </Typography>
         </Box>
         
-        <Box className="footer-section" sx={{ textAlign: 'center' }}>
-          <Box className="seal-container" sx={{ mb: 1 }}>
-            <img 
-              className="seal-stamp"
-              src={(school?.id && String(school.id) === '19') ? `${(api?.defaults?.baseURL || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/+$/,'')}/media/BHS/seal.png` : '/images/seals/school-seal.png'} 
-              alt="School Seal"
-              style={{ 
-                width: '80px',
-                height: '80px',
-                objectFit: 'contain',
-                opacity: 0.8
-              }}
-              onError={(e) => {
-                e.target.style.display = 'none';
-              }}
-            />
-          </Box>
+        <Box className="footer-section" sx={{ textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center', minHeight: 180, mt: 12 }}>
           <Box className="footer-line" sx={{ 
             borderBottom: '2px solid #2c3e50',
             width: 180,
@@ -643,16 +619,37 @@ const Certificate = ({ data, school, session }) => {
           </Typography>
         </Box>
         
-        <Box className="footer-section" sx={{ textAlign: 'center' }}>
-          <Box sx={{ mb: 1 }}>
+        <Box className="footer-section" sx={{ textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center', minHeight: 180, position: 'relative' }}>
+          <Box sx={{ position: 'relative', width: 180, height: 90, mb: 1 }}>
+            {school?.id && (String(school.id) === '16' || String(school.id) === '19') && (
+              <img
+                className="seal-stamp"
+                src={`${(api?.defaults?.baseURL || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/+$/,'')}/media/BHS/seal.png`}
+                alt="School Seal"
+                style={{
+                  position: 'absolute',
+                  left: '50%',
+                  top: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  width: '90px',
+                  height: '90px',
+                  objectFit: 'contain',
+                  opacity: 0.2,
+                  zIndex: 1
+                }}
+                onError={(e) => { e.target.style.display = 'none'; }}
+              />
+            )}
             <img 
               className="signature-img"
               src={(school?.id && String(school.id) === '19') ? `${(api?.defaults?.baseURL || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/+$/,'')}/media/BHS/signature.png` : '/images/signatures/signature.png'} 
               alt="Head Master's Signature"
               style={{ 
+                position: 'relative',
                 width: '150px',
                 height: '80px',
-                objectFit: 'contain'
+                objectFit: 'contain',
+                zIndex: 2
               }}
             />
           </Box>
@@ -695,7 +692,11 @@ export default function CertificateGenerator() {
   const navigate = useNavigate();
   const toast = useToast();
   const [rollNumber, setRollNumber] = useState('');
+  const [studentName, setStudentName] = useState('');
+  const [guardianName, setGuardianName] = useState('');
   const [session, setSession] = useState('');
+  const [guardianSuggestions, setGuardianSuggestions] = useState([]);
+  const [guardianSuggestLoading, setGuardianSuggestLoading] = useState(false);
   const [classFilter, setClassFilter] = useState('');
   const [sectionFilter, setSectionFilter] = useState('');
   const [loading, setLoading] = useState(false);
@@ -881,8 +882,8 @@ export default function CertificateGenerator() {
   }, [classFilter]);
 
   const handleGenerateCertificate = async () => {
-    if (!rollNumber || !session) {
-      setError('Please enter both Roll Number and Session');
+    if (!rollNumber && !(studentName && guardianName)) {
+      setError('Enter Roll or both Student and Guardian names');
       return;
     }
 
@@ -893,20 +894,87 @@ export default function CertificateGenerator() {
 
     try {
       // Build URL with filters
-      let url = `/api/academics/students/?school=${schoolId}&roll_number=${rollNumber}`;
+      let url = `/api/academics/students/?school=${schoolId}`;
+      if (rollNumber) url += `&roll_number=${encodeURIComponent(rollNumber)}`;
+      const searchTerms = [];
+      if (studentName) searchTerms.push(studentName);
+      if (guardianName) searchTerms.push(guardianName);
+      if (searchTerms.length) url += `&search=${encodeURIComponent(searchTerms.join(' '))}`;
       
       if (classFilter) url += `&classroom=${classFilter}`;
       if (sectionFilter) url += `&section=${sectionFilter}`;
 
       const res = await api.get(url);
-      const data = Array.isArray(res.data) ? res.data : res.data.results || [];
+      let data = Array.isArray(res.data) ? res.data : res.data.results || [];
+      if (!Array.isArray(data)) data = [];
       
-      if (data.length === 0) {
+      let candidates = [...data];
+      if (rollNumber) {
+        const inputRollRaw = String(rollNumber || '').trim();
+        const toAsciiDigits = s => String(s || '').replace(/[০-৯]/g, d => '০১২৩৪৫৬৭৮৯'.indexOf(d));
+        const norm = s => toAsciiDigits(String(s || '').trim());
+        const numOnly = v => (String(v || '').match(/\d+/) || [''])[0];
+        let exact = candidates.filter(s => norm(s.roll_number) === norm(inputRollRaw));
+        if (exact.length === 0) {
+          exact = candidates.filter(s => numOnly(norm(s.roll_number)) === numOnly(norm(inputRollRaw)));
+        }
+        candidates = exact;
+      } else {
+        const norm = (v) => String(v || '').trim().toLowerCase();
+        const targetStudent = norm(studentName);
+        const targetGuardian = norm(guardianName);
+        const fullName = (s) => norm(`${s?.user?.first_name || ''} ${s?.user?.last_name || ''}`.trim());
+        const guardianFields = (s) => [
+          norm(s?.guardian_name),
+          norm(`${s?.guardian?.first_name || ''} ${s?.guardian?.last_name || ''}`.trim())
+        ];
+        const score = (s) => {
+          const sn = fullName(s);
+          const gs = guardianFields(s);
+          const studentExact = sn === targetStudent;
+          const guardianExact = gs.includes(targetGuardian);
+          const studentPartial = !!targetStudent && sn.includes(targetStudent);
+          const guardianPartial = !!targetGuardian && gs.some(g => g && g.includes(targetGuardian));
+          let sc = 0;
+          if (studentExact) sc += 3;
+          if (guardianExact) sc += 3;
+          if (studentPartial) sc += 1;
+          if (guardianPartial) sc += 1;
+          return sc;
+        };
+        candidates = candidates
+          .map(s => ({ s, sc: score(s) }))
+          .filter(x => x.sc > 0)
+          .sort((a, b) => b.sc - a.sc)
+          .map(x => x.s);
+      }
+      
+      // If classroom/section filters are provided, enforce them client-side too
+      if (classFilter) {
+        const clsIdStr = String(classFilter);
+        candidates = candidates.filter(s => String(s.classroom?.id ?? s.classroom) === clsIdStr);
+      }
+      if (sectionFilter) {
+        const secIdStr = String(sectionFilter);
+        candidates = candidates.filter(s => String(s.section?.id ?? s.section) === secIdStr);
+      }
+      
+      if (candidates.length === 0) {
         setError('No student found with these criteria');
         return;
       }
-
-      const studentData = data[0];
+      
+      const studentData = (rollNumber 
+        ? [...candidates].sort((a, b) => {
+            const ar = parseInt(String(a.roll_number || '').replace(/\D/g, ''), 10);
+            const br = parseInt(String(b.roll_number || '').replace(/\D/g, ''), 10);
+            const aNum = Number.isNaN(ar) ? Infinity : ar;
+            const bNum = Number.isNaN(br) ? Infinity : br;
+            if (aNum !== bNum) return aNum - bNum;
+            return (parseInt(a.id, 10) || 0) - (parseInt(b.id, 10) || 0);
+          })[0]
+        : candidates[0]
+      );
       
       // Debug logging for student data
       console.log('Student data received:', studentData);
@@ -1084,6 +1152,79 @@ export default function CertificateGenerator() {
           
           <Grid item xs={12} md={3}>
             <TextField
+              label="Student Name"
+              value={studentName}
+              onChange={(e) => setStudentName(e.target.value)}
+              placeholder="Enter student full name"
+              fullWidth
+              onKeyPress={(e) => e.key === 'Enter' && handleGenerateCertificate()}
+              helperText="Generate by student name"
+            />
+          </Grid>
+          
+          <Grid item xs={12} md={3}>
+            <TextField
+              label="Guardian Name"
+              value={guardianName}
+              onChange={(e) => setGuardianName(e.target.value)}
+              placeholder="Enter guardian name"
+              fullWidth
+              onKeyPress={(e) => e.key === 'Enter' && handleGenerateCertificate()}
+              helperText="Generate by guardian name"
+              onFocus={async () => {
+                if (!studentName || !schoolId) return;
+                try {
+                  setGuardianSuggestLoading(true);
+                  let url = `/api/academics/students/?school=${schoolId}&search=${encodeURIComponent(studentName)}`;
+                  if (classFilter) url += `&classroom=${classFilter}`;
+                  if (sectionFilter) url += `&section=${sectionFilter}`;
+                  const res = await api.get(url);
+                  let arr = Array.isArray(res.data) ? res.data : res.data.results || [];
+                  if (!Array.isArray(arr)) arr = [];
+                  const toName = (s) => {
+                    const a = String(s?.guardian_name || '').trim();
+                    const b = `${s?.guardian?.first_name || ''} ${s?.guardian?.last_name || ''}`.trim();
+                    const c = a || b;
+                    return c;
+                  };
+                  const set = new Set();
+                  arr.forEach(s => {
+                    const n = toName(s);
+                    if (n) set.add(n);
+                  });
+                  setGuardianSuggestions(Array.from(set));
+                } catch (_) {
+                  setGuardianSuggestions([]);
+                } finally {
+                  setGuardianSuggestLoading(false);
+                }
+              }}
+            />
+            {!!guardianSuggestions.length && (
+              <Paper sx={{ mt: 1, p: 1 }}>
+                <Stack spacing={1}>
+                  {guardianSuggestions.slice(0, 8).map((name) => (
+                    <Button
+                      key={name}
+                      variant="text"
+                      onClick={() => setGuardianName(name)}
+                      sx={{ justifyContent: 'flex-start' }}
+                    >
+                      {name}
+                    </Button>
+                  ))}
+                  {guardianSuggestLoading && (
+                    <Box sx={{ display: 'flex', justifyContent: 'center', p: 1 }}>
+                      <CircularProgress size={20} />
+                    </Box>
+                  )}
+                </Stack>
+              </Paper>
+            )}
+          </Grid>
+          
+          <Grid item xs={12} md={3}>
+            <TextField
               label="Session"
               value={session}
               onChange={(e) => setSession(e.target.value)}
@@ -1187,7 +1328,7 @@ export default function CertificateGenerator() {
             <Certificate 
               data={student} 
               school={school} 
-              session={session}
+              session={session || String(new Date().getFullYear())}
             />
           </Box>
         </Box>

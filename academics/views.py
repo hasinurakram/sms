@@ -2,7 +2,7 @@ from rest_framework import viewsets, filters
 from rest_framework.exceptions import ValidationError
 from users.permissions import AdminOrReadOnly, RolePermission
 from rest_framework.decorators import action
-from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -16,6 +16,7 @@ from .serializers import (
 )
 
 from results.models import Examination, StudentOverallResult
+from django.db.models import Q, Count
 
 
 class SchoolListAPI(APIView):
@@ -296,8 +297,16 @@ class StudentProfileViewSet(viewsets.ModelViewSet):
     serializer_class = StudentProfileSerializer
     permission_classes = [RolePermission]
     filter_backends = [filters.SearchFilter]
-    search_fields = ['user__username','user__first_name','user__last_name','roll_number']
-    parser_classes = [MultiPartParser, FormParser]
+    search_fields = [
+        'user__username',
+        'user__first_name',
+        'user__last_name',
+        'roll_number',
+        'guardian_name',
+        'guardian__first_name',
+        'guardian__last_name'
+    ]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def create(self, request, *args, **kwargs):
         try:
@@ -440,6 +449,26 @@ class StudentProfileViewSet(viewsets.ModelViewSet):
         
         return response
 
+    @action(detail=False, methods=['post'], permission_classes=[AdminOrReadOnly])
+    def purge_no_roll(self, request):
+        """
+        Delete all students who have no roll number across all schools,
+        including their linked user and all related records (results, attendance, fees).
+        Optional: pass ?school=<id> to limit to a single school.
+        """
+        school_id = request.data.get('school') or request.query_params.get('school')
+        base_qs = StudentProfile.objects.all()
+        if school_id:
+            base_qs = base_qs.filter(school_id=school_id)
+        targets = base_qs.filter(Q(roll_number__isnull=True) | Q(roll_number__exact=''))
+        total = targets.count()
+        if total == 0:
+            return Response({"status": "ok", "deleted": 0, "by_school": []}, status=status.HTTP_200_OK)
+        stats = list(targets.values('school_id').annotate(deleted=Count('id')).order_by('school_id'))
+        with transaction.atomic():
+            targets.delete()
+        return Response({"status": "ok", "deleted": total, "by_school": stats}, status=status.HTTP_200_OK)
+
     @action(detail=False, methods=['post'])
     def promote(self, request):
         """
@@ -513,8 +542,12 @@ class StudentProfileViewSet(viewsets.ModelViewSet):
                 # Find latest 'annual' exam for the student's class (match classroom)
                 exam_qs = Examination.objects.filter(
                     school=school,
-                    exam_type='annual',
                     classroom=cls
+                ).filter(
+                    Q(exam_type='annual') |
+                    Q(name__icontains='final') |
+                    Q(name__icontains='বার্ষিক') |
+                    Q(name__icontains='ফাইনাল')
                 ).order_by('-exam_date', '-id')
                 exam = exam_qs.first()
                 if not exam:
@@ -545,13 +578,10 @@ class StudentProfileViewSet(viewsets.ModelViewSet):
                         by_grade.setdefault(target_grade, []).append(target_class)
                     else:
                         target_class = options[0]
-                    if grade == 8:
-                        # All into single section 'ক'
-                        target_section = get_or_create_section(target_class, 'ক')
-                    else:
-                        # Preserve section name if possible
-                        sec_name = sp.section.name if sp.section else 'ক'
-                        target_section = get_or_create_section(target_class, sec_name)
+                    # Preserve section name if possible for ALL grades
+                    # Create target section with same name when needed
+                    sec_name = sp.section.name if sp.section else 'ক'
+                    target_section = get_or_create_section(target_class, sec_name)
 
                 # Apply promotion
                 sp.classroom = target_class
@@ -566,6 +596,241 @@ class StudentProfileViewSet(viewsets.ModelViewSet):
             "skipped_no_exam": skipped_no_exam,
             "skipped_failed": skipped_failed
         }, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['post'])
+    def promote_class(self, request):
+        """
+        Promote PASSING students from one class to another based on Annual/Final exam.
+        Params:
+        - school (required)
+        - from_class_id (required)
+        - to_class_id (required)
+        - section_mode: 'preserve' | 'single' (default: 'preserve')
+        - single_section_name: when section_mode == 'single', default 'ক'
+        - Optional: exam_id (override detection)
+        Behavior (Result-based):
+        - Detect latest Annual/Final exam for from_class (or use exam_id)
+        - Move only students who PASSED (overall) to to_class_id
+        - If section_mode='preserve', creates matching section names in target as needed
+        - If section_mode='single', puts everyone into the given single section
+        """
+        school_id = request.data.get('school') or request.query_params.get('school')
+        from_class_id = request.data.get('from_class_id')
+        to_class_id = request.data.get('to_class_id')
+        section_mode = (request.data.get('section_mode') or 'preserve').strip()
+        single_section_name = (request.data.get('single_section_name') or 'ক').strip() or 'ক'
+        explicit_exam_id = request.data.get('exam_id')
+        if not school_id or not from_class_id or not to_class_id:
+            return Response({"detail": "school, from_class_id and to_class_id are required"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            school = School.objects.get(pk=school_id)
+        except School.DoesNotExist:
+            return Response({"detail": "Invalid school id"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            from_class = ClassRoom.objects.get(pk=from_class_id, school=school)
+            to_class = ClassRoom.objects.get(pk=to_class_id, school=school)
+        except ClassRoom.DoesNotExist:
+            return Response({"detail": "Invalid from_class_id or to_class_id for this school"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Determine the exam: explicit or auto-detected "final/annual"
+        exam = None
+        if explicit_exam_id:
+            exam = Examination.objects.filter(pk=explicit_exam_id, school=school, classroom=from_class).first()
+        if not exam:
+            exam = Examination.objects.filter(
+                school=school,
+                classroom=from_class
+            ).filter(
+                Q(exam_type='annual') |
+                Q(name__icontains='final') |
+                Q(name__icontains='বার্ষিক') |
+                Q(name__icontains='ফাইনাল')
+            ).order_by('-exam_date', '-id').first()
+
+        # If no exam found, create snapshot with 'retained' and do not move anyone
+        if not exam:
+            from django.utils import timezone
+            total_candidates = StudentProfile.objects.filter(school=school, classroom=from_class).count()
+            year = str(timezone.now().year)
+            students = StudentProfile.objects.filter(school=school, classroom=from_class).select_related('section')
+            for sp in students:
+                try:
+                    from academics.models import StudentYearRecord
+                    StudentYearRecord.objects.update_or_create(
+                        student=sp,
+                        academic_year=year,
+                        defaults={
+                            'school_id': int(school.id),
+                            'classroom': sp.classroom,
+                            'section': sp.section,
+                            'roll_number': sp.roll_number,
+                            'status': 'retained',
+                            'promoted_to_classroom': None,
+                            'examination_id': None,
+                            'result_cgpa': None,
+                            'result_grade': None,
+                            'percentage': None,
+                            'rank': None,
+                            'promoted_on': None,
+                            'meta': {'note': 'No annual exam found'}
+                        }
+                    )
+                except Exception:
+                    pass
+            return Response({
+                "status": "ok",
+                "school": school.id,
+                "from_class": from_class.id,
+                "to_class": to_class.id,
+                "exam_found": False,
+                "moved": 0,
+                "total_candidates": total_candidates,
+                "skipped_no_exam": total_candidates
+            }, status=status.HTTP_200_OK)
+
+        # Passed students for this exam
+        passer_ids = set(StudentOverallResult.objects.filter(
+            examination=exam,
+            is_passed=True
+        ).values_list('student_id', flat=True))
+
+        def get_or_create_section(classroom, name):
+            try:
+                return Section.objects.get(classroom=classroom, name=name)
+            except Section.DoesNotExist:
+                return Section.objects.create(classroom=classroom, name=name)
+
+        from django.utils import timezone
+        total_candidates = StudentProfile.objects.filter(school=school, classroom=from_class).count()
+        moved = 0
+        with transaction.atomic():
+            # Snapshot all candidates with result details
+            all_candidates = StudentProfile.objects.filter(
+                school=school,
+                classroom=from_class
+            ).select_related('section')
+            year = str(exam.exam_date.year) if exam.exam_date else str(timezone.now().year)
+            for sp in all_candidates:
+                overall = StudentOverallResult.objects.filter(examination=exam, student=sp).first()
+                try:
+                    from academics.models import StudentYearRecord
+                    StudentYearRecord.objects.update_or_create(
+                        student=sp,
+                        academic_year=year,
+                        defaults={
+                            'school_id': int(school.id),
+                            'classroom': sp.classroom,
+                            'section': sp.section,
+                            'roll_number': sp.roll_number,
+                            'status': 'promoted' if (overall and overall.is_passed) else ('not_passed' if overall else 'retained'),
+                            'promoted_to_classroom': to_class if (overall and overall.is_passed) else None,
+                            'examination_id': exam.id,
+                            'result_cgpa': getattr(overall, 'cgpa', None),
+                            'result_grade': getattr(overall, 'grade', None),
+                            'percentage': getattr(overall, 'percentage', None),
+                            'rank': getattr(overall, 'rank', None),
+                            'promoted_on': timezone.now() if (overall and overall.is_passed) else None,
+                            'meta': {'exam_name': exam.name, 'exam_type': exam.exam_type}
+                        }
+                    )
+                except Exception:
+                    pass
+            # Move only passers
+            students = all_candidates.filter(id__in=list(passer_ids))
+            if section_mode == 'single':
+                target_section = get_or_create_section(to_class, single_section_name)
+                moved = students.update(classroom=to_class, section=target_section)
+            else:
+                # preserve sections
+                for sp in students:
+                    sec_name = sp.section.name if sp.section else 'ক'
+                    tgt_sec = get_or_create_section(to_class, sec_name)
+                    sp.classroom = to_class
+                    sp.section = tgt_sec
+                    sp.save(update_fields=['classroom', 'section'])
+                    moved += 1
+
+        skipped_not_passed = max(total_candidates - moved, 0)
+        return Response({
+            "status": "ok",
+            "school": school.id,
+            "from_class": from_class.id,
+            "to_class": to_class.id,
+            "exam_found": True,
+            "exam_id": exam.id,
+            "exam_name": exam.name,
+            "moved": moved,
+            "total_candidates": total_candidates,
+            "skipped_not_passed": skipped_not_passed
+        }, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['get'])
+    def year_report(self, request):
+        school_id = request.query_params.get('school')
+        year = request.query_params.get('year')
+        classroom_id = request.query_params.get('classroom')
+        section_id = request.query_params.get('section')
+        if not school_id or not year:
+            return Response({"detail": "school and year are required"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            from academics.models import StudentYearRecord, StudentProfile
+            qs = StudentYearRecord.objects.select_related('student', 'classroom', 'section').filter(school_id=school_id, academic_year=str(year))
+            if classroom_id:
+                qs = qs.filter(classroom_id=classroom_id)
+            if section_id:
+                qs = qs.filter(section_id=section_id)
+            total = qs.count()
+            promoted = qs.filter(status='promoted').count()
+            retained = qs.filter(status='retained').count()
+            not_passed = qs.filter(status='not_passed').count()
+            cgpas = list(qs.exclude(result_cgpa__isnull=True).values_list('result_cgpa', flat=True))
+            percentages = list(qs.exclude(percentage__isnull=True).values_list('percentage', flat=True))
+            avg_cgpa = (sum(float(x) for x in cgpas) / len(cgpas)) if cgpas else None
+            avg_percentage = (sum(float(x) for x in percentages) / len(percentages)) if percentages else None
+            buckets = {'0-1': 0, '1-2': 0, '2-3': 0, '3-4': 0, '4-5': 0}
+            for x in cgpas:
+                v = float(x)
+                if v < 1: buckets['0-1'] += 1
+                elif v < 2: buckets['1-2'] += 1
+                elif v < 3: buckets['2-3'] += 1
+                elif v < 4: buckets['3-4'] += 1
+                else: buckets['4-5'] += 1
+            records = []
+            for r in qs:
+                s = r.student
+                records.append({
+                    'id': r.id,
+                    'student_id': s.id,
+                    'student_name': f"{getattr(s.user, 'first_name', '')} {getattr(s.user, 'last_name', '')}".strip() or getattr(s.user, 'username', ''),
+                    'classroom': getattr(r.classroom, 'name', None),
+                    'section': getattr(r.section, 'name', None),
+                    'roll_number': r.roll_number,
+                    'status': r.status,
+                    'result_cgpa': r.result_cgpa,
+                    'result_grade': r.result_grade,
+                    'percentage': r.percentage,
+                    'rank': r.rank,
+                    'promoted_to_classroom': getattr(r.promoted_to_classroom, 'name', None)
+                })
+            data = {
+                'school': int(school_id),
+                'year': str(year),
+                'classroom': int(classroom_id) if classroom_id else None,
+                'section': int(section_id) if section_id else None,
+                'summary': {
+                    'total': total,
+                    'promoted': promoted,
+                    'retained': retained,
+                    'not_passed': not_passed,
+                    'avg_cgpa': avg_cgpa,
+                    'avg_percentage': avg_percentage,
+                    'cgpa_buckets': [{'label': k, 'count': v} for k, v in buckets.items()]
+                },
+                'records': records
+            }
+            return Response(data, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"detail": "year report failed"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class TeacherAssignmentViewSet(viewsets.ModelViewSet):

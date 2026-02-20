@@ -52,6 +52,7 @@ const SchoolsPage = React.lazy(() => import('./pages/SchoolsPage'));
 const AttendanceRecordsPage = React.lazy(() => import('./pages/AttendanceRecordsPage'));
 const ExaminationsPage = React.lazy(() => import('./pages/ExaminationsPage'));
 const DebugPage = React.lazy(() => import('./pages/DebugPage'));
+const YearReportPage = React.lazy(() => import('./pages/YearReportPage'));
 
 const StartupRedirect = () => {
   const navigate = useNavigate();
@@ -60,7 +61,7 @@ const StartupRedirect = () => {
     try {
       const unauth = !isAuthenticated();
       const path = location.pathname || '/';
-      const protectedMatch = /^\/school\/[^/]+\/(results|examinations|fees|fee-receipt|receipt-book|groups|schools|id-card|certificate|admission-cards|sms|academics|attendance\/records|attendance\/report-card)(\/|$)/.test(path);
+      const protectedMatch = /^\/school\/[^/]+\/(results|examinations|fees|fee-receipt|receipt-book|groups|schools|id-card|certificate|admission-cards|sms|academics|attendance\/records|attendance\/report-card|year-report)(\/|$)/.test(path);
       if (unauth && protectedMatch && window.location.pathname === path) {
         const next = encodeURIComponent(path + location.search);
         navigate(`/login?next=${next}`, { replace: true });
@@ -93,6 +94,8 @@ function App() {
           <Route path="teacher/add" element={<AddTeacherPage />} />
           <Route path="teacher/cards" element={<TeacherCardsPage />} />
           <Route path="student" element={<StudentsPage />} />
+          <Route path="promotion" element={<ProtectedRoute allowedRoles={['admin','teacher']}><StudentsPage /></ProtectedRoute>} />
+          <Route path="year-report" element={<ProtectedRoute allowedRoles={['admin','teacher']}><YearReportPage /></ProtectedRoute>} />
           <Route path="subjects" element={<SubjectsPage />} />
           <Route path="classes" element={<ClassroomsPage />} />
           <Route path="attendance" element={<AttendancePageNew />} />

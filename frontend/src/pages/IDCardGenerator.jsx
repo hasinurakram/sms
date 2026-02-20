@@ -361,7 +361,11 @@ function IDCardGenerator() {
     if (!id) return;
     try {
       toast.info('প্রমোশন প্রসেসিং...');
-      const res = await api.post('/api/academics/students/promote/', { school: id });
+      const formData = new FormData();
+      formData.append('school', id);
+      const res = await api.post('/api/academics/students/promote/', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
       const d = res.data || {};
       toast.success(`প্রমোশন সম্পন্ন: ${d.promoted || 0} জন। (ফেল: ${d.skipped_failed || 0}, পরীক্ষা নেই: ${d.skipped_no_exam || 0})`);
     } catch (e) {

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import api from '../utils/api';
 import { isAuthenticated } from '../utils/auth';
 import { useAcademics } from '../context/AcademicsContext';
@@ -105,6 +105,21 @@ export default function StudentsPage() {
     profile_picture: ''
   });
   const [photoFile, setPhotoFile] = useState(null);
+  const [promoteDialogOpen, setPromoteDialogOpen] = useState(false);
+  const [promoteFromClassId, setPromoteFromClassId] = useState('');
+  const [promoteToClassId, setPromoteToClassId] = useState('');
+  const [promoteSectionMode, setPromoteSectionMode] = useState('preserve'); // 'preserve' | 'single'
+  const [promoteSingleSectionName, setPromoteSingleSectionName] = useState('ক');
+  const [promoting, setPromoting] = useState(false);
+  const location = useLocation();
+  useEffect(() => {
+    try {
+      const path = String(location.pathname || '');
+      if (path.endsWith('/promotion')) {
+        setPromoteDialogOpen(true);
+      }
+    } catch (_) {}
+  }, [location.pathname]);
 
   const banglaNumberMap = {
     'প্লে': -3,
@@ -1115,6 +1130,26 @@ export default function StudentsPage() {
           <Stack direction="row" spacing={1} flexWrap="wrap">
             <Button 
               variant="contained" 
+              onClick={() => {
+                if (!isAuthenticated()) {
+                  navigate('/login');
+                  return;
+                }
+                setPromoteFromClassId(selectedClass || '');
+                setPromoteToClassId('');
+                setPromoteSectionMode('preserve');
+                setPromoteSingleSectionName('ক');
+                setPromoteDialogOpen(true);
+              }}
+              sx={{ 
+                bgcolor: 'rgba(255,255,255,0.2)', 
+                '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' }
+              }}
+            >
+              শ্রেণি প্রমোশন
+            </Button>
+            <Button 
+              variant="contained" 
               startIcon={<AddIcon />} 
               onClick={() => {
                 if (!isAuthenticated()) {
@@ -1439,6 +1474,97 @@ export default function StudentsPage() {
         </>
       )}
 
+      <Dialog open={promoteDialogOpen} onClose={() => setPromoteDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>শ্রেণিওয়াইজ প্রমোশন</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2}>
+            <Autocomplete
+              options={contextClassrooms || []}
+              getOptionLabel={(opt) => opt.name || ''}
+              value={(contextClassrooms || []).find(c => c.id === promoteFromClassId) || null}
+              onChange={(_, v) => setPromoteFromClassId(v ? v.id : '')}
+              renderInput={(params) => <TextField {...params} label="যে শ্রেণি থেকে প্রমোশন দেবেন" />}
+            />
+            <Autocomplete
+              options={contextClassrooms || []}
+              getOptionLabel={(opt) => opt.name || ''}
+              value={(contextClassrooms || []).find(c => c.id === promoteToClassId) || null}
+              onChange={(_, v) => setPromoteToClassId(v ? v.id : '')}
+              renderInput={(params) => <TextField {...params} label="যে শ্রেণিতে প্রমোশন দেবেন" />}
+            />
+            <Stack direction="row" spacing={1}>
+              <Button 
+                variant={promoteSectionMode === 'preserve' ? 'contained' : 'outlined'}
+                onClick={() => setPromoteSectionMode('preserve')}
+              >
+                পূর্বের শাখা বজায়
+              </Button>
+              <Button 
+                variant={promoteSectionMode === 'single' ? 'contained' : 'outlined'}
+                onClick={() => setPromoteSectionMode('single')}
+              >
+                সবার জন্য এক শাখা
+              </Button>
+              {promoteSectionMode === 'single' && (
+                <TextField
+                  label="শাখার নাম"
+                  value={promoteSingleSectionName}
+                  onChange={(e) => setPromoteSingleSectionName(e.target.value || 'ক')}
+                  sx={{ minWidth: 120 }}
+                />
+              )}
+            </Stack>
+            <Alert severity="info">
+              পছন্দকৃত শ্রেণির সব শিক্ষার্থী নতুন শ্রেণিতে স্থানান্তর হবে। প্রয়োজন হলে নতুন শাখা অটো-ক্রিয়েট হবে।
+            </Alert>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPromoteDialogOpen(false)} disabled={promoting}>বাতিল</Button>
+          <Button 
+            variant="contained" 
+            onClick={async () => {
+              if (!promoteFromClassId || !promoteToClassId) {
+                toast.error('উভয় শ্রেণি নির্বাচন করুন');
+                return;
+              }
+              try {
+                setPromoting(true);
+                const payload = {
+                  school: id,
+                  from_class_id: promoteFromClassId,
+                  to_class_id: promoteToClassId,
+                  section_mode: promoteSectionMode,
+                  single_section_name: promoteSingleSectionName
+                };
+                const res = await api.post('/api/academics/students/promote_class/', payload);
+                const d = res.data || {};
+                if (d.exam_found === false) {
+                  toast.error('বার্ষিক/ফাইনাল পরীক্ষা পাওয়া যায়নি—কেউ প্রমোশন হয়নি');
+                } else {
+                  const moved = d.moved || 0;
+                  const skipped = d.skipped_not_passed ?? 0;
+                  const total = d.total_candidates ?? (moved + skipped);
+                  toast.success(`বার্ষিক ফলাফলের ভিত্তিতে ${moved} জন প্রমোশন হয়েছে (মোট ${total}, নাপাস/ডেটা নেই: ${skipped})`);
+                }
+                setPromoteDialogOpen(false);
+                // reload lists
+                await refreshStudents();
+                await refreshSections();
+                await refreshClassrooms();
+              } catch (e) {
+                console.error('Class promotion error', e);
+                toast.error('প্রমোশন ব্যর্থ হয়েছে');
+              } finally {
+                setPromoting(false);
+              }
+            }}
+            disabled={promoting}
+          >
+            {promoting ? 'প্রমোশন হচ্ছে...' : 'প্রমোশন দিন'}
+          </Button>
+        </DialogActions>
+      </Dialog>
       <ImportDialog
         open={importOpen}
         onClose={() => setImportOpen(false)}

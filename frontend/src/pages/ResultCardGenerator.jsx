@@ -51,6 +51,7 @@ export default function ResultCardGenerator() {
   const [selectedSection, setSelectedSection] = useState('');
   const [students, setStudents] = useState([]);
   const [selectedStudent, setSelectedStudent] = useState('');
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [loading, setLoading] = useState(false);
   
   // Result data
@@ -60,6 +61,7 @@ export default function ResultCardGenerator() {
   const [school, setSchool] = useState(null);
   const [examination, setExamination] = useState(null);
   const [overrideLogo, setOverrideLogo] = useState('');
+  const [noYearMessage, setNoYearMessage] = useState('');
 
 
   const isMounted = React.useRef(true);
@@ -191,6 +193,17 @@ export default function ResultCardGenerator() {
     }
   }, [id]);
 
+  useEffect(() => {
+    try {
+      let url = '';
+      const raw1 = school?.logo || school?.image;
+      if (typeof raw1 === 'string') url = raw1;
+      else if (raw1 && typeof raw1.url === 'string') url = raw1.url;
+      if (!url) url = school?.logo_url || school?.image_url || school?.photo_url || '';
+      url = String(url || '').trim();
+      if (url && !overrideLogo) setOverrideLogo(url);
+    } catch (_) {}
+  }, [school, overrideLogo]);
 
 
   const handleClassChange = (classIdRaw) => {
@@ -241,7 +254,7 @@ export default function ResultCardGenerator() {
     setStudents([]);
     
     // Load examinations for this class only
-    scopedGet('/api/results/examinations/', id, { classroom: classId }, { timeout: 15000 })
+    scopedGet('/api/results/examinations/', id, { classroom: classId, year: selectedYear }, { timeout: 15000 })
       .then(res => {
         const data = Array.isArray(res.data) ? res.data : res.data.results || [];
         const classExams = data.filter(exam => getClassroomId(exam.classroom) === classId);
@@ -252,6 +265,19 @@ export default function ResultCardGenerator() {
         toast.error('Failed to load examinations');
       });
   };
+
+  useEffect(() => {
+    if (selectedClass) {
+      scopedGet('/api/results/examinations/', id, { classroom: selectedClass, year: selectedYear }, { timeout: 15000 })
+        .then(res => {
+          const data = Array.isArray(res.data) ? res.data : res.data.results || [];
+          const classExams = data.filter(exam => getClassroomId(exam.classroom) === selectedClass);
+          setExaminations(classExams);
+        })
+        .catch(() => setExaminations([]));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedYear]);
 
   const normalizeExamType = (type, name) => {
     const s = String(type || '').toLowerCase();
@@ -596,8 +622,12 @@ export default function ResultCardGenerator() {
         } else {
           // Fallback 2: derive exam from student's existing results
           try {
-            const rs = await api.get(`/api/results/results/?student=${student.id}`);
-            const arr = Array.isArray(rs.data) ? rs.data : (rs.data?.results || []);
+            const rs = await scopedGet('/api/results/results/', id, { student: student.id, year: selectedYear, page_size: 2000 }, { timeout: 20000 });
+            let arr = Array.isArray(rs.data) ? rs.data : (rs.data?.results || []);
+            if (!arr.length) {
+              const rsNoYear = await scopedGet('/api/results/results/', id, { student: student.id, page_size: 2000 }, { timeout: 20000 });
+              arr = Array.isArray(rsNoYear.data) ? rsNoYear.data : (rsNoYear.data?.results || []);
+            }
             const examIds = Array.from(new Set(arr.map(r => (typeof r.examination === 'object' ? r.examination?.id : r.examination)).filter(Boolean)));
             let found = null;
             for (const exId of examIds) {
@@ -614,22 +644,13 @@ export default function ResultCardGenerator() {
           } catch (_) {}
 
           if (matchingExams.length === 0) {
-            // Final Fallback: just grab the most recent exam for this class
-            const anyClassExam = examinations
-              .filter(ex => getClassroomId(ex.classroom) === selectedClass)
-              .sort((a, b) => new Date(b.exam_date || 0) - new Date(a.exam_date || 0));
-            
-            if (anyClassExam.length > 0) {
-              matchingExams = [anyClassExam[0]];
-              toast.info(`Auto-selected: ${anyClassExam[0].name}`);
-            } else {
-              toast.error(`No ${examTypes.find(t => t.value === normalizeExamType(selectedExamType))?.label || 'selected'} examination found for this class`);
-              setStudentData(null);
-              setResults([]);
-              setOverallResult(null);
-              setLoading(false);
-              return;
-            }
+            setStudentData(null);
+            setResults([]);
+            setOverallResult(null);
+            setNoYearMessage(`দুঃখিত ${selectedYear} সালের রেজাল্ট এই স্কুলে এখনও ইনপুট দেওয়া হয়নি, দয়া করে অত্র বিদ্যালয়ের প্রধান শিক্ষক অথবা এ্যাডমিনের সাথে যোগাযোগ করুন। ধন্যবাদ।`);
+            toast.error(`দুঃখিত ${selectedYear} সালের রেজাল্ট পাওয়া যায়নি`);
+            setLoading(false);
+            return;
           }
         }
       }
@@ -704,7 +725,7 @@ export default function ResultCardGenerator() {
 
       if (fetchedResults.length === 0) {
         try {
-          const r = await scopedGet('/api/results/results/', id, { student: student.id, page_size: 2000 }, { timeout: 20000 });
+          const r = await scopedGet('/api/results/results/', id, { student: student.id, page_size: 2000, year: selectedYear }, { timeout: 20000 });
           const arr = Array.isArray(r.data) ? r.data : (r.data?.results || r.data?.data || []);
           const allowedIds = new Set(matchingExams.map(ex => ex.id));
           const filtered = arr.filter(it => {
@@ -737,7 +758,7 @@ export default function ResultCardGenerator() {
 
       // Get combined overall result with rank from backend
       try {
-        let url = `/api/results/overall/combined_by_exam_type/?student=${student.id}&exam_type=${normalizeExamType(selectedExamType)}&classroom=${selectedClass}&school=${id}`;
+        let url = `/api/results/overall/combined_by_exam_type/?student=${student.id}&exam_type=${normalizeExamType(selectedExamType)}&classroom=${selectedClass}&school=${id}&year=${selectedYear}`;
         if (selectedSection) {
             url += `&section=${selectedSection}`;
         }
@@ -1046,6 +1067,17 @@ export default function ResultCardGenerator() {
             ))}
           </TextField>
 
+          {/* ধাপ ২.৫: সাল নির্বাচন */}
+          <TextField
+            type="number"
+            label="ধাপ ২.৫: সাল নির্বাচন করুন"
+            value={selectedYear}
+            onChange={(e) => setSelectedYear(parseInt(e.target.value || String(new Date().getFullYear()), 10) || new Date().getFullYear())}
+            fullWidth
+            disabled={!selectedClass}
+            inputProps={{ min: 2000, max: 2100 }}
+          />
+
           {/* ধাপ ৩: পরীক্ষার ধরন নির্বাচন */}
           <TextField
             select
@@ -1141,8 +1173,8 @@ export default function ResultCardGenerator() {
       ) : (
         <EmptyState
           icon={AssessmentIcon}
-          title="কোনো রেজাল্ট কার্ড তৈরি হয়নি"
-          message="সব বিষয়ে রেজাল্ট কার্ড তৈরির জন্য শ্রেণি, শিক্ষার্থী এবং পরীক্ষার ধরন নির্বাচন করুন"
+          title={noYearMessage ? "রেজাল্ট পাওয়া যায়নি" : "কোনো রেজাল্ট কার্ড তৈরি হয়নি"}
+          message={noYearMessage || "সব বিষয়ে রেজাল্ট কার্ড তৈরির জন্য শ্রেণি, শিক্ষার্থী এবং পরীক্ষার ধরন নির্বাচন করুন"}
         />
       )}
     </Box>

@@ -129,6 +129,8 @@ const menuItems = [
   { label: 'আইডি কার্ড', icon: <CardMembershipIcon />, key: 'id-card' },
   { label: 'সার্টিফিকেট', icon: <CardMembershipIcon />, key: 'certificate' },
   { label: 'প্রবেশপত্র', icon: <CardMembershipIcon />, key: 'admission-cards' },
+  { label: 'প্রমোশন', icon: <AssessmentIcon />, key: 'promotion' },
+  { label: 'বছরভিত্তিক রিপোর্ট', icon: <AssessmentIcon />, key: 'year-report' },
   { label: 'পরীক্ষা', icon: <AssessmentIcon />, key: 'examinations' },
   { label: 'ফি', icon: <PaymentIcon />, key: 'fees' },
   { label: 'ফি পরিশোধ', icon: <ReceiptIcon />, key: 'fee-receipt' },

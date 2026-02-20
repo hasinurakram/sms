@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Box, Paper, Typography, TextField, Stack, Button, Grid, Alert, Chip, Divider, Table, TableHead, TableRow, TableCell, TableBody } from '@mui/material';
 import api from '../utils/api';
+import { getExaminations } from '../utils/schoolApi';
 
 const SoftwareAssistant = () => {
   const { id } = useParams();
@@ -21,12 +22,22 @@ const SoftwareAssistant = () => {
     return `${d.getFullYear()}-${m}-${day}`;
   };
 
+  const bn2enDigits = (s) => String(s || '').replace(/[০-৯]/g, (d) => '0123456789'['০১২৩৪৫৬৭৮৯'.indexOf(d)]);
+  const parseDateMonth = (text) => {
+    const t = bn2enDigits(String(text || ''));
+    const dateMatch = t.match(/\b(20[0-9]{2})[-/\.](0[1-9]|1[0-2])[-/\.]([0-2][0-9]|3[01])\b/);
+    const monthMatch = t.match(/\b(20[0-9]{2})[-/\.](0[1-9]|1[0-2])\b/);
+    const date = dateMatch ? `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}` : '';
+    const month = monthMatch ? `${monthMatch[1]}-${monthMatch[2]}` : '';
+    return { date, month };
+  };
   const parseIntent = (text) => {
     const t = toLowerBn(text);
     const isAttendance = /(attendance|উপস্থিতি|অনুপস্থিতি)/.test(t);
     const isFees = /(fee|fees|ফি|আদায়|collection|বকেয়া)/.test(t);
-    const isResults = /(result|results|ফলাফল)/.test(t);
+    const isResults = /(result|results|ফলাফল|পরীক্ষা|exam)/.test(t);
     const isBlood = /(blood|রক্ত|গ্রুপ)/.test(t);
+    const asksYears = /(year|বছর|সাল)\b/.test(t);
     let type = null;
     if (isAttendance) type = 'attendance';
     else if (isFees) type = 'fees';
@@ -37,7 +48,80 @@ const SoftwareAssistant = () => {
       if (m) bloodGroup = `${m[1]}${m[2]}`;
       if (bloodGroup) type = 'blood';
     }
-    return { type, bloodGroup };
+    const { date, month } = parseDateMonth(text);
+    return { type, bloodGroup, date, month, asksYears: isResults && asksYears };
+  };
+  const parseExamType = (text) => {
+    const t = toLowerBn(text);
+    if (/(annual|final|বার্ষিক)/.test(t)) return 'annual';
+    if (/(half|mid|অর্ধ|অর্ধ-বার্ষিক|অর্ধবার্ষিক)/.test(t)) return 'half_yearly';
+    if (/(terminal|term|টার্মিনাল)/.test(t)) return 'terminal';
+    if (/(model|মডেল)/.test(t)) return 'model';
+    if (/(test|monthly|টেস্ট|বিশেষ)/.test(t)) return 'test';
+    return null;
+  };
+  const normalizeExamType = (type, name = '') => {
+    const s = String(type || '').toLowerCase();
+    const rn = String(name || '').toLowerCase();
+    const hasAny = (str, keys) => keys.some(k => str.includes(k));
+    if (s) {
+      if (hasAny(s, ['final','annual','yearly','বার্ষিক'])) return 'annual';
+      if (hasAny(s, ['half','half_yearly','mid','half-yearly','অর্ধ'])) return 'half_yearly';
+      if (hasAny(s, ['terminal','term','টার্মিনাল'])) return 'terminal';
+      if (hasAny(s, ['model','model_test','model-test','মডেল'])) return 'model';
+      if (hasAny(s, ['test','monthly','টেস্ট','বিশেষ'])) return 'test';
+      if (hasAny(s, ['first_term','first','first-term','প্রথম'])) return 'first_term';
+      return s;
+    }
+    if (hasAny(rn, ['final','annual','yearly','বার্ষিক'])) return 'annual';
+    if (hasAny(rn, ['half','half_yearly','mid','half-yearly','অর্ধ'])) return 'half_yearly';
+    if (hasAny(rn, ['terminal','term','টার্মিনাল'])) return 'terminal';
+    if (hasAny(rn, ['model','model_test','model-test','মডেল'])) return 'model';
+    if (hasAny(rn, ['test','monthly','টেস্ট','বিশেষ'])) return 'test';
+    if (hasAny(rn, ['first_term','first','first-term','প্রথম'])) return 'first_term';
+    return 'annual';
+  };
+  const examTypeLabel = (type, name = '') => {
+    const t = normalizeExamType(type, name);
+    const map = {
+      annual: 'বার্ষিক',
+      half_yearly: 'অর্ধ-বার্ষিক',
+      terminal: 'টার্মিনাল',
+      model: 'মডেল টেস্ট',
+      test: 'বিশেষ মূল্যায়ন',
+      first_term: 'প্রথম টার্ম'
+    };
+    return map[t] || (type || 'পরীক্ষা');
+  };
+  const fetchExamsListFallback = async (text, dateStr, monthStr) => {
+    const examType = parseExamType(text);
+    const filters = {};
+    if (examType) filters.exam_type = examType;
+    const res = await getExaminations(id, filters);
+    const arr = Array.isArray(res.data) ? res.data : (res.data?.results || []);
+    let list = arr.map(e => ({
+      id: e.id,
+      name: e.name,
+      type: e.exam_type || e.type,
+      date: e.exam_date,
+      class: e.classroom?.name || e.classroom_name || '',
+      section: e.section?.name || e.section_name || ''
+    }));
+    const matchesDate = (d, ymd) => {
+      if (!d || !ymd) return true;
+      const s = String(d);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return s.startsWith(ymd);
+      if (/^\d{4}-\d{2}$/.test(ymd)) return s.startsWith(ymd);
+      return true;
+    };
+    const useDate = dateStr || '';
+    const useMonth = monthStr || '';
+    if (useDate) list = list.filter(e => matchesDate(e.date, useDate));
+    else if (useMonth) list = list.filter(e => matchesDate(e.date, useMonth));
+    return {
+      text: 'পরীক্ষার তালিকা (লোকাল ফfallback)',
+      exams: list
+    };
   };
 
   const fetchAttendanceSummary = async (dt) => {
@@ -115,12 +199,15 @@ const SoftwareAssistant = () => {
     setError('');
     setResponse(null);
     try {
+      const parsed = parseIntent(q);
       const params = { q, school: id || undefined };
-      if (date) params.date = date;
-      if (month) params.month = month;
+      const useDate = date || parsed.date;
+      const useMonth = month || parsed.month;
+      if (useDate) params.date = useDate;
+      if (useMonth) params.month = useMonth;
       const res = await api.get('/api/users/assistant/', { params });
       const backend = res.data;
-      const intent = parseIntent(q);
+      const intent = parsed;
       const notUnderstood =
         (typeof backend?.text === 'string' && /বুঝতে\s*পারিনি|অনুরোধ/i.test(backend.text)) ||
         (typeof backend?.error === 'string' && /বুঝতে\s*পারিনি|অনুরোধ/i.test(backend.error));
@@ -133,7 +220,11 @@ const SoftwareAssistant = () => {
     } catch (e) {
       const msg = e?.response?.data?.error || e?.message || 'অনুরোধ ব্যর্থ হয়েছে';
       try {
-        const fallback = await localHandle();
+        const intent = parseIntent(q);
+        let fallback = await localHandle();
+        if (!fallback && intent.type === 'results') {
+          fallback = await fetchExamsListFallback(q, date || intent.date, month || intent.month);
+        }
         if (fallback) {
           setResponse(fallback);
           setError('');
@@ -208,6 +299,21 @@ const SoftwareAssistant = () => {
         </Stack>
       );
     }
+    if (typeof res.students_with_results === 'number') {
+      items.push(
+        <Stack key="students_with_results" direction="row" spacing={2} sx={{ mt: 1 }}>
+          <Chip label={`রেজাল্ট ইনপুট: ${res.students_with_results}`} color="primary" />
+        </Stack>
+      );
+    }
+    if (Array.isArray(res.years) && res.years.length > 0) {
+      items.push(
+        <Stack key="years" direction="row" spacing={2} sx={{ mt: 1, flexWrap: 'wrap' }}>
+          <Chip label="বছরগুলো:" />
+          {res.years.map((y, idx) => <Chip key={idx} label={String(y)} />)}
+        </Stack>
+      );
+    }
     if (Array.isArray(res.subjects) && res.subjects.length > 0) {
       items.push(
         <Box key="subject_table" sx={{ mt: 2 }}>
@@ -230,6 +336,39 @@ const SoftwareAssistant = () => {
                   <TableCell align="right">{s.grade}</TableCell>
                   <TableCell align="right">{s.gpa}</TableCell>
                   <TableCell align="right">{s.passed ? 'পাস' : 'ফেল'}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Box>
+      );
+    }
+    if (Array.isArray(res.exams) && res.exams.length > 0) {
+      items.push(
+        <Box key="exams_list" sx={{ mt: 2 }}>
+          <Typography variant="subtitle1" sx={{ mb: 1 }}>পরীক্ষার তালিকা</Typography>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>পরীক্ষা</TableCell>
+                <TableCell>টাইপ</TableCell>
+                <TableCell>ক্লাস</TableCell>
+                <TableCell>সেকশন</TableCell>
+                <TableCell>তারিখ</TableCell>
+                <TableCell align="right">ফলাফল সংখ্যা</TableCell>
+                <TableCell align="right">শিক্ষার্থী সংখ্যা</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {res.exams.map((e, idx) => (
+                <TableRow key={idx}>
+                  <TableCell>{e.name}</TableCell>
+                  <TableCell>{examTypeLabel(e.type, e.name)}</TableCell>
+                  <TableCell>{e.class}</TableCell>
+                  <TableCell>{e.section || '-'}</TableCell>
+                  <TableCell>{e.date || '-'}</TableCell>
+                  <TableCell align="right">{typeof e.results_count === 'number' ? e.results_count : '-'}</TableCell>
+                  <TableCell align="right">{typeof e.students_count === 'number' ? e.students_count : '-'}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -262,6 +401,16 @@ const SoftwareAssistant = () => {
         </Box>
       );
     }
+    if (res.student && (res.student.name || res.student.roll || res.student.class || res.student.section)) {
+      items.unshift(
+        <Stack key="student_info" direction="row" spacing={2} sx={{ mt: 1, flexWrap: 'wrap' }}>
+          {res.student.name && <Chip label={`নাম: ${res.student.name}`} color="primary" />}
+          {typeof res.student.roll !== 'undefined' && res.student.roll !== null && <Chip label={`রোল: ${res.student.roll}`} />}
+          {res.student.class && <Chip label={`ক্লাস: ${res.student.class}`} />}
+          {res.student.section && <Chip label={`সেকশন: ${res.student.section}`} />}
+        </Stack>
+      );
+    }
     if (items.length === 0) {
       items.push(
         <Typography key="fallback" sx={{ mt: 1 }}>তথ্য পাওয়া যায়নি বা প্রদর্শনের জন্য উপযুক্ত ফরম্যাট নেই।</Typography>
@@ -281,13 +430,13 @@ const SoftwareAssistant = () => {
               label="আপনার কমান্ড লিখুন"
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="উদাহরণ: Class 7 annual exam, attendance 2026-01-12, fee collection 2026-01"
+              placeholder="উদাহরণ: ক্লাস ৭ annual exam, আজকের উপস্থিতি, ফি 2026-01, AB+ গ্রুপ"
             />
           </Grid>
           <Grid item xs={12} sm={6}>
             <TextField
               fullWidth
-              label="তারিখ (YYYY-MM-DD)"
+              label="তারিখ (ঐচ্ছিক, YYYY-MM-DD)"
               value={date}
               onChange={(e) => setDate(e.target.value)}
               placeholder="2026-01-12"
@@ -296,7 +445,7 @@ const SoftwareAssistant = () => {
           <Grid item xs={12} sm={6}>
             <TextField
               fullWidth
-              label="মাস (YYYY-MM)"
+              label="মাস (ঐচ্ছিক, YYYY-MM)"
               value={month}
               onChange={(e) => setMonth(e.target.value)}
               placeholder="2026-01"

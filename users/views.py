@@ -562,7 +562,8 @@ class SoftwareAssistantView(APIView):
                 pass
             has_entity = any(w in ql for w in entity_tokens)
             has_count = any(w in ql for w in count_tokens) or (('জন' in ql) and any(w in ql for w in ['কত','কতো','কয়','কয়']))
-            if has_entity and has_count:
+            has_results_words = any(w in ql for w in ['result', 'রেজাল্ট', 'পরীক্ষা', 'exam', 'examination'])
+            if has_entity and has_count and not has_results_words:
                 try:
                     from users.models import AssistantMemory
                     mem, _ = AssistantMemory.objects.get_or_create(school_id=school_id or 0, key='synonyms')
@@ -583,7 +584,10 @@ class SoftwareAssistantView(APIView):
                     pass
                 return 'school_counts'
             if any(w in ql for w in ['roll', 'রোল', 'রোল নাম্বার', 'রোল নম্বর', 'roll number']):
-                return 'student_result'
+                import re
+                m_roll = re.search(r'(roll|রোল|রোল নাম্বার|রোল নম্বর)\s*([0-9০-৯]+)', ql)
+                if m_roll:
+                    return 'student_result'
             topper_words = ['১ম', 'প্রথম', 'first', 'topper', 'টপার', 'rank 1', 'র‌্যাংক', 'র‍্যাঙ্ক', 'top']
             if any(w in ql for w in topper_words):
                 return 'results_topper'
@@ -594,6 +598,23 @@ class SoftwareAssistantView(APIView):
             if (('মেনু' in ql or 'menu' in ql) and any(w in ql for w in ['স্কুল', 'school'])) or any(w in ql for w in ['স্কুল মেনু', 'school menu']):
                 return 'school_menu'
             if any(w in ql for w in ['result', 'রেজাল্ট', 'পরীক্ষা', 'exam', 'examination']):
+                if any(w in ql for w in ['year', 'বছর', 'সাল']):
+                    return 'results_years'
+                # If counting students with results asked
+                count_words = ['কতজন','কয়জন','কয়জন','মোট','count','সংখ্যা','how many','total','কত','কতো','কতগুলো','কতগুলি','কয়টি','কয়টি']
+                student_words = ['student','students','স্টুডেন্ট','শিক্ষার্থী','ছাত্র','ছাত্রী','ছাত্রছাত্রী']
+                detail_words = ['আনো','নিয়ে আস','এখানে','দেখাও','show','details','detail','result card','কার্ড']
+                has_count = any(w in ql for w in count_words) and any(w in ql for w in student_words)
+                has_detail = any(w in ql for w in detail_words)
+                list_words = ['কোন', 'কোন কোন', 'তালিকা', 'list', 'কি কি', 'which']
+                if any(w in ql for w in list_words):
+                    return 'results_exams_list'
+                if has_detail and has_count:
+                    return 'results_student_count_details'
+                if any(w in ql for w in count_words) and any(w in ql for w in student_words):
+                    return 'results_student_count'
+                if any(w in ql for w in detail_words):
+                    return 'results_student_details'
                 return 'results'
             if any(w in ql for w in ['sms', 'message', 'এসএমএস', 'মেসেজ']) and any(w in ql for w in ['send', 'pathao', 'dao', 'দাও', 'পাঠাও']):
                 return 'action_send_sms'
@@ -1315,29 +1336,49 @@ class SoftwareAssistantView(APIView):
             et = pick_exam_type()
             cls_id, cls_name = resolve_classroom()
             sec_id, sec_name = resolve_section()
-            if not et or not cls_id:
-                return Response({"error": "exam_type এবং classroom প্রয়োজন"}, status=status.HTTP_400_BAD_REQUEST)
             from results.models import Examination, Result
-            exams = Examination.objects.filter(exam_type=et, classroom_id=cls_id)
-            if sec_id:
-                exams = exams.filter(section_id=sec_id)
-            if school_id:
-                exams = exams.filter(school_id=school_id)
-            if not exams.exists():
-                text = f"এই শর্তে কোনো পরীক্ষা পাওয়া যায়নি।"
+            target_exam = None
+            if et:
+                exams = Examination.objects.filter(exam_type=et)
+                if cls_id:
+                    exams = exams.filter(classroom_id=cls_id)
+                if sec_id:
+                    exams = exams.filter(section_id=sec_id)
+                if school_id:
+                    exams = exams.filter(school_id=school_id)
+                target_exam = exams.order_by('-exam_date', '-id').first()
+            else:
+                target_exam = latest_exam_for_class(cls_id, sec_id)
+                if not target_exam:
+                    fallback_order = ['annual','half_yearly','terminal','model','test']
+                    for et2 in fallback_order:
+                        exams2 = Examination.objects.all()
+                        if school_id:
+                            exams2 = exams2.filter(school_id=school_id)
+                        if cls_id:
+                            exams2 = exams2.filter(classroom_id=cls_id)
+                        if sec_id:
+                            exams2 = exams2.filter(section_id=sec_id)
+                        exams2 = exams2.filter(exam_type=et2)
+                        target_exam = exams2.order_by('-exam_date', '-id').first()
+                        if target_exam:
+                            et = et2
+                            break
+            if not target_exam:
+                text = "কোনো পরীক্ষা পাওয়া যায়নি।"
                 try:
                     AssistantLog.objects.create(
                         user=getattr(request, 'user', None),
                         school_id=school_id if school_id else None,
                         query_text=q,
                         intent=it,
-                        params={'exam_type': et, 'classroom': cls_id, 'section': sec_id},
+                        params={'exam_type': et or '', 'classroom': cls_id, 'section': sec_id},
                         result_summary=text
                     )
                 except Exception:
                     pass
                 return Response({"text": text, "rows": []})
-            rs = Result.objects.filter(examination__in=list(exams))
+            rs = Result.objects.filter(examination=target_exam)
             if school_id:
                 rs = rs.filter(student__school_id=school_id)
             if sec_id:
@@ -1345,8 +1386,8 @@ class SoftwareAssistantView(APIView):
             if cls_id:
                 rs = rs.filter(student__classroom_id=cls_id)
             student_count = rs.values_list('student_id', flat=True).distinct().count()
-            cls_disp = cls_name or cls_id
-            et_disp = bn_exam_label(et)
+            cls_disp = cls_name or cls_id or ''
+            et_disp = getattr(target_exam, 'name', '') or bn_exam_label(et)
             if sec_name:
                 text = f"{cls_disp}-এর {et_disp} Exam ({sec_name})-এ মোট {student_count} জন শিক্ষার্থী অংশগ্রহণ করেছে।"
             else:
@@ -1358,7 +1399,7 @@ class SoftwareAssistantView(APIView):
                     school_id=school_id if school_id else None,
                     query_text=q,
                     intent=it,
-                    params={'exam_type': et, 'classroom': cls_id, 'section': sec_id},
+                    params={'exam_id': target_exam.id, 'exam_type': et or '', 'classroom': cls_id, 'section': sec_id},
                     result_summary=text
                 )
                 mem, _ = AssistantMemory.objects.get_or_create(school_id=school_id or 0, key='intent_counts')
@@ -1369,6 +1410,574 @@ class SoftwareAssistantView(APIView):
             except Exception:
                 pass
             return Response(resp)
+        if it == 'results_student_count':
+            from results.models import Examination, Result
+            et = pick_exam_type()
+            # Avoid auto-fallback classroom unless explicitly asked
+            import re
+            has_class_tokens = bool(re.search(r'(class|ক্লাস|শ্রেণি)', ql))
+            has_section_tokens = bool(re.search(r'(section|সেকশন|শাখা|\([a-zA-Zঅ-হ]+\))', ql))
+            cls_id, cls_name = resolve_classroom()
+            sec_id, sec_name = resolve_section()
+            explicit_cls = bool(classroom_id)
+            explicit_sec = bool(section_id)
+            if not (explicit_cls or has_class_tokens):
+                cls_id, cls_name = None, None
+            if not (explicit_sec or has_section_tokens):
+                sec_id, sec_name = None, None
+            def base_exams():
+                qs = Examination.objects.all()
+                if school_id:
+                    qs = qs.filter(school_id=school_id)
+                if cls_id:
+                    qs = qs.filter(classroom_id=cls_id)
+                if sec_id:
+                    qs = qs.filter(section_id=sec_id)
+                if et:
+                    qs = qs.filter(exam_type=et)
+                return qs
+            exams = base_exams()
+            ids = []
+            # Apply date/month with graceful fallback
+            if date:
+                try:
+                    # exact date
+                    ids = list(exams.filter(exam_date=date).values_list('id', flat=True))
+                except Exception:
+                    ids = []
+                if not ids:
+                    # fallback to same month of date
+                    try:
+                        import datetime as dt
+                        y, m = dt.date.fromisoformat(str(date)).year, dt.date.fromisoformat(str(date)).month
+                        ids = list(exams.filter(exam_date__year=int(y), exam_date__month=int(m)).values_list('id', flat=True))
+                    except Exception:
+                        ids = []
+                if not ids:
+                    # fallback to same year
+                    try:
+                        import datetime as dt
+                        y = dt.date.fromisoformat(str(date)).year
+                        ids = list(exams.filter(exam_date__year=int(y)).values_list('id', flat=True))
+                    except Exception:
+                        ids = []
+            elif month:
+                try:
+                    y, mth = month.split('-')
+                    ids = list(exams.filter(exam_date__year=int(y), exam_date__month=int(mth)).values_list('id', flat=True))
+                except Exception:
+                    ids = []
+                if not ids:
+                    # fallback to year
+                    try:
+                        y = int((month.split('-')[0]))
+                        ids = list(exams.filter(exam_date__year=y).values_list('id', flat=True))
+                    except Exception:
+                        ids = []
+            else:
+                # no date/month provided: use latest exams (recent first)
+                latest = exams.order_by('-exam_date', '-id')[:10]
+                ids = [e.id for e in latest]
+                if not ids:
+                    ids = list(exams.values_list('id', flat=True))
+            if not ids:
+                # last resort: drop exam_type constraint if set
+                if et:
+                    exams2 = base_exams().exclude(exam_type=et)
+                    latest2 = exams2.order_by('-exam_date', '-id')[:10]
+                    ids = [e.id for e in latest2]
+                    if not ids:
+                        ids = list(exams2.values_list('id', flat=True))
+            if not ids and (cls_id or sec_id):
+                # widen search by removing classroom/section constraints
+                qs_wide = Examination.objects.all()
+                if school_id:
+                    qs_wide = qs_wide.filter(school_id=school_id)
+                if et:
+                    qs_wide = qs_wide.filter(exam_type=et)
+                latest3 = qs_wide.order_by('-exam_date', '-id')[:10]
+                ids = [e.id for e in latest3]
+                if not ids:
+                    ids = list(qs_wide.values_list('id', flat=True))
+            if not ids:
+                return Response({"text": "কোনো পরীক্ষা পাওয়া যায়নি।", "students_with_results": 0})
+            rs = Result.objects.filter(examination_id__in=ids)
+            if school_id:
+                rs = rs.filter(student__school_id=school_id)
+            if cls_id:
+                rs = rs.filter(student__classroom_id=cls_id)
+            if sec_id:
+                rs = rs.filter(student__section_id=sec_id)
+            total_students = rs.values_list('student_id', flat=True).distinct().count()
+            cls_disp = cls_name or cls_id or ''
+            sec_disp = sec_name or ''
+            parts = []
+            if cls_disp:
+                parts.append(cls_disp)
+            if sec_disp:
+                parts.append(f"({sec_disp})")
+            hdr = ' '.join([p for p in parts if p]).strip()
+            if hdr:
+                text = f"{hdr}-এর মোট {total_students} জন শিক্ষার্থীর রেজাল্ট ইনপুট দেওয়া হয়েছে।"
+            else:
+                text = f"মোট {total_students} জন শিক্ষার্থীর রেজাল্ট ইনপুট দেওয়া হয়েছে।"
+            try:
+                AssistantLog.objects.create(
+                    user=getattr(request, 'user', None),
+                    school_id=school_id if school_id else None,
+                    query_text=q,
+                    intent=it,
+                    params={'exam_type': et or '', 'classroom': cls_id, 'section': sec_id, 'date': date, 'month': month},
+                    result_summary=text
+                )
+            except Exception:
+                pass
+            return Response({"text": text, "students_with_results": total_students})
+        if it == 'results_student_details':
+            from results.models import Examination, Result
+            et = pick_exam_type()
+            import re
+            has_class_tokens = bool(re.search(r'(class|ক্লাস|শ্রেণি)', ql))
+            has_section_tokens = bool(re.search(r'(section|সেকশন|শাখা|\([a-zA-Zঅ-হ]+\))', ql))
+            cls_id, cls_name = resolve_classroom()
+            sec_id, sec_name = resolve_section()
+            explicit_cls = bool(classroom_id)
+            explicit_sec = bool(section_id)
+            if not (explicit_cls or has_class_tokens):
+                cls_id, cls_name = None, None
+            if not (explicit_sec or has_section_tokens):
+                sec_id, sec_name = None, None
+            def base_exams():
+                qs = Examination.objects.all()
+                if school_id:
+                    qs = qs.filter(school_id=school_id)
+                if cls_id:
+                    qs = qs.filter(classroom_id=cls_id)
+                if sec_id:
+                    qs = qs.filter(section_id=sec_id)
+                if et:
+                    qs = qs.filter(exam_type=et)
+                return qs
+            exams = base_exams()
+            ids = []
+            if date:
+                try:
+                    ids = list(exams.filter(exam_date=date).values_list('id', flat=True))
+                except Exception:
+                    ids = []
+                if not ids:
+                    try:
+                        import datetime as dt
+                        y, m = dt.date.fromisoformat(str(date)).year, dt.date.fromisoformat(str(date)).month
+                        ids = list(exams.filter(exam_date__year=int(y), exam_date__month=int(m)).values_list('id', flat=True))
+                    except Exception:
+                        ids = []
+                if not ids:
+                    try:
+                        import datetime as dt
+                        y = dt.date.fromisoformat(str(date)).year
+                        ids = list(exams.filter(exam_date__year=int(y)).values_list('id', flat=True))
+                    except Exception:
+                        ids = []
+            elif month:
+                try:
+                    y, mth = month.split('-')
+                    ids = list(exams.filter(exam_date__year=int(y), exam_date__month=int(mth)).values_list('id', flat=True))
+                except Exception:
+                    ids = []
+                if not ids:
+                    try:
+                        y = int((month.split('-')[0]))
+                        ids = list(exams.filter(exam_date__year=y).values_list('id', flat=True))
+                    except Exception:
+                        ids = []
+            else:
+                latest = exams.order_by('-exam_date', '-id')[:10]
+                ids = [e.id for e in latest]
+                if not ids:
+                    ids = list(exams.values_list('id', flat=True))
+            if not ids and et:
+                exams2 = base_exams().exclude(exam_type=et)
+                latest2 = exams2.order_by('-exam_date', '-id')[:10]
+                ids = [e.id for e in latest2]
+                if not ids:
+                    ids = list(exams2.values_list('id', flat=True))
+            if not ids and (cls_id or sec_id):
+                qs_wide = Examination.objects.all()
+                if school_id:
+                    qs_wide = qs_wide.filter(school_id=school_id)
+                if et:
+                    qs_wide = qs_wide.filter(exam_type=et)
+                latest3 = qs_wide.order_by('-exam_date', '-id')[:10]
+                ids = [e.id for e in latest3]
+                if not ids:
+                    ids = list(qs_wide.values_list('id', flat=True))
+            if not ids:
+                return Response({"text": "কোনো পরীক্ষা পাওয়া যায়নি।"})
+            rs = Result.objects.filter(examination_id__in=ids)
+            if school_id:
+                rs = rs.filter(student__school_id=school_id)
+            if cls_id:
+                rs = rs.filter(student__classroom_id=cls_id)
+            if sec_id:
+                rs = rs.filter(student__section_id=sec_id)
+            stu_ids = list(rs.values_list('student_id', flat=True).distinct())[:1]
+            if not stu_ids:
+                return Response({"text": "রেজাল্ট পাওয়া যায়নি।"})
+            sid = stu_ids[0]
+            rs_one = Result.objects.filter(examination_id__in=ids, student_id=sid).select_related('subject', 'student__user', 'examination', 'student__classroom', 'student__section')
+            if not rs_one.exists():
+                return Response({"text": "এই শিক্ষার্থীর বিস্তারিত রেজাল্ট পাওয়া যায়নি।"})
+            st = rs_one[0].student
+            name = (st.user.get_full_name() or st.user.username or '').strip()
+            subjects = []
+            for r in rs_one:
+                subjects.append({
+                    "subject": getattr(r.subject, "name", ""),
+                    "obtained": float(r.total_obtained),
+                    "grade": r.grade,
+                    "gpa": float(r.gpa),
+                    "passed": bool(r.is_passed)
+                })
+            cls_disp = getattr(st.classroom, 'name', '') or ''
+            sec_disp = getattr(st.section, 'name', '') or ''
+            text = f"{name} ({'রোল ' + str(st.roll_number) if st.roll_number else ''})"
+            if cls_disp:
+                text += f", {cls_disp}"
+                if sec_disp:
+                    text += f" ({sec_disp})"
+            try:
+                AssistantLog.objects.create(
+                    user=getattr(request, 'user', None),
+                    school_id=school_id if school_id else None,
+                    query_text=q,
+                    intent=it,
+                    params={'student_id': sid, 'exam_ids': ids},
+                    result_summary=text
+                )
+            except Exception:
+                pass
+            return Response({"text": text, "student": {"id": sid, "name": name, "roll": st.roll_number, "class": cls_disp, "section": sec_disp}, "subjects": subjects})
+        if it == 'results_student_count_details':
+            from results.models import Examination, Result
+            et = pick_exam_type()
+            import re
+            has_class_tokens = bool(re.search(r'(class|ক্লাস|শ্রেণি)', ql))
+            has_section_tokens = bool(re.search(r'(section|সেকশন|শাখা|\([a-zA-Zঅ-হ]+\))', ql))
+            cls_id, cls_name = resolve_classroom()
+            sec_id, sec_name = resolve_section()
+            explicit_cls = bool(classroom_id)
+            explicit_sec = bool(section_id)
+            if not (explicit_cls or has_class_tokens):
+                cls_id, cls_name = None, None
+            if not (explicit_sec or has_section_tokens):
+                sec_id, sec_name = None, None
+            def base_exams():
+                qs = Examination.objects.all()
+                if school_id:
+                    qs = qs.filter(school_id=school_id)
+                if cls_id:
+                    qs = qs.filter(classroom_id=cls_id)
+                if sec_id:
+                    qs = qs.filter(section_id=sec_id)
+                if et:
+                    qs = qs.filter(exam_type=et)
+                return qs
+            exams = base_exams()
+            ids = []
+            if date:
+                try:
+                    ids = list(exams.filter(exam_date=date).values_list('id', flat=True))
+                except Exception:
+                    ids = []
+                if not ids:
+                    try:
+                        import datetime as dt
+                        y, m = dt.date.fromisoformat(str(date)).year, dt.date.fromisoformat(str(date)).month
+                        ids = list(exams.filter(exam_date__year=int(y), exam_date__month=int(m)).values_list('id', flat=True))
+                    except Exception:
+                        ids = []
+                if not ids:
+                    try:
+                        import datetime as dt
+                        y = dt.date.fromisoformat(str(date)).year
+                        ids = list(exams.filter(exam_date__year=int(y)).values_list('id', flat=True))
+                    except Exception:
+                        ids = []
+            elif month:
+                try:
+                    y, mth = month.split('-')
+                    ids = list(exams.filter(exam_date__year=int(y), exam_date__month=int(mth)).values_list('id', flat=True))
+                except Exception:
+                    ids = []
+                if not ids:
+                    try:
+                        y = int((month.split('-')[0]))
+                        ids = list(exams.filter(exam_date__year=y).values_list('id', flat=True))
+                    except Exception:
+                        ids = []
+            else:
+                latest = exams.order_by('-exam_date', '-id')[:10]
+                ids = [e.id for e in latest]
+                if not ids:
+                    ids = list(exams.values_list('id', flat=True))
+            if not ids and et:
+                exams2 = base_exams().exclude(exam_type=et)
+                latest2 = exams2.order_by('-exam_date', '-id')[:10]
+                ids = [e.id for e in latest2]
+                if not ids:
+                    ids = list(exams2.values_list('id', flat=True))
+            if not ids and (cls_id or sec_id):
+                qs_wide = Examination.objects.all()
+                if school_id:
+                    qs_wide = qs_wide.filter(school_id=school_id)
+                if et:
+                    qs_wide = qs_wide.filter(exam_type=et)
+                latest3 = qs_wide.order_by('-exam_date', '-id')[:10]
+                ids = [e.id for e in latest3]
+                if not ids:
+                    ids = list(qs_wide.values_list('id', flat=True))
+            if not ids:
+                # fallback: use any results in school
+                rs_any = Result.objects.all()
+                if school_id:
+                    rs_any = rs_any.filter(student__school_id=school_id)
+                if cls_id:
+                    rs_any = rs_any.filter(student__classroom_id=cls_id)
+                if sec_id:
+                    rs_any = rs_any.filter(student__section_id=sec_id)
+                stu_ids_any = list(rs_any.values_list('student_id', flat=True).distinct())
+                total_students_any = len(stu_ids_any)
+                if total_students_any == 0:
+                    return Response({"text": "কোনো পরীক্ষা পাওয়া যায়নি।", "students_with_results": 0})
+                # Pick one student and show details
+                sid_any = stu_ids_any[0]
+                rs_one_any = rs_any.filter(student_id=sid_any).select_related('subject', 'student__user', 'student__classroom', 'student__section')[:8]
+                name_any = ''
+                cls_disp_any = ''
+                sec_disp_any = ''
+                subjects_any = []
+                if rs_one_any:
+                    st_any = rs_one_any[0].student
+                    name_any = (st_any.user.get_full_name() or st_any.user.username or '').strip()
+                    cls_disp_any = getattr(st_any.classroom, 'name', '') or ''
+                    sec_disp_any = getattr(st_any.section, 'name', '') or ''
+                    for r in rs_one_any:
+                        subjects_any.append({
+                            "subject": getattr(r.subject, "name", ""),
+                            "obtained": float(r.total_obtained),
+                            "grade": r.grade,
+                            "gpa": float(r.gpa),
+                            "passed": bool(r.is_passed)
+                        })
+                text_any = f"মোট {total_students_any} জন শিক্ষার্থীর রেজাল্ট ইনপুট দেওয়া হয়েছে।"
+                resp_any = {"text": text_any, "students_with_results": total_students_any}
+                if subjects_any:
+                    resp_any["student"] = {"name": name_any, "roll": getattr(st_any, 'roll_number', None), "class": cls_disp_any, "section": sec_disp_any}
+                    resp_any["subjects"] = subjects_any
+                return Response(resp_any)
+            rs = Result.objects.filter(examination_id__in=ids)
+            if school_id:
+                rs = rs.filter(student__school_id=school_id)
+            if cls_id:
+                rs = rs.filter(student__classroom_id=cls_id)
+            if sec_id:
+                rs = rs.filter(student__section_id=sec_id)
+            total_students = rs.values_list('student_id', flat=True).distinct().count()
+            stu_ids = list(rs.values_list('student_id', flat=True).distinct())[:1]
+            subjects = []
+            name = ''
+            roll = None
+            cls_disp = ''
+            sec_disp = ''
+            if stu_ids:
+                sid = stu_ids[0]
+                rs_one = Result.objects.filter(examination_id__in=ids, student_id=sid).select_related('subject', 'student__user', 'student__classroom', 'student__section')
+                if rs_one.exists():
+                    st = rs_one[0].student
+                    name = (st.user.get_full_name() or st.user.username or '').strip()
+                    roll = getattr(st, 'roll_number', None)
+                    cls_disp = getattr(st.classroom, 'name', '') or ''
+                    sec_disp = getattr(st.section, 'name', '') or ''
+                    for r in rs_one:
+                        subjects.append({
+                            "subject": getattr(r.subject, "name", ""),
+                            "obtained": float(r.total_obtained),
+                            "grade": r.grade,
+                            "gpa": float(r.gpa),
+                            "passed": bool(r.is_passed)
+                        })
+            text = f"মোট {total_students} জন শিক্ষার্থীর রেজাল্ট ইনপুট দেওয়া হয়েছে।"
+            resp = {"text": text, "students_with_results": total_students}
+            if subjects:
+                resp["student"] = {"name": name, "roll": roll, "class": cls_disp, "section": sec_disp}
+                resp["subjects"] = subjects
+            try:
+                AssistantLog.objects.create(
+                    user=getattr(request, 'user', None),
+                    school_id=school_id if school_id else None,
+                    query_text=q,
+                    intent=it,
+                    params={'exam_type': et or '', 'classroom': cls_id, 'section': sec_id, 'date': date, 'month': month},
+                    result_summary=text
+                )
+            except Exception:
+                pass
+            return Response(resp)
+        if it == 'results_years':
+            from results.models import Examination
+            qs = Examination.objects.all()
+            if school_id:
+                qs = qs.filter(school_id=school_id)
+            qs = qs.exclude(exam_date__isnull=True)
+            if date:
+                qs = qs.filter(exam_date=date)
+            if month:
+                try:
+                    y, mth = month.split('-')
+                    qs = qs.filter(exam_date__year=int(y), exam_date__month=int(mth))
+                except Exception:
+                    pass
+                raw_years = list(qs.values_list('exam_date__year', flat=True))
+                years = sorted(int(y) for y in set(raw_years) if y is not None)
+                if not years:
+                    text = "এই স্কুলে কোনো বছরের পরীক্ষা পাওয়া যায়নি।"
+                    return Response({"text": text, "years": []})
+                text = f"এই স্কুলে যেসব বছরে পরীক্ষা নেওয়া হয়েছে: {', '.join(str(y) for y in years)}।"
+                try:
+                    AssistantLog.objects.create(
+                        user=getattr(request, 'user', None),
+                        school_id=school_id if school_id else None,
+                        query_text=q,
+                        intent=it,
+                        result_summary=text
+                    )
+                except Exception:
+                    pass
+                return Response({"text": text, "years": years})
+        if it == 'results_exams_list':
+            from results.models import Examination, Result
+            from django.db.models import Count
+            et = pick_exam_type()
+            import re
+            has_class_tokens = bool(re.search(r'(class|ক্লাস|শ্রেণি)', ql))
+            has_section_tokens = bool(re.search(r'(section|সেকশন|শাখা|\([a-zA-Zঅ-হ]+\))', ql))
+            cls_id, cls_name = resolve_classroom()
+            sec_id, sec_name = resolve_section()
+            explicit_cls = bool(classroom_id)
+            explicit_sec = bool(section_id)
+            if not (explicit_cls or has_class_tokens):
+                cls_id, cls_name = None, None
+            if not (explicit_sec or has_section_tokens):
+                sec_id, sec_name = None, None
+            exams = Examination.objects.all()
+            if school_id:
+                exams = exams.filter(school_id=school_id)
+            if cls_id:
+                exams = exams.filter(classroom_id=cls_id)
+            if sec_id:
+                exams = exams.filter(section_id=sec_id)
+            if et:
+                exams = exams.filter(exam_type=et)
+            # Narrow by date/month if provided (with graceful fallback)
+            ids = []
+            if date:
+                try:
+                    ids = list(exams.filter(exam_date=date).values_list('id', flat=True))
+                except Exception:
+                    ids = []
+                if not ids:
+                    try:
+                        import datetime as dt
+                        y, m = dt.date.fromisoformat(str(date)).year, dt.date.fromisoformat(str(date)).month
+                        ids = list(exams.filter(exam_date__year=int(y), exam_date__month=int(m)).values_list('id', flat=True))
+                    except Exception:
+                        ids = []
+                if not ids:
+                    try:
+                        import datetime as dt
+                        y = dt.date.fromisoformat(str(date)).year
+                        ids = list(exams.filter(exam_date__year=int(y)).values_list('id', flat=True))
+                    except Exception:
+                        ids = []
+            elif month:
+                try:
+                    y, mth = month.split('-')
+                    ids = list(exams.filter(exam_date__year=int(y), exam_date__month=int(mth)).values_list('id', flat=True))
+                except Exception:
+                    ids = []
+                if not ids:
+                    try:
+                        y = int((month.split('-')[0]))
+                        ids = list(exams.filter(exam_date__year=y).values_list('id', flat=True))
+                    except Exception:
+                        ids = []
+            else:
+                ids = list(exams.values_list('id', flat=True))
+            if not ids and et:
+                exams2 = Examination.objects.all()
+                if school_id:
+                    exams2 = exams2.filter(school_id=school_id)
+                if cls_id:
+                    exams2 = exams2.filter(classroom_id=cls_id)
+                if sec_id:
+                    exams2 = exams2.filter(section_id=sec_id)
+                exams2 = exams2.exclude(exam_type=et)
+                ids = list(exams2.values_list('id', flat=True))
+            if not ids:
+                return Response({"text": "কোনো পরীক্ষা পাওয়া যায়নি।", "exams": []})
+            # Only those with results
+            rs_qs = Result.objects.filter(examination_id__in=ids)
+            if school_id:
+                rs_qs = rs_qs.filter(student__school_id=school_id)
+            if cls_id:
+                rs_qs = rs_qs.filter(student__classroom_id=cls_id)
+            if sec_id:
+                rs_qs = rs_qs.filter(student__section_id=sec_id)
+            counts = list(rs_qs.values('examination_id').annotate(results_count=Count('id'), students_count=Count('student_id', distinct=True)))
+            count_map = {c['examination_id']: c for c in counts if c['results_count'] > 0}
+            exam_ids_with_results = list(count_map.keys())
+            if not exam_ids_with_results:
+                return Response({"text": "এই শর্তে কোনো পরীক্ষার রেজাল্ট পাওয়া যায়নি।", "exams": []})
+            ex_list = list(Examination.objects.filter(id__in=exam_ids_with_results).select_related('classroom', 'section').values('id','name','exam_type','exam_date','classroom__name','section__name'))
+            # Build response
+            def fmt_date(d):
+                try:
+                    return d.strftime('%Y-%m-%d') if d else ''
+                except Exception:
+                    return ''
+            exams_out = []
+            for e in ex_list:
+                c = count_map.get(e['id']) or {'results_count': 0, 'students_count': 0}
+                exams_out.append({
+                    "id": e['id'],
+                    "name": e['name'],
+                    "type": e['exam_type'],
+                    "date": fmt_date(e['exam_date']),
+                    "class": e['classroom__name'] or '',
+                    "section": e['section__name'] or '',
+                    "results_count": int(c['results_count']),
+                    "students_count": int(c['students_count'])
+                })
+            cls_disp = cls_name or cls_id or ''
+            sec_disp = sec_name or ''
+            prefix = (cls_disp + (f" ({sec_disp})" if sec_disp else '')).strip()
+            if prefix:
+                text = f"{prefix}-এর যে পরীক্ষাগুলোর রেজাল্ট ইনপুট দেওয়া আছে:"
+            else:
+                text = "যে পরীক্ষাগুলোর রেজাল্ট ইনপুট দেওয়া আছে:"
+            try:
+                AssistantLog.objects.create(
+                    user=getattr(request, 'user', None),
+                    school_id=school_id if school_id else None,
+                    query_text=q,
+                    intent=it,
+                    params={'exam_type': et or '', 'classroom': cls_id, 'section': sec_id, 'date': date, 'month': month},
+                    result_summary=text
+                )
+            except Exception:
+                pass
+            return Response({"text": text, "exams": exams_out})
         if it == 'attendance_daily':
             if not school_id:
                 return Response({"error": "school প্রয়োজন"}, status=status.HTTP_400_BAD_REQUEST)

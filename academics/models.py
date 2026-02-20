@@ -100,3 +100,39 @@ class TeacherAssignment(models.Model):
 
     def __str__(self):
         return f"{self.teacher} - {self.subject.name} - {self.classroom.name}"
+
+class StudentYearRecord(models.Model):
+    school = models.ForeignKey(School, on_delete=models.CASCADE, related_name='student_year_records')
+    student = models.ForeignKey(StudentProfile, on_delete=models.CASCADE, related_name='year_records')
+    classroom = models.ForeignKey(ClassRoom, on_delete=models.SET_NULL, null=True, blank=True, related_name='year_records')
+    section = models.ForeignKey(Section, on_delete=models.SET_NULL, null=True, blank=True, related_name='year_records')
+    roll_number = models.CharField(max_length=50, blank=True, null=True)
+    academic_year = models.CharField(max_length=9)  # e.g., "2025" or "2024-2025"
+    status = models.CharField(max_length=20, choices=[
+        ('promoted', 'Promoted'),
+        ('retained', 'Retained'),
+        ('not_passed', 'Not Passed'),
+    ], default='promoted')
+    examination_id = models.IntegerField(blank=True, null=True)
+    result_cgpa = models.FloatField(blank=True, null=True)
+    result_grade = models.CharField(max_length=5, blank=True, null=True)
+    percentage = models.FloatField(blank=True, null=True)
+    rank = models.IntegerField(blank=True, null=True)
+    promoted_to_classroom = models.ForeignKey(ClassRoom, on_delete=models.SET_NULL, null=True, blank=True, related_name='promoted_year_records')
+    promoted_on = models.DateTimeField(blank=True, null=True)
+    meta = models.JSONField(blank=True, null=True)
+
+    class Meta:
+        unique_together = ('student', 'academic_year')
+        indexes = [
+            models.Index(fields=['school', 'academic_year']),
+            models.Index(fields=['student', 'academic_year']),
+        ]
+        ordering = ['-academic_year', 'student_id']
+
+    def __str__(self):
+        try:
+            nm = self.student.user.get_full_name() or self.student.user.username
+        except:
+            nm = str(self.student_id)
+        return f"{nm} - {self.academic_year} ({self.status})"

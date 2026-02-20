@@ -15,6 +15,7 @@ export default function ResultCard({ studentData, results, overallResult, examin
     user.guardian_name || user.parent_name || ''
   );
   const isSchool19 = String(schoolId || school?.id || '') === '19';
+  const isSchool16 = String(schoolId || school?.id || '') === '16';
   const [resolvedSchool, setResolvedSchool] = React.useState(school || null);
   React.useEffect(() => {
     let active = true;
@@ -181,29 +182,28 @@ export default function ResultCard({ studentData, results, overallResult, examin
   // School logo URL handling with relative path
   const logoCandidates = (() => {
     const candidates = [
-      resolvedSchool?.logo,
-      resolvedSchool?.img,
       resolvedSchool?.logo_url,
-      resolvedSchool?.image,
-      resolvedSchool?.logoUrl,
-      resolvedSchool?.photo,
       resolvedSchool?.image_url,
       resolvedSchool?.photo_url,
+      resolvedSchool?.logo,
+      resolvedSchool?.image,
+      resolvedSchool?.img,
+      resolvedSchool?.logoUrl,
       resolvedSchool?.logo_path,
       resolvedSchool?.logoUri,
       resolvedSchool?.logoURL,
-      examination?.school?.logo,
       examination?.school?.logo_url,
-      examination?.school?.image,
-      examination?.school?.photo,
       examination?.school?.image_url,
+      examination?.school?.photo,
+      examination?.school?.logo,
+      examination?.school?.image,
       examination?.school_logo,
       student?.school_logo,
-      student?.classroom?.school?.logo,
       student?.classroom?.school?.logo_url,
+      student?.classroom?.school?.image_url,
+      student?.classroom?.school?.logo,
       student?.classroom?.school?.image,
-      student?.classroom?.school?.photo,
-      student?.classroom?.school?.image_url
+      student?.classroom?.school?.photo
     ].filter(v => v != null);
     const urls = [];
     for (const val of candidates) {
@@ -212,6 +212,7 @@ export default function ResultCard({ studentData, results, overallResult, examin
       const resolved = resolveMediaUrl(String(raw).trim());
       if (resolved && String(resolved).trim().length > 0) urls.push(resolved);
     }
+    if (isSchool16) urls.push(resolveMediaUrl('BHS/bhatra.png'));
     if (isSchool19) urls.push(resolveMediaUrl('school_logos/bohoria.jpg'));
     urls.push(fallbackLogo);
     return urls;

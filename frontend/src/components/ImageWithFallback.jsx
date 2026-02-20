@@ -17,6 +17,11 @@ const ImageWithFallback = ({
   const list = Array.isArray(srcCandidates) && srcCandidates.length ? srcCandidates : (src ? [src] : []);
   const currentSrc = list.length ? list[Math.max(0, Math.min(index, list.length - 1))] : null;
 
+  React.useEffect(() => {
+    setImgError(false);
+    setIndex(0);
+  }, [src, srcCandidates]);
+
   if (imgError || !currentSrc) {
     return fallback || (
       <Box

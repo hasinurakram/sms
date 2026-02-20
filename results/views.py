@@ -38,6 +38,16 @@ class ExaminationViewSet(viewsets.ModelViewSet):
         exam_type = self.request.query_params.get('exam_type')
         if exam_type:
             qs = qs.filter(exam_type__iexact=exam_type)
+        # Optional year filter: by exam_date year or year present in name
+        year = self.request.query_params.get('year')
+        if year:
+            try:
+                y = int(year)
+            except Exception:
+                y = None
+            if y:
+                from django.db.models import Q
+                qs = qs.filter(Q(exam_date__year=y) | (Q(exam_date__isnull=True) & Q(name__icontains=str(y))))
         return qs
     
     @action(detail=True, methods=['post'], permission_classes=[SubjectResultWritePermission])
@@ -334,6 +344,16 @@ class ResultViewSet(viewsets.ModelViewSet):
         if section_id:
             qs = qs.filter(student__section_id=section_id)
         
+        # Optional year filter via examination year (exam_date.year or name contains year)
+        year = self.request.query_params.get('year')
+        if year:
+            try:
+                y = int(year)
+            except Exception:
+                y = None
+            if y:
+                from django.db.models import Q
+                qs = qs.filter(Q(examination__exam_date__year=y) | (Q(examination__exam_date__isnull=True) & Q(examination__name__icontains=str(y))))
         return qs
     
     @action(detail=False, methods=['get'])
@@ -392,6 +412,16 @@ class StudentOverallResultViewSet(viewsets.ModelViewSet):
         student_id = self.request.query_params.get('student')
         if student_id:
             qs = qs.filter(student_id=student_id)
+        # Optional year filter (exam_date year or name contains year)
+        year = self.request.query_params.get('year')
+        if year:
+            try:
+                y = int(year)
+            except Exception:
+                y = None
+            if y:
+                from django.db.models import Q
+                qs = qs.filter(Q(examination__exam_date__year=y) | (Q(examination__exam_date__isnull=True) & Q(examination__name__icontains=str(y))))
         return qs.select_related('examination', 'examination__classroom', 'examination__section', 'student__user')
     
     @action(detail=False, methods=['get'])
@@ -447,11 +477,9 @@ class StudentOverallResultViewSet(viewsets.ModelViewSet):
         # Refined exam filtering
         exams = exams.filter(exam_type__iexact=exam_type)
         
-        # Filter by year (approximate)
-        # We check exam_date year OR name containing year
         exams = exams.filter(
             Q(exam_date__year=year) | 
-            Q(name__icontains=str(year))
+            (Q(exam_date__isnull=True) & Q(name__icontains=str(year)))
         )
         
         exam_ids = set(exams.values_list('id', flat=True))
@@ -604,6 +632,7 @@ class StudentOverallResultViewSet(viewsets.ModelViewSet):
         exam_type = request.query_params.get('exam_type')
         classroom_id = request.query_params.get('classroom')
         section_id = request.query_params.get('section')
+        year = request.query_params.get('year')
         
         if not student_id or not exam_type or not classroom_id:
             return Response(
@@ -622,10 +651,18 @@ class StudentOverallResultViewSet(viewsets.ModelViewSet):
             )
         
         # Get all examinations of this type for this classroom
+        from django.db.models import Q
         examinations = Examination.objects.filter(
             exam_type=exam_type,
             classroom_id=classroom_id
         )
+        if year:
+            try:
+                y = int(year)
+            except Exception:
+                y = None
+            if y:
+                examinations = examinations.filter(Q(exam_date__year=y) | (Q(exam_date__isnull=True) & Q(name__icontains=str(y))))
         
         if not examinations.exists():
             return Response(
@@ -802,6 +839,7 @@ class StudentOverallResultViewSet(viewsets.ModelViewSet):
         exam_type = request.query_params.get('exam_type')
         classroom_id = request.query_params.get('classroom')
         section_id = request.query_params.get('section')
+        year = request.query_params.get('year')
 
         if not exam_type or not classroom_id:
             return Response(
@@ -811,10 +849,18 @@ class StudentOverallResultViewSet(viewsets.ModelViewSet):
 
         from academics.models import StudentProfile
 
+        from django.db.models import Q
         examinations = Examination.objects.filter(
             exam_type=exam_type,
             classroom_id=classroom_id
         )
+        if year:
+            try:
+                y = int(year)
+            except Exception:
+                y = None
+            if y:
+                examinations = examinations.filter(Q(exam_date__year=y) | Q(name__icontains=str(y)))
 
         if not examinations.exists():
             return Response([], status=status.HTTP_200_OK)

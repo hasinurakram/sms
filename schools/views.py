@@ -120,6 +120,27 @@ def dashboard_stats(request):
     exam_due_total = 0
     class_dues_map = {} # {class_name: {tuition_due, exam_due, total_due}}
     
+    cutoff_date = datetime(2026, 1, 1).date()
+    def _is_tuition_countable(assign):
+        try:
+            freq = (assign.fee_structure.frequency or '').lower()
+        except Exception:
+            freq = ''
+        if freq == 'one_time':
+            return True
+        try:
+            if assign.assigned_date and assign.assigned_date >= cutoff_date:
+                return True
+        except Exception:
+            pass
+        try:
+            ay = str(getattr(assign.fee_structure, 'academic_year', '') or '').strip()
+            if '2026' in ay:
+                return True
+        except Exception:
+            pass
+        return False
+    
     for a in assignments:
         # Calculate gross payable
         base = a.custom_amount if a.custom_amount is not None else a.fee_structure.amount
@@ -140,6 +161,9 @@ def dashboard_stats(request):
             if is_exam:
                 exam_due_total += due
             else:
+                if not _is_tuition_countable(a):
+                    # Pre-2026 tuition dues are ignored for aggregation
+                    continue
                 tuition_due_total += due
             
             # Add to class map
@@ -150,6 +174,9 @@ def dashboard_stats(request):
             if is_exam:
                 class_dues_map[cname]['exam_due'] += due
             else:
+                if not _is_tuition_countable(a):
+                    # Skip adding pre-2026 tuition to class breakdown
+                    continue
                 class_dues_map[cname]['tuition_due'] += due
             
             class_dues_map[cname]['total_due'] += due

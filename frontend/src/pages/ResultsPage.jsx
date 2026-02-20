@@ -105,6 +105,7 @@ export default function ResultsPage() {
   const [savingResult, setSavingResult] = useState(false);
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
   const [bulkForm, setBulkForm] = useState({ classroom: '', section: '', subject: '', exam: '' });
+  const [bulkYear, setBulkYear] = useState('');
   const [bulkStudents, setBulkStudents] = useState([]);
   const [bulkMarks, setBulkMarks] = useState({});
   const [bulkSaving, setBulkSaving] = useState(false);
@@ -1141,10 +1142,39 @@ export default function ResultsPage() {
     const cls = bulkForm.classroom;
     if (!cls) return;
     const exams = getExamsForClass(cls);
-    if (!bulkForm.exam && exams.length) {
-      setBulkForm(prev => ({ ...prev, exam: exams[0].id }));
+    const years = Array.from(new Set(exams.map(ex => {
+      try {
+        const d = ex.exam_date ? new Date(ex.exam_date) : null;
+        return d ? d.getFullYear() : null;
+      } catch (_) { return null; }
+    }).filter(Boolean))).sort((a, b) => b - a);
+    if (!bulkYear && years.length) {
+      setBulkYear(String(years[0]));
+    }
+    const filtered = years.length && bulkYear ? exams.filter(ex => {
+      try {
+        const d = ex.exam_date ? new Date(ex.exam_date) : null;
+        return d ? String(d.getFullYear()) === String(bulkYear) : false;
+      } catch (_) { return false; }
+    }) : exams;
+    if (!bulkForm.exam && filtered.length) {
+      setBulkForm(prev => ({ ...prev, exam: filtered[0].id }));
     }
   }, [bulkForm.classroom, examinations]);
+  useEffect(() => {
+    const cls = bulkForm.classroom;
+    if (!cls || !bulkYear) return;
+    const exams = getExamsForClass(cls);
+    const filtered = exams.filter(ex => {
+      try {
+        const d = ex.exam_date ? new Date(ex.exam_date) : null;
+        return d ? String(d.getFullYear()) === String(bulkYear) : false;
+      } catch (_) { return false; }
+    });
+    if (filtered.length && !filtered.some(ex => String(ex.id) === String(bulkForm.exam))) {
+      setBulkForm(prev => ({ ...prev, exam: filtered[0].id }));
+    }
+  }, [bulkYear, bulkForm.classroom, examinations]);
 
   const setBulkMark = (sid, field, value) => {
     const examObj = getExamById(bulkForm.exam || selectedExam);
@@ -2158,10 +2188,37 @@ export default function ResultsPage() {
                   onChange={(e) => setBulkForm(prev => ({ ...prev, exam: e.target.value }))}
                   label="পরীক্ষা"
                 >
-                  {getExamsForClass(bulkForm.classroom).map(exam => (
+                  {getExamsForClass(bulkForm.classroom).filter(exam => {
+                    try {
+                      if (!bulkYear) return true;
+                      const d = exam.exam_date ? new Date(exam.exam_date) : null;
+                      if (!d) return false;
+                      return String(d.getFullYear()) === String(bulkYear);
+                    } catch (_) { return true; }
+                  }).map(exam => (
                     <MenuItem key={exam.id} value={exam.id}>
                       {`${exam.name} (${getExamTypeLabel(exam.exam_type)}) — মোট: ${exam.total_marks}`}
                     </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid size={{ xs: 12, md: 3 }}>
+              <FormControl fullWidth>
+                <InputLabel>সাল</InputLabel>
+                <Select
+                  value={bulkYear}
+                  onChange={(e) => setBulkYear(String(e.target.value))}
+                  label="সাল"
+                  disabled={!bulkForm.classroom}
+                >
+                  {Array.from(new Set(getExamsForClass(bulkForm.classroom).map(ex => {
+                    try {
+                      const d = ex.exam_date ? new Date(ex.exam_date) : null;
+                      return d ? d.getFullYear() : null;
+                    } catch (_) { return null; }
+                  }).filter(Boolean))).sort((a, b) => b - a).map(y => (
+                    <MenuItem key={y} value={String(y)}>{y}</MenuItem>
                   ))}
                 </Select>
               </FormControl>
