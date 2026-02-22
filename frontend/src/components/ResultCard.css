@@ -19,6 +19,8 @@
     box-shadow: none !important;
     padding: 8mm !important;
     margin: 0 auto !important;
+    page-break-after: always;
+    break-after: page;
   }
   .result-card-header {
     position: relative !important;
@@ -47,6 +49,17 @@
     page-break-inside: avoid;
     break-inside: avoid;
     margin-top: 4mm !important;
+  }
+  .result-card-grading {
+    page-break-inside: avoid;
+    break-inside: avoid;
+    margin-top: 3mm !important;
+  }
+  .result-card-grading .MuiTypography-body2 {
+    font-size: 0.7rem !important;
+  }
+  .result-card-grading .MuiTypography-caption {
+    font-size: 0.65rem !important;
   }
   .result-card-info {
     margin-bottom: 3mm !important;
@@ -106,6 +119,18 @@
   * {
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+  }
+  .bulk-print-mode .bulk-sheet {
+    page-break-after: always;
+    break-after: page;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  .bulk-print-mode .bulk-card-wrap {
+    page-break-inside: avoid;
+    break-inside: avoid;
+    margin: 0;
+    padding: 0;
   }
 }
 .result-card-container {

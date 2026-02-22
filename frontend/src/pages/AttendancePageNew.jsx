@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -71,6 +71,10 @@ export default function AttendancePageNew() {
   const [dailySummary, setDailySummary] = useState([]);
   const [monthlyReport, setMonthlyReport] = useState([]);
   const [selectedMonth, setSelectedMonth] = useState(dayjs().format('YYYY-MM'));
+  const [selectedYear, setSelectedYear] = useState(dayjs().format('YYYY'));
+  const [selectedStudent, setSelectedStudent] = useState('');
+  const autoSaveTimerRef = useRef(null);
+  const [autoSaving, setAutoSaving] = useState(false);
 
   // Load classrooms on mount
   useEffect(() => {
@@ -105,6 +109,46 @@ export default function AttendancePageNew() {
     }
   };
 
+  const [yearlyReport, setYearlyReport] = useState([]);
+  const loadYearlyReport = async () => {
+    try {
+      const months = Array.from({ length: 12 }, (_, i) => `${selectedYear}-${String(i + 1).padStart(2, '0')}`);
+      const aggregate = new Map();
+      for (const m of months) {
+        let url = `/api/attendance/records/monthly_report/?school=${id}&month=${m}`;
+        if (selectedClassroom) url += `&classroom=${selectedClassroom}`;
+        if (selectedSection) url += `&section=${selectedSection}`;
+        const res = await api.get(url);
+        const rows = res.data || [];
+        for (const r of rows) {
+          if (selectedStudent && String(r.student_id) !== String(selectedStudent)) continue;
+          const key = r.student_id;
+          const prev = aggregate.get(key) || {
+            student_id: r.student_id,
+            student_name: r.student_name,
+            classroom: r.classroom,
+            section: r.section,
+            total_days: 0,
+            present_days: 0,
+            absent_days: 0
+          };
+          prev.total_days += (parseInt(r.total_days, 10) || 0);
+          prev.present_days += (parseInt(r.present_days, 10) || 0);
+          prev.absent_days += (parseInt(r.absent_days, 10) || 0);
+          aggregate.set(key, prev);
+        }
+      }
+      const out = Array.from(aggregate.values()).map(r => ({
+        ...r,
+        attendance_percentage: r.total_days > 0 ? Math.round((r.present_days / r.total_days) * 100) : 0
+      }));
+      setYearlyReport(out);
+      toast.success('বাৎসরিক রিপোর্ট লোড হয়েছে');
+    } catch (error) {
+      console.error('Failed to load yearly report:', error);
+      toast.error('বাৎসরিক রিপোর্ট লোড ব্যর্থ');
+    }
+  };
   const loadSections = async (classroomId) => {
     try {
       const res = await scopedGet('/api/academics/sections/', id, { classroom: classroomId }, { timeout: 15000 });
@@ -135,10 +179,10 @@ export default function AttendancePageNew() {
 
       // Load existing attendance for the date
       const attendanceRes = await scopedGet('/api/attendance/records/', id, { date }, { timeout: 15000 });
-      
-      // Create attendance map
+      const studentIdSet = new Set(studentList.map(s => s.id));
+      const filteredRecords = (Array.isArray(attendanceRes.data) ? attendanceRes.data : []).filter(rec => studentIdSet.has(rec.student));
       const attendanceMap = {};
-      attendanceRes.data.forEach(record => {
+      filteredRecords.forEach(record => {
         attendanceMap[record.student] = record.present;
       });
 
@@ -164,6 +208,7 @@ export default function AttendancePageNew() {
       ...prev,
       [studentId]: !prev[studentId]
     }));
+    scheduleAutoSave();
   };
 
   const markAllPresent = () => {
@@ -173,6 +218,7 @@ export default function AttendancePageNew() {
     });
     setAttendance(newAttendance);
     toast.success('All students marked present');
+    scheduleAutoSave();
   };
 
   const markAllAbsent = () => {
@@ -182,15 +228,32 @@ export default function AttendancePageNew() {
     });
     setAttendance(newAttendance);
     toast.success('All students marked absent');
+    scheduleAutoSave();
   };
 
-  const saveAttendance = async () => {
+  const scheduleAutoSave = () => {
+    try {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+      setAutoSaving(true);
+      autoSaveTimerRef.current = setTimeout(async () => {
+        await saveAttendance(true);
+        setAutoSaving(false);
+      }, 800);
+    } catch (_) {
+      setAutoSaving(false);
+    }
+  };
+
+  const saveAttendance = async (silentOrEvent = false) => {
+    const silent = typeof silentOrEvent === 'boolean' ? silentOrEvent : false;
     if (!isAuthenticated()) {
       navigate('/login');
       return;
     }
     if (students.length === 0) {
-      toast.warning('No students to save attendance for');
+      if (!silent) toast.warning('No students to save attendance for');
       return;
     }
 
@@ -210,18 +273,18 @@ export default function AttendancePageNew() {
       });
 
       if (response.data.success) {
-        toast.success(`Attendance saved successfully! ${response.data.saved} records saved.`);
+        if (!silent) toast.success(`Attendance saved successfully! ${response.data.saved} records saved.`);
         if (response.data.errors && response.data.errors.length > 0) {
           console.warn('Some records had errors:', response.data.errors);
         }
         loadDailySummary();
       } else {
-        toast.error('Failed to save some attendance records');
+        if (!silent) toast.error('Failed to save some attendance records');
       }
     } catch (error) {
       console.error('Failed to save attendance:', error);
       const errorMsg = error.response?.data?.error || error.response?.data?.detail || 'Failed to save attendance';
-      toast.error(errorMsg);
+      if (!silent) toast.error(errorMsg);
     } finally {
       setSaving(false);
     }
@@ -251,7 +314,10 @@ export default function AttendancePageNew() {
       }
 
       const res = await api.get(url);
-      setMonthlyReport(res.data || []);
+      const data = res.data || [];
+      setMonthlyReport(
+        selectedStudent ? data.filter(r => String(r.student_id) === String(selectedStudent)) : data
+      );
     } catch (error) {
       console.error('Failed to load monthly report:', error);
       toast.error('Failed to load monthly report');
@@ -337,6 +403,7 @@ export default function AttendancePageNew() {
               value={selectedSection}
               onChange={(e) => setSelectedSection(e.target.value)}
               disabled={!selectedClassroom}
+              helperText="সেকশন না দিলে এই শ্রেণির সব সেকশনের শিক্ষার্থী লোড হবে"
             >
               <MenuItem value="">-- সব সেকশন --</MenuItem>
               {sections.map(section => (
@@ -356,6 +423,23 @@ export default function AttendancePageNew() {
               onChange={(e) => setDate(e.target.value)}
               InputLabelProps={{ shrink: true }}
             />
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            <TextField
+              select
+              fullWidth
+              label="শিক্ষার্থী (ঐচ্ছিক)"
+              value={selectedStudent}
+              onChange={(e) => setSelectedStudent(e.target.value)}
+              disabled={!selectedClassroom || students.length === 0}
+            >
+              <MenuItem value="">-- শিক্ষার্থী নির্বাচন করুন --</MenuItem>
+              {students.map(s => (
+                <MenuItem key={s.id} value={s.id}>
+                  {s.user?.first_name} {s.user?.last_name} ({s.roll_number || 'N/A'})
+                </MenuItem>
+              ))}
+            </TextField>
           </Grid>
 
           <Grid item xs={12} sm={6} md={3}>
@@ -550,6 +634,9 @@ export default function AttendancePageNew() {
               >
                 {saving ? 'সংরক্ষণ হচ্ছে...' : 'হাজিরা সংরক্ষণ করুন'}
               </Button>
+              {autoSaving && (
+                <Chip label="অটো-সেভ হচ্ছে..." color="info" />
+              )}
               <Button
                 variant="outlined"
                 size="large"
@@ -565,6 +652,26 @@ export default function AttendancePageNew() {
                 onClick={loadMonthlyReport}
               >
                 মাসিক রিপোর্ট
+              </Button>
+              <TextField
+                select
+                size="small"
+                sx={{ minWidth: 120 }}
+                label="সাল"
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(e.target.value)}
+              >
+                {Array.from({ length: 6 }, (_, i) => String(dayjs().year() - i)).map(y => (
+                  <MenuItem key={y} value={y}>{y}</MenuItem>
+                ))}
+              </TextField>
+              <Button
+                variant="outlined"
+                size="large"
+                startIcon={<CalendarIcon />}
+                onClick={loadYearlyReport}
+              >
+                বাৎসরিক রিপোর্ট
               </Button>
             </Stack>
           </>
@@ -637,6 +744,19 @@ export default function AttendancePageNew() {
           <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold' }}>
             📅 মাসিক হাজিরা রিপোর্ট - {selectedMonth}
           </Typography>
+          <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
+            <TextField
+              type="month"
+              label="মাস পরিবর্তন করুন"
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              InputLabelProps={{ shrink: true }}
+              size="small"
+            />
+            <Button variant="outlined" size="small" onClick={loadMonthlyReport} startIcon={<CalendarIcon />}>
+              রিফ্রেশ
+            </Button>
+          </Stack>
           <Table>
             <TableHead>
               <TableRow sx={{ bgcolor: 'grey.100' }}>
@@ -651,6 +771,52 @@ export default function AttendancePageNew() {
             </TableHead>
             <TableBody>
               {monthlyReport.map((report) => (
+                <TableRow key={report.student_id}>
+                  <TableCell>{report.student_name}</TableCell>
+                  <TableCell>{report.classroom}</TableCell>
+                  <TableCell>{report.section}</TableCell>
+                  <TableCell align="center">{report.total_days}</TableCell>
+                  <TableCell align="center">
+                    <Chip label={report.present_days} color="success" size="small" />
+                  </TableCell>
+                  <TableCell align="center">
+                    <Chip label={report.absent_days} color="error" size="small" />
+                  </TableCell>
+                  <TableCell align="center">
+                    <Chip
+                      label={`${report.attendance_percentage}%`}
+                      color={
+                        report.attendance_percentage >= 75 ? 'success' :
+                        report.attendance_percentage >= 50 ? 'warning' : 'error'
+                      }
+                      size="small"
+                    />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Paper>
+      )}
+      {yearlyReport.length > 0 && (
+        <Paper sx={{ p: 3, mt: 3, borderRadius: 2 }}>
+          <Typography variant="h6" sx={{ mb: 2, fontWeight: 'bold' }}>
+            📅 বাৎসরিক হাজিরা রিপোর্ট - {selectedYear}
+          </Typography>
+          <Table>
+            <TableHead>
+              <TableRow sx={{ bgcolor: 'grey.100' }}>
+                <TableCell sx={{ fontWeight: 'bold' }}>শিক্ষার্থীর নাম</TableCell>
+                <TableCell sx={{ fontWeight: 'bold' }}>শ্রেণি</TableCell>
+                <TableCell sx={{ fontWeight: 'bold' }}>সেকশন</TableCell>
+                <TableCell sx={{ fontWeight: 'bold' }} align="center">মোট দিন</TableCell>
+                <TableCell sx={{ fontWeight: 'bold' }} align="center">উপস্থিত</TableCell>
+                <TableCell sx={{ fontWeight: 'bold' }} align="center">অনুপস্থিত</TableCell>
+                <TableCell sx={{ fontWeight: 'bold' }} align="center">হাজিরা %</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {yearlyReport.map((report) => (
                 <TableRow key={report.student_id}>
                   <TableCell>{report.student_name}</TableCell>
                   <TableCell>{report.classroom}</TableCell>

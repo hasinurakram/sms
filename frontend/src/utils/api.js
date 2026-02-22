@@ -30,12 +30,12 @@ api.interceptors.request.use(
       const isPublicGet =
         method === 'get' &&
         (
-          /^\/?api\/schools\/?(\?.*)?$/i.test(urlPath) || // schools list
-          /^\/?api\/schools\/\d+\/?(\?.*)?$/i.test(urlPath) // single school
+          /^\/?api\/schools\/?(\?.*)?$/i.test(urlPath) ||
+          /^\/?api\/schools\/\d+\/?(\?.*)?$/i.test(urlPath)
         );
+      const isAuthEndpoint = /^\/?api\/(token\/?|auth\/login\/?|users\/login\/?)$/i.test(urlPath);
 
-      // For public GET endpoints, avoid sending Authorization to prevent 401 on invalid tokens
-      if (token && !isPublicGet) {
+      if (token && !isPublicGet && !isAuthEndpoint) {
         config.headers.Authorization = `Bearer ${token}`;
       }
 

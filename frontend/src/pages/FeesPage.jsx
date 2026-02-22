@@ -145,60 +145,119 @@ const FeesPage = () => {
   const isSmallScreen = useMediaQuery(theme.breakpoints.down('sm'));
   
   // Helper function to set fees for a specific class
-  const setClassWiseFees = async (classId, monthlyTuition, sessionFee, assessmentFee) => {
+  const setClassWiseFees = async (classId, monthlyTuition, sessionFee, halfYearlyAmount, annualAmount) => {
     const classIdStr = String(classId);
     const schoolIdNum = Number(schoolId);
     const academicYear = new Date().getFullYear().toString();
     const monthsBn = ['জানুয়ারী','ফেব্রুয়ারী','মার্চ','এপ্রিল','মে','জুন','জুলাই','আগষ্ট','সেপ্টেম্বর','অক্টোবর','নভেম্বর','ডিসেম্বর'];
     
     try {
-      // Create monthly tuition fees
+      // Ensure fee categories exist for months, session, half-yearly, and annual
+      let categories = [];
+      try {
+        const catResp = await api.get(`/api/fees/categories/?school=${schoolIdNum}`);
+        if (Array.isArray(catResp.data)) categories = catResp.data;
+        else if (catResp.data?.results) categories = catResp.data.results;
+        else if (catResp.data?.data) categories = catResp.data.data;
+      } catch (_) { categories = []; }
+      const byName = (n) => categories.find(c => String(c.name || '').trim() === String(n).trim());
+      // Month categories
+      const monthCatIds = [];
       for (let i = 0; i < 12; i++) {
-        const feeData = {
-          name: `${monthsBn[i]} মাসের বেতন`,
-          title: `${monthsBn[i]} মাসের বেতন`,
-          amount: monthlyTuition,
-          frequency: 'monthly',
-          fee_type: 'tuition',
-          classroom_id: classId,  // Changed from class_id to classroom_id
-          school_id: schoolIdNum,
-          academic_year: academicYear,
-          month: i + 1
-        };
-        
-        await api.post('/api/fees/fees/', feeData);
+        const name = `${monthsBn[i]} মাসের বেতন`;
+        let cat = byName(name);
+        if (!cat) {
+          try {
+            const crt = await api.post('/api/fees/categories/', { school_id: schoolIdNum, name, fee_type: 'tuition', is_mandatory: true });
+            cat = crt?.data;
+            categories.push(cat);
+          } catch (_) {}
+        }
+        monthCatIds[i] = cat?.id || cat?._id || null;
+      }
+      // Session category
+      const sessionCatName = 'সেশন ফি';
+      let sessionCat = byName(sessionCatName);
+      if (!sessionCat) {
+        try {
+          const crt = await api.post('/api/fees/categories/', { school_id: schoolIdNum, name: sessionCatName, fee_type: 'session', is_mandatory: false });
+          sessionCat = crt?.data;
+          categories.push(sessionCat);
+        } catch (_) {}
+      }
+      // Half-yearly exam category
+      const halfCatName = 'অর্ধ-বার্ষিকী পরীক্ষার ফি';
+      let halfCat = byName(halfCatName);
+      if (!halfCat) {
+        try {
+          const crt = await api.post('/api/fees/categories/', { school_id: schoolIdNum, name: halfCatName, fee_type: 'assessment', is_mandatory: false });
+          halfCat = crt?.data;
+          categories.push(halfCat);
+        } catch (_) {}
+      }
+      // Annual exam category
+      const annualCatName = 'বার্ষিক পরীক্ষার ফি';
+      let annualCat = byName(annualCatName);
+      if (!annualCat) {
+        try {
+          const crt = await api.post('/api/fees/categories/', { school_id: schoolIdNum, name: annualCatName, fee_type: 'assessment', is_mandatory: false });
+          annualCat = crt?.data;
+          categories.push(annualCat);
+        } catch (_) {}
+      }
+      
+      // Create monthly tuition fee structures (12 separate structures, one per month category)
+      if (monthlyTuition > 0) {
+        for (let i = 0; i < 12; i++) {
+          const feeData = {
+            amount: monthlyTuition,
+            frequency: 'monthly',
+            classroom_id: classId,
+            school_id: schoolIdNum,
+            academic_year: academicYear,
+            category_id: monthCatIds[i] || null
+          };
+          await api.post('/api/fees/fees/', feeData);
+        }
       }
       
       // Create session fee
       if (sessionFee > 0) {
         const sessionData = {
-          name: 'সেশন ফি',
-          title: 'সেশন ফি',
           amount: sessionFee,
           frequency: 'one_time',
-          fee_type: 'session',
-          classroom_id: classId,  // Changed from class_id to classroom_id
+          classroom_id: classId,
           school_id: schoolIdNum,
-          academic_year: academicYear
+          academic_year: academicYear,
+          category_id: sessionCat?.id || sessionCat?._id || null
         };
         
         await api.post('/api/fees/fees/', sessionData);
       }
       
-      // Create assessment fee
-      if (assessmentFee > 0) {
-        const assessmentData = {
-          name: 'ষান্মাসিক/বাৎসরিক মূল্যায়ন ফি',
-          title: 'ষান্মাসিক/বাৎসরিক মূল্যায়ন ফি',
-          amount: assessmentFee,
+      // Create half-yearly exam fee
+      if (halfYearlyAmount > 0) {
+        const halfData = {
+          amount: halfYearlyAmount,
           frequency: 'one_time',
-          fee_type: 'assessment',
-          classroom_id: classId,  // Changed from class_id to classroom_id
+          classroom_id: classId,
           school_id: schoolIdNum,
-          academic_year: academicYear
+          academic_year: academicYear,
+          category_id: halfCat?.id || halfCat?._id || null
         };
-        
-        await api.post('/api/fees/fees/', assessmentData);
+        await api.post('/api/fees/fees/', halfData);
+      }
+      // Create annual exam fee
+      if (annualAmount > 0) {
+        const annualData = {
+          amount: annualAmount,
+          frequency: 'one_time',
+          classroom_id: classId,
+          school_id: schoolIdNum,
+          academic_year: academicYear,
+          category_id: annualCat?.id || annualCat?._id || null
+        };
+        await api.post('/api/fees/fees/', annualData);
       }
       
       return { success: true, message: `Class ${classId} fees set successfully` };
@@ -223,12 +282,27 @@ const FeesPage = () => {
       const derived = deriveClassPlan(cid) || {};
       const monthly = Number(derived.monthlyAmount ?? planForm.monthlyAmount ?? 0) || 0;
       const session = Number(derived.sessionAmount ?? planForm.sessionAmount ?? 0) || 0;
-      const assessment = Number(derived.assessmentAmount ?? planForm.assessmentAmount ?? 0) || 0;
-      if (monthly <= 0 && session <= 0 && assessment <= 0) {
-        setSnackbar({ open: true, message: 'কমপক্ষে মাসিক/সেশন/মূল্যায়নের একটির পরিমাণ দিন', severity: 'warning' });
-        return;
+      const half = Number(derived.halfYearlyAmount ?? planForm.halfYearlyAmount ?? 0) || 0;
+      const annual = Number(derived.annualAmount ?? planForm.annualAmount ?? 0) || 0;
+      let mAmt = monthly;
+      if (mAmt <= 0 && session <= 0 && half <= 0 && annual <= 0) {
+        let order = 0;
+        try {
+          const cls = (classes || []).find(x => String(x.id) === cid);
+          const cname = cls?.name ? String(cls.name) : '';
+          const bnMap = { 'প্রথম': 1, 'দ্বিতীয়': 2, 'দ্বিতীয়': 2, 'তৃতীয়': 3, 'তৃতীয়': 3, 'চতুর্থ': 4, 'পঞ্চম': 5, 'ষষ্ঠ': 6, 'সপ্তম': 7, 'অষ্টম': 8, 'নবম': 9, 'দশম': 10 };
+          for (const k in bnMap) { if (cname.includes(k)) { order = bnMap[k]; break; } }
+          if (!order) {
+            const m = cname.match(/\d+/);
+            if (m) order = parseInt(m[0], 10);
+          }
+        } catch (_) {}
+        mAmt = (order >= 1 && order <= 5) ? 250 : ((order >= 6 && order <= 10) ? 150 : 0);
+        if (mAmt <= 0) {
+          mAmt = 150;
+        }
       }
-      const result = await setClassWiseFees(selectedClass, monthly, session, assessment);
+      const result = await setClassWiseFees(selectedClass, mAmt, session, half, annual);
       if (!result.success) {
         setSnackbar({ open: true, message: 'ক্লাসের ফি সেট করতে সমস্যা হয়েছে', severity: 'error' });
         return;
@@ -378,26 +452,11 @@ const FeesPage = () => {
   const getStructureLabel = (s, fallbackId = '') => {
     if (!s) return null;
     const monthsBn = ['জানুয়ারী','ফেব্রুয়ারী','মার্চ','এপ্রিল','মে','জুন','জুলাই','আগষ্ট','সেপ্টেম্বর','অক্টোবর','নভেম্বর','ডিসেম্বর'];
-    const type = s.type || s.category || s.kind;
-    const month = s.month || s.month_no || s.month_number;
-    const exam = s.exam_code || s.exam || s.exam_type;
-    if (type && String(type).toLowerCase().includes('tuition') && month >= 1 && month <= 12) {
-      return `${monthsBn[Number(month) - 1]} মাসের বেতন`;
-    }
-    if (type && String(type).toLowerCase().includes('exam')) {
-      const examMap = {
-        'half': 'অর্ধ-বার্ষিকী পরীক্ষার ফি',
-        'half-yearly': 'অর্ধ-বার্ষিকী পরীক্ষার ফি',
-        'annual': 'বার্ষিক পরীক্ষার ফি',
-        'final': 'বার্ষিক পরীক্ষার ফি',
-        'session': 'সেশন ফি'
-      };
-      const key = String(exam || '').toLowerCase();
-      if (examMap[key]) return examMap[key];
-      return `${exam || 'পরীক্ষার ফি'}`;
-      return 'পরীক্ষার ফি';
-    }
-    // Fallback to provided name/title/label
+    const catName = s.category?.name || s.category_name || '';
+    const freq = String(s.frequency || '').toLowerCase();
+    if (catName) return catName;
+    if (freq === 'monthly') return 'মাসিক বেতন';
+    if (freq === 'one_time') return 'এককালীন ফি';
     return s.name || s.title || s.label || (fallbackId ? `Structure ${fallbackId}` : 'Structure');
   };
 
@@ -1083,7 +1142,7 @@ const FeesPage = () => {
         const today = now.toISOString().split('T')[0];
         for (const s of missing) {
           const freq = String(s.frequency || '').toLowerCase();
-          const sName = String(s.name || '').toLowerCase();
+          const sName = String(s.category?.name || s.name || '').toLowerCase();
           let dueDate = today;
           if (freq === 'one_time') {
             if (/(অর্ধ|half|mid)/.test(sName)) {
@@ -1136,7 +1195,7 @@ const FeesPage = () => {
           if (!s) continue;
           const freq = String(s.frequency || '').toLowerCase();
           if (freq !== 'one_time') continue;
-          const sName = String(s.name || '').toLowerCase();
+          const sName = String(s.category?.name || s.name || '').toLowerCase();
           let targetDue = null;
           if (/(অর্ধ|half|mid)/.test(sName)) {
             targetDue = `${year}-04-01`;

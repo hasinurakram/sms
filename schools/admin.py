@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import School
+from .models import School, Advertisement
 from django.http import HttpResponse, HttpResponseRedirect
 from django.urls import path, reverse
 from django.utils.html import format_html
@@ -8,6 +8,12 @@ from rest_framework.test import APIRequestFactory
 from academics.views import ImportStudentsAPI
 from django.middleware.csrf import get_token
 
+@admin.register(Advertisement)
+class AdvertisementAdmin(admin.ModelAdmin):
+    list_display = ('id', 'school', 'type', 'text', 'created_at')
+    list_filter = ('school', 'type', 'created_at')
+    search_fields = ('text', 'link')
+    readonly_fields = ('created_at',)
 @admin.register(School)
 class SchoolAdmin(admin.ModelAdmin):
     list_display = ('id', 'name', 'address', 'logo', 'import_link')

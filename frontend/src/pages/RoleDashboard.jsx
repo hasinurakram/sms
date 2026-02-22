@@ -16,6 +16,7 @@ import {
   Button,
   Paper,
   TextField,
+  MenuItem,
   Stack,
   Grid,
   Divider,
@@ -52,6 +53,237 @@ import ClassDistributionChart from '../components/dashboard/ClassDistributionCha
 import FeeCollectionChart from '../components/dashboard/FeeCollectionChart';
 import { getDashboardStats } from '../services/dashboardService';
 
+const banglaNumberMap = { 'প্রথম': 1, 'দ্বিতীয়': 2, 'দ্বিতীয়': 2, 'তৃতীয়': 3, 'তৃতীয়': 3, 'চতুর্থ': 4, 'পঞ্চম': 5, 'ষষ্ঠ': 6, 'সপ্তম': 7, 'অষ্টম': 8, 'নবম': 9, 'দশম': 10, 'একাদশ': 11, 'দ্বাদশ': 12, 'ছয়': 6, 'ছয়': 6 };
+const bnDigitMap = { '০': 0, '১': 1, '২': 2, '৩': 3, '৪': 4, '৫': 5, '৬': 6, '৭': 7, '৮': 8, '৯': 9 };
+const normalizeBnDigits = (s) => String(s || '').split('').map(ch => (ch in bnDigitMap ? String(bnDigitMap[ch]) : ch)).join('');
+const getClassOrder = (name) => {
+  const str = normalizeBnDigits(String(name || '')).trim();
+  for (const [bangla, num] of Object.entries(banglaNumberMap)) {
+    if (str.includes(bangla)) return num;
+  }
+  const match = str.match(/\d+/);
+  if (match) return parseInt(match[0], 10);
+  return 999;
+};
+const computeAdminStatsFallback = async (schoolId) => {
+  const results = await Promise.allSettled([
+    api.get(`/api/fees/payments/?school=${schoolId}`),
+    api.get(`/api/fees/assignments/?school=${schoolId}`),
+    api.get(`/api/fees/fees/?school=${schoolId}`),
+    api.get(`/api/academics/students/?school=${schoolId}`),
+    api.get(`/api/academics/classrooms/?school=${schoolId}`)
+  ]);
+  const payments = results[0].status === 'fulfilled' ? (results[0].value.data?.results || results[0].value.data || []) : [];
+  const assignments = results[1].status === 'fulfilled' ? (results[1].value.data?.results || results[1].value.data || []) : [];
+  const feeStructs = results[2].status === 'fulfilled' ? (results[2].value.data?.results || results[2].value.data || []) : [];
+  const students = results[3].status === 'fulfilled' ? (results[3].value.data?.results || results[3].value.data || []) : [];
+  const classrooms = results[4].status === 'fulfilled' ? (results[4].value.data?.results || results[4].value.data || []) : [];
+  let teachers = [];
+  try {
+    const eps = [
+      `/api/academics/teachers/?school=${schoolId}`,
+      `/api/academics/teachers/`,
+      `/api/users/teachers/?school=${schoolId}`,
+      `/api/users/teachers/`,
+      `/api/teachers/?school=${schoolId}`,
+      `/api/teachers/`
+    ];
+    for (const ep of eps) {
+      try {
+        const r = await api.get(ep);
+        const arr = Array.isArray(r.data) ? r.data : (r.data?.results || r.data?.data || []);
+        if (Array.isArray(arr) && arr.length) { teachers = arr; break; }
+      } catch (_) {}
+    }
+  } catch (_) {}
+  const byDate = new Map();
+  const now = new Date();
+  const cutoff = new Date(now.getTime() - 30*24*60*60*1000);
+  for (const p of payments) {
+    const ds = new Date(p.payment_date || p.date || p.created_at || now);
+    if (isNaN(ds) || ds < cutoff) continue;
+    const key = ds.toISOString().slice(0,10);
+    byDate.set(key, (byDate.get(key) || 0) + Number(p.amount || p.paid_amount || 0));
+  }
+  const fee_collection = Array.from(byDate.entries()).sort(([a],[b]) => a.localeCompare(b)).map(([date, amount]) => ({ date, amount }));
+  const structMap = {};
+  for (const s of (feeStructs || [])) { structMap[String(s.id)] = s; }
+  const studentMap = new Map();
+  for (const s of (students || [])) { studentMap.set(String(s.id), s); }
+  const paidByAssign = new Map();
+  for (const pay of (payments || [])) {
+    const aidRaw = pay.assignment_id || pay.assignment || pay.fee_assignment || pay.student_fee_assignment || pay.assignment?.id;
+    const aid = aidRaw != null ? String(aidRaw) : '';
+    if (!aid) continue;
+    const amount = Number(pay.amount || pay.paid_amount || 0) || 0;
+    paidByAssign.set(aid, (paidByAssign.get(aid) || 0) + amount);
+  }
+  const classMap = new Map();
+  let tuition_due_total = 0;
+  let exam_due_total = 0;
+  const seenMonthlyByStudentMonth = new Set();
+  for (const a of (assignments || [])) {
+    const currentMonthNo = new Date().getMonth() + 1;
+    const aid = String(a.id || a._id || a.assignment_id || a.assignment || '');
+    if (!aid) continue;
+    const feeObj = a.fee_structure || a.fee || {};
+    const sid = String(a.fee_structure_id || a.fee_id || feeObj.id || a.fee_structure || a.fee || '');
+    const sObj = (typeof feeObj === 'object' && feeObj) ? feeObj : (structMap[sid] || {});
+    const baseCandidates = [a.custom_amount, a.amount, a.total_amount, a.payable_amount, a.original_amount, sObj.amount, sObj.default_amount];
+    let base = baseCandidates.find(x => x !== undefined && x !== null && Number(x) >= 0);
+    base = Number(base || 0);
+    const discountAmt = Number(a.discount_amount || 0) || 0;
+    const discountPct = Number(a.discount_percentage ?? a.discount_percent ?? a.discount ?? 0) || 0;
+    let gross = Math.max(0, base - discountAmt - (base * discountPct / 100));
+    const paid = Number(paidByAssign.get(aid) || 0);
+    let due = Math.max(0, gross - paid);
+    if (due <= 0) continue;
+    const stuId = String(a.student_id || a.student || a.studentId || '');
+    const stu = studentMap.get(stuId);
+    const classId = stu?.classroom?.id ?? stu?.classroom ?? null;
+    const classObj = (classrooms || []).find(c => String(c.id) === String(classId));
+    const className = classObj?.name || (typeof classId === 'string' || typeof classId === 'number' ? String(classId) : 'Unknown');
+    const freq = String((sObj && sObj.frequency) || a.frequency || a.fee_frequency || '').toLowerCase();
+    const rtype = freq === 'monthly' ? 'tuition' : (freq === 'one_time' ? 'exam' : 'other');
+    try {
+      const monthNo = Number(sObj.month || sObj.month_no || sObj.month_number || a.month || 0) || 0;
+      const nameStr = String(sObj.name || sObj.title || sObj.label || '').toLowerCase();
+      const isHalf = /half|mid|অর্ধ/.test(nameStr);
+      const isAnnual = /annual|final|বার্ষিক/.test(nameStr);
+      if (rtype === 'tuition') {
+        const effectiveMonth = monthNo || currentMonthNo;
+        if (monthNo && monthNo > currentMonthNo) continue;
+        const seenKey = `${stuId}:${effectiveMonth}`;
+        if (seenMonthlyByStudentMonth.has(seenKey)) continue;
+        seenMonthlyByStudentMonth.add(seenKey);
+        due = Math.max(0, gross - paid);
+        if (due <= 0) continue;
+      } else if (rtype === 'exam') {
+        const targetYear = new Date().getFullYear();
+        const ddSrc = sObj.due_date || a.due_date || null;
+        let allow = false;
+        const currentMonthNo2 = currentMonthNo;
+        const allowHalf = isHalf && currentMonthNo2 >= 5;
+        const allowAnnual = isAnnual && currentMonthNo2 >= 9;
+        let allowOther = false;
+        if (!isHalf && !isAnnual && ddSrc) {
+          try {
+            const ddObj = new Date(ddSrc);
+            if (!isNaN(ddObj) && ddObj.getFullYear() === targetYear) {
+              allowOther = ddObj.getMonth() + 1 <= currentMonthNo2;
+            }
+          } catch (_) {}
+        }
+        allow = allowHalf || allowAnnual || allowOther;
+        if (!allow) continue;
+        gross = Number(sObj.amount || a.amount || gross || 0);
+        due = Math.max(0, gross - paid);
+        if (due <= 0) continue;
+      }
+    } catch (_) {}
+    const entry = classMap.get(className) || { tuition_due: 0, exam_due: 0, total_due: 0 };
+    if (rtype === 'tuition') {
+      entry.tuition_due += due;
+      tuition_due_total += due;
+    } else if (rtype === 'exam') {
+      entry.exam_due += due;
+      exam_due_total += due;
+    }
+    entry.total_due += due;
+    classMap.set(className, entry);
+  }
+  try {
+    const currentMonthNo = new Date().getMonth() + 1;
+    const monthlyRateByClass = new Map();
+    for (const s of (feeStructs || [])) {
+      const freq = String(s.frequency || '').toLowerCase();
+      const cidRaw = s.classroom?.id ?? s.classroom_id ?? s.classroomId ?? s.classroom ?? s.class?.id ?? s.class;
+      const cid = cidRaw != null ? String(cidRaw) : '';
+      if (freq === 'monthly' && cid) {
+        const amt = Number(s.amount ?? s.default_amount ?? 0) || 0;
+        if (amt > 0 && !monthlyRateByClass.has(cid)) {
+          monthlyRateByClass.set(cid, amt);
+        }
+      }
+    }
+    for (const cls of (classrooms || [])) {
+      const cname = cls?.name || String(cls?.id || '');
+      let entry = classMap.get(cname);
+      if (!entry) {
+        entry = { tuition_due: 0, exam_due: 0, total_due: 0 };
+        classMap.set(cname, entry);
+      }
+      const cidStr = String(cls.id);
+      let monthlyRate = Number(monthlyRateByClass.get(cidStr) || 0) || 0;
+      if (monthlyRate <= 0) {
+        const order = getClassOrder(cname);
+        monthlyRate = order >= 1 && order <= 5 ? 250 : (order >= 6 && order <= 10 ? 150 : 0);
+      }
+      if (monthlyRate > 0) {
+        let classStudents = (students || []).filter(s => {
+          const cidRaw = s?.classroom?.id ?? s?.classroom_id ?? s?.classroomId ?? s?.classroom ?? s?.class?.id ?? s?.class ?? null;
+          const cid = cidRaw != null ? String(cidRaw) : '';
+          return cid && cid === cidStr;
+        });
+        if ((classStudents || []).length < 30) {
+          try {
+            const endpoints = [
+              `/api/academics/students/?school=${schoolId}&classroom=${cidStr}`,
+              `/api/academics/students/?classroom=${cidStr}`,
+              `/api/students/?school=${schoolId}&classroom=${cidStr}`,
+              `/api/students/?classroom=${cidStr}`
+            ];
+            for (const ep of endpoints) {
+              try {
+                const r = await api.get(ep);
+                const arr = Array.isArray(r.data) ? r.data : (r.data?.results || r.data?.data || []);
+                if (Array.isArray(arr) && arr.length) {
+                  classStudents = arr;
+                  break;
+                }
+              } catch (_) {}
+            }
+          } catch (_) {}
+        }
+        for (const stu of classStudents) {
+          const sid = String(stu.id);
+          for (let m = 1; m <= currentMonthNo; m++) {
+            const seenKey = `${sid}:${m}`;
+            if (!seenMonthlyByStudentMonth.has(seenKey)) {
+              entry.tuition_due += monthlyRate;
+              entry.total_due += monthlyRate;
+              tuition_due_total += monthlyRate;
+              seenMonthlyByStudentMonth.add(seenKey);
+            }
+          }
+        }
+      }
+    }
+  } catch (_) {}
+  const fee_dues_summary = { tuition_due_total, exam_due_total, total_due: tuition_due_total + exam_due_total };
+  const fee_dues_by_class = Array.from(classMap.entries()).map(([class_name, v]) => ({ class_name, ...v }))
+    .sort((a, b) => {
+      const ao = getClassOrder(a.class_name);
+      const bo = getClassOrder(b.class_name);
+      if (ao !== bo) return ao - bo;
+      return String(a.class_name).localeCompare(String(b.class_name));
+    });
+  const class_distribution = ((students || []).reduce((map, s) => {
+    const cname = s.classroom?.name || s.classroom_name || s.classroom || 'Unknown';
+    map.set(cname, (map.get(cname) || 0) + 1);
+    return map;
+  }, new Map()));
+  const class_distribution_list = Array.from(class_distribution.entries()).map(([classroom__name, count]) => ({ classroom__name, count }));
+  return {
+    fee_collection,
+    fee_dues_summary,
+    fee_dues_by_class,
+    class_distribution: class_distribution_list,
+    students_count: (students || []).length,
+    teachers_count: (teachers || []).length,
+    classes_count: (classrooms || []).length
+  };
+};
 
 // Enhanced chart color palette with better contrast and visual appeal
 const COLORS = ['#2196F3', '#4CAF50', '#FF9800', '#E91E63', '#9C27B0', '#3F51B5', '#009688', '#FFC107'];
@@ -95,6 +327,86 @@ const RoleDashboard = ({ role: roleProp }) => {
   const [pendingPayments, setPendingPayments] = useState([]);
   const [notifLoading, setNotifLoading] = useState(false);
   const [studentEnrichCache, setStudentEnrichCache] = useState({});
+  const [duesAdjustment, setDuesAdjustment] = useState(0);
+  const [ccResource, setCcResource] = useState('students');
+  const [ccList, setCcList] = useState([]);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [ccLoading, setCcLoading] = useState(false);
+  const [ccError, setCcError] = useState(null);
+  const [ccQuery, setCcQuery] = useState('');
+  const [ccEditorOpen, setCcEditorOpen] = useState(false);
+  const [ccSelected, setCcSelected] = useState(null);
+  const [ccEditorJson, setCcEditorJson] = useState('');
+  const [actionType, setActionType] = useState('bulk_promote');
+  const [smsMessage, setSmsMessage] = useState('');
+  const [smsClassroom, setSmsClassroom] = useState('');
+  const [actionRunning, setActionRunning] = useState(false);
+  const [classroomOptions, setClassroomOptions] = useState([]);
+  const [feeWaiverPct, setFeeWaiverPct] = useState(0);
+  const [feeWaiverClassroom, setFeeWaiverClassroom] = useState('');
+  const [resultExamId, setResultExamId] = useState('');
+  const [attendanceResetClassroom, setAttendanceResetClassroom] = useState('');
+  const [attendanceResetDate, setAttendanceResetDate] = useState('');
+  const [feeAssignClassroom, setFeeAssignClassroom] = useState('');
+  const [feeAssignMonth, setFeeAssignMonth] = useState('');
+  const [feeAssignDueDate, setFeeAssignDueDate] = useState('');
+  const [examScheduleId, setExamScheduleId] = useState('');
+  const [parentTemplate, setParentTemplate] = useState('dues_reminder');
+  const [parentFilterClassroom, setParentFilterClassroom] = useState('');
+  const [parentTemplateText, setParentTemplateText] = useState('');
+  const [schedClassroom, setSchedClassroom] = useState('');
+  const [schedStartMonth, setSchedStartMonth] = useState('');
+  const [schedEndMonth, setSchedEndMonth] = useState('');
+  const [schedDueDay, setSchedDueDay] = useState('');
+  const [schedYear, setSchedYear] = useState(String(new Date().getFullYear()));
+  const loadAdjustment = (sid) => {
+    try {
+      const v = localStorage.getItem(`adminDuesAdjustment:${sid}`);
+      return Number(v || 0) || 0;
+    } catch (_) {
+      return 0;
+    }
+  };
+  const saveAdjustment = (sid, v) => {
+    try {
+      localStorage.setItem(`adminDuesAdjustment:${sid}`, String(v || 0));
+    } catch (_) {}
+  };
+
+  const enrichAdminStats = async (incoming, schoolId) => {
+    try {
+      const needsCounts = !incoming || !('students_count' in incoming) || !('teachers_count' in incoming) || !('classes_count' in incoming);
+      const needsCharts = !incoming || !Array.isArray(incoming.class_distribution) || !Array.isArray(incoming.fee_collection);
+      const needsFees = !incoming || !incoming.fee_dues_summary || !Array.isArray(incoming.fee_dues_by_class);
+      if (!(needsCounts || needsCharts || needsFees)) return incoming;
+      const fallback = await computeAdminStatsFallback(schoolId);
+      return { ...(incoming || {}), ...fallback };
+    } catch (_) {
+      return incoming || {};
+    }
+  };
+  const safeLoadAdminStats = async (schoolId, timeoutMs = 8000) => {
+    try {
+      setAdminLoading(true);
+      setAdminError(null);
+      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), timeoutMs));
+      const year = new Date().getFullYear();
+      const stats = await Promise.race([getDashboardStats(schoolId, year), timeout]);
+      const enriched = await enrichAdminStats(stats, schoolId);
+      setAdminStats(enriched);
+    } catch (err) {
+      try {
+        const fallback = await computeAdminStatsFallback(schoolId);
+        setAdminStats((prev) => ({ ...(prev || {}), ...fallback }));
+        setAdminError(null);
+      } catch (_) {
+        setAdminStats((prev) => prev || {});
+        setAdminError('Failed to load admin dashboard stats.');
+      }
+    } finally {
+      setAdminLoading(false);
+    }
+  };
 
   // Helpers: Bangla numerals and date formatting (e.g., ৬ নভেম্বর)
   const engToBnDigits = (s) => String(s ?? '')
@@ -112,6 +424,567 @@ const RoleDashboard = ({ role: roleProp }) => {
   const shortClass = (name) => {
     if (!name) return '';
     return String(name).replace(/\s*(?:শ্রেণি|শ্রেণী)?\s*$/,'');
+  };
+  const ccEndpoints = (resource) => {
+    const sidQ = id ? `?school=${id}` : '';
+    switch (resource) {
+      case 'students': return { list: [`/api/academics/students/${sidQ}`, `/api/academics/students/`], item: (rid) => [`/api/academics/students/${rid}/`] };
+      case 'teachers': return { list: [`/api/academics/teachers/${sidQ}`, `/api/users/teachers/${sidQ}`, `/api/teachers/${sidQ}`], item: (rid) => [`/api/academics/teachers/${rid}/`, `/api/users/teachers/${rid}/`, `/api/teachers/${rid}/`] };
+      case 'classrooms': return { list: [`/api/academics/classrooms/${sidQ}`, `/api/academics/classrooms/`], item: (rid) => [`/api/academics/classrooms/${rid}/`] };
+      case 'subjects': return { list: [`/api/academics/subjects/${sidQ}`, `/api/academics/subjects/`], item: (rid) => [`/api/academics/subjects/${rid}/`] };
+      case 'fees': return { list: [`/api/fees/fees/${sidQ}`, `/api/fees/fee_structures/${sidQ}`, `/api/fees/fees/`], item: (rid) => [`/api/fees/fees/${rid}/`, `/api/fees/fee_structures/${rid}/`] };
+      case 'assignments': return { list: [`/api/fees/assignments/${sidQ}`, `/api/fees/assignments/`], item: (rid) => [`/api/fees/assignments/${rid}/`] };
+      case 'payments': return { list: [`/api/fees/payments/${sidQ}`, `/api/fees/collections/${sidQ}`, `/api/fees/payment/${sidQ}`], item: (rid) => [`/api/fees/payments/${rid}/`, `/api/fees/collections/${rid}/`, `/api/fees/payment/${rid}/`] };
+      case 'exams': return { list: [`/api/academics/examinations/${sidQ}`, `/api/academics/exams/${sidQ}`], item: (rid) => [`/api/academics/examinations/${rid}/`, `/api/academics/exams/${rid}/`] };
+      case 'results': return { list: [`/api/academics/results/${sidQ}`, `/api/academics/result/${sidQ}`], item: (rid) => [`/api/academics/results/${rid}/`, `/api/academics/result/${rid}/`] };
+      case 'attendance': return { list: [`/api/academics/attendance/${sidQ}`, `/api/academics/attendances/${sidQ}`], item: (rid) => [`/api/academics/attendance/${rid}/`, `/api/academics/attendances/${rid}/`] };
+      case 'sms': return { list: [`/api/sms/messages/${sidQ}`, `/api/sms/messages/`], item: (rid) => [`/api/sms/messages/${rid}/`] };
+      default: return { list: [], item: (rid) => [] };
+    }
+  };
+  const fetchCcList = async () => {
+    try {
+      setCcLoading(true);
+      setCcError(null);
+      const eps = ccEndpoints(ccResource).list.filter(Boolean);
+      let list = [];
+      for (const ep of eps) {
+        try {
+          const r = await api.get(ep);
+          const arr = Array.isArray(r.data) ? r.data : (r.data?.results || r.data?.data || []);
+          if (Array.isArray(arr) && arr.length) { list = arr; break; }
+          if (!arr || arr.length === 0) { list = arr || []; }
+        } catch (e) { continue; }
+      }
+      const q = String(ccQuery || '').toLowerCase();
+      if (q) {
+        list = (list || []).filter(it => {
+          const s = JSON.stringify(it || {}).toLowerCase();
+          return s.includes(q);
+        });
+      }
+      setCcList(list || []);
+    } catch (e) {
+      setCcError('লিস্ট লোড করতে সমস্যা হয়েছে');
+      setCcList([]);
+    } finally {
+      setCcLoading(false);
+    }
+  };
+  const openCcEditor = (item) => {
+    setCcSelected(item);
+    setCcEditorJson(JSON.stringify(item || {}, null, 2));
+    setCcEditorOpen(true);
+  };
+  const saveCcEditor = async () => {
+    try {
+      const parsed = JSON.parse(ccEditorJson || '{}');
+      const rid = parsed.id || ccSelected?.id;
+      const eps = ccEndpoints(ccResource).item(rid);
+      let ok = false;
+      for (const ep of eps) {
+        try {
+          await api.put(ep, parsed);
+          ok = true;
+          break;
+        } catch (_) { continue; }
+      }
+      if (ok) {
+        toast.success('আপডেট সম্পন্ন');
+        setCcEditorOpen(false);
+        fetchCcList();
+      } else {
+        toast.error('আপডেট ব্যর্থ');
+      }
+    } catch (e) {
+      toast.error('অবৈধ JSON');
+    }
+  };
+  const deleteCcItem = async (item) => {
+    try {
+      const rid = item?.id;
+      const eps = ccEndpoints(ccResource).item(rid);
+      let ok = false;
+      for (const ep of eps) {
+        try {
+          await api.delete(ep);
+          ok = true;
+          break;
+        } catch (_) { continue; }
+      }
+      if (ok) {
+        toast.success('ডিলিট সম্পন্ন');
+        fetchCcList();
+      } else {
+        toast.error('ডিলিট ব্যর্থ');
+      }
+    } catch (e) {
+      toast.error('ডিলিট করতে সমস্যা হয়েছে');
+    }
+  };
+  const loadClassroomOptions = async () => {
+    try {
+      const eps = [`/api/academics/classrooms/?school=${id}`, `/api/academics/classrooms/`];
+      for (const ep of eps) {
+        try {
+          const r = await api.get(ep);
+          const arr = Array.isArray(r.data) ? r.data : (r.data?.results || r.data?.data || []);
+          if (Array.isArray(arr)) { setClassroomOptions(arr); break; }
+        } catch (_) { continue; }
+      }
+    } catch (_) {}
+  };
+  const bulkPromote = async (dryRun = false) => {
+    try {
+      setActionRunning(true);
+      const sRes = await api.get(`/api/academics/students/?school=${id}`);
+      const studentsArr = Array.isArray(sRes.data) ? sRes.data : (sRes.data?.results || sRes.data?.data || []);
+      if (!classroomOptions.length) await loadClassroomOptions();
+      const classByOrder = new Map();
+      classroomOptions.forEach(c => {
+        const o = getClassOrder(c.name || c.id);
+        if (!classByOrder.has(o)) classByOrder.set(o, c);
+      });
+      let candidates = [];
+      studentsArr.forEach(st => {
+        const cid = st?.classroom?.id ?? st?.classroom;
+        const cls = classroomOptions.find(c => String(c.id) === String(cid));
+        const o = getClassOrder(cls?.name || cid);
+        const next = classByOrder.get(o + 1);
+        if (next) candidates.push({ id: st.id, nextId: next.id });
+      });
+      if (dryRun) {
+        toast.success(`Promote preview: ${candidates.length} students`);
+      } else {
+        let ok = 0;
+        for (const it of candidates) {
+          const eps = [`/api/academics/students/${it.id}/`];
+          let done = false;
+          for (const ep of eps) {
+            try {
+              await api.put(ep, { classroom: it.nextId });
+              done = true;
+              break;
+            } catch (_) { continue; }
+          }
+          if (done) ok++;
+        }
+        toast.success(`Promoted ${ok} students`);
+      }
+    } catch (_) {
+      toast.error('Promote ব্যর্থ');
+    } finally {
+      setActionRunning(false);
+    }
+  };
+  const feePlanGenerate = async () => {
+    try {
+      setActionRunning(true);
+      if (!classroomOptions.length) await loadClassroomOptions();
+      const fsRes = await api.get(`/api/fees/fees/?school=${id}`);
+      const structArr = Array.isArray(fsRes.data) ? fsRes.data : (fsRes.data?.results || fsRes.data?.data || []);
+      const existingByClass = new Set();
+      structArr.forEach(s => {
+        const freq = String(s.frequency || '').toLowerCase();
+        const cidRaw = s.classroom?.id ?? s.classroom_id ?? s.classroomId ?? s.classroom ?? s.class?.id ?? s.class;
+        const cid = cidRaw != null ? String(cidRaw) : '';
+        if (freq === 'monthly' && cid) existingByClass.add(cid);
+      });
+      let created = 0;
+      for (const cls of classroomOptions) {
+        const cidStr = String(cls.id);
+        if (existingByClass.has(cidStr)) continue;
+        const order = getClassOrder(cls.name || cidStr);
+        const amount = order >= 1 && order <= 5 ? 250 : (order >= 6 && order <= 10 ? 150 : 0);
+        if (amount <= 0) continue;
+        const payload = { name: 'Monthly Tuition', amount, frequency: 'monthly', classroom: cls.id, school: id };
+        const eps = [`/api/fees/fees/`, `/api/fees/fee_structures/`];
+        let ok = false;
+        for (const ep of eps) {
+          try {
+            await api.post(ep, payload);
+            ok = true;
+            break;
+          } catch (_) { continue; }
+        }
+        if (ok) created++;
+      }
+      toast.success(`Generated ${created} fee plans`);
+    } catch (_) {
+      toast.error('Fee plan তৈরি ব্যর্থ');
+    } finally {
+      setActionRunning(false);
+    }
+  };
+  const smsBroadcast = async () => {
+    try {
+      setActionRunning(true);
+      if (!smsMessage.trim()) { toast.error('বার্তা লিখুন'); setActionRunning(false); return; }
+      let recipients = [];
+      if (smsClassroom) {
+        const r = await api.get(`/api/academics/students/?school=${id}&classroom=${smsClassroom}`);
+        recipients = Array.isArray(r.data) ? r.data : (r.data?.results || r.data?.data || []);
+      } else {
+        const r = await api.get(`/api/academics/students/?school=${id}`);
+        recipients = Array.isArray(r.data) ? r.data : (r.data?.results || r.data?.data || []);
+      }
+      const payload = { school: id, message: smsMessage, audience: 'students', classroom: smsClassroom || null };
+      const eps = [`/api/sms/messages/`];
+      let sent = false;
+      for (const ep of eps) {
+        try {
+          await api.post(ep, payload);
+          sent = true;
+          break;
+        } catch (_) { continue; }
+      }
+      if (!sent) {
+        let ok = 0;
+        for (const s of recipients) {
+          try {
+            await api.post(`/api/sms/messages/`, { school: id, message: smsMessage, student: s.id });
+            ok++;
+          } catch (_) { continue; }
+        }
+        toast.success(`SMS পাঠানো হয়েছে: ${ok}`);
+      } else {
+        toast.success('SMS ব্রডকাস্ট সম্পন্ন');
+      }
+    } catch (_) {
+      toast.error('SMS পাঠানো ব্যর্থ');
+    } finally {
+      setActionRunning(false);
+    }
+  };
+  const bulkFeeWaiver = async () => {
+    try {
+      setActionRunning(true);
+      const aRes = await api.get(`/api/fees/assignments/?school=${id}`);
+      const assignmentsArr = Array.isArray(aRes.data) ? aRes.data : (aRes.data?.results || aRes.data?.data || []);
+      let studentsMap = new Map();
+      try {
+        const sRes = await api.get(`/api/academics/students/?school=${id}`);
+        const sArr = Array.isArray(sRes.data) ? sRes.data : (sRes.data?.results || sRes.data?.data || []);
+        sArr.forEach(st => {
+          studentsMap.set(String(st.id), String(st?.classroom?.id ?? st?.classroom ?? ''));
+        });
+      } catch (_) {}
+      const pct = Math.max(0, Math.min(100, Number(feeWaiverPct || 0) || 0));
+      let ok = 0;
+      for (const a of assignmentsArr) {
+        const stuId = String(a.student_id || a.student || a.studentId || '');
+        const cid = studentsMap.get(stuId) || '';
+        if (feeWaiverClassroom && String(feeWaiverClassroom) !== cid) continue;
+        const aid = String(a.id || a.assignment_id || a._id || a.assignment || '');
+        if (!aid) continue;
+        const payload = { discount_percentage: pct, discount_percent: pct, discount: pct };
+        const eps = [`/api/fees/assignments/${aid}/`];
+        let done = false;
+        for (const ep of eps) {
+          try {
+            await api.put(ep, payload);
+            done = true;
+            break;
+          } catch (_) { continue; }
+        }
+        if (done) ok++;
+      }
+      toast.success(`Fee waiver প্রয়োগ হয়েছে: ${ok}`);
+    } catch (_) {
+      toast.error('Fee waiver ব্যর্থ');
+    } finally {
+      setActionRunning(false);
+    }
+  };
+  const resultPublish = async () => {
+    try {
+      setActionRunning(true);
+      const rRes = await api.get(`/api/academics/results/?school=${id}`);
+      const resultsArr = Array.isArray(rRes.data) ? rRes.data : (rRes.data?.results || rRes.data?.data || []);
+      let ok = 0;
+      for (const r of resultsArr) {
+        const rid = String(r.id || r.result_id || '');
+        if (!rid) continue;
+        const examId = String(r.exam?.id ?? r.examination?.id ?? r.exam_id ?? r.examination_id ?? '');
+        if (resultExamId && String(resultExamId) !== examId) continue;
+        const payload = { published: true, status: 'published' };
+        const eps = [`/api/academics/results/${rid}/`];
+        let done = false;
+        for (const ep of eps) {
+          try {
+            await api.put(ep, payload);
+            done = true;
+            break;
+          } catch (_) { continue; }
+        }
+        if (done) ok++;
+      }
+      toast.success(`Published results: ${ok}`);
+    } catch (_) {
+      toast.error('Result publish ব্যর্থ');
+    } finally {
+      setActionRunning(false);
+    }
+  };
+  const attendanceReset = async () => {
+    try {
+      setActionRunning(true);
+      if (!attendanceResetClassroom) { toast.error('শ্রেণি নির্বাচন করুন'); setActionRunning(false); return; }
+      const dQ = attendanceResetDate ? `&date=${attendanceResetDate}` : '';
+      const aRes = await api.get(`/api/academics/attendance/?school=${id}&classroom=${attendanceResetClassroom}${dQ}`);
+      const attArr = Array.isArray(aRes.data) ? aRes.data : (aRes.data?.results || aRes.data?.data || []);
+      let ok = 0;
+      for (const a of attArr) {
+        const aid = String(a.id || a.attendance_id || '');
+        if (!aid) continue;
+        try {
+          await api.delete(`/api/academics/attendance/${aid}/`);
+          ok++;
+        } catch (_) { continue; }
+      }
+      toast.success(`Attendance reset: ${ok}`);
+    } catch (_) {
+      toast.error('Attendance reset ব্যর্থ');
+    } finally {
+      setActionRunning(false);
+    }
+  };
+  const bulkFeeAssignment = async () => {
+    try {
+      setActionRunning(true);
+      if (!classroomOptions.length) await loadClassroomOptions();
+      const sEp = feeAssignClassroom ? `/api/academics/students/?school=${id}&classroom=${feeAssignClassroom}` : `/api/academics/students/?school=${id}`;
+      const sRes = await api.get(sEp);
+      const studentsArr = Array.isArray(sRes.data) ? sRes.data : (sRes.data?.results || sRes.data?.data || []);
+      const fsRes = await api.get(`/api/fees/fees/?school=${id}`);
+      const structArr = Array.isArray(fsRes.data) ? fsRes.data : (fsRes.data?.results || fsRes.data?.data || []);
+      const monthlyByClass = new Map();
+      structArr.forEach(s => {
+        const freq = String(s.frequency || '').toLowerCase();
+        const cidRaw = s.classroom?.id ?? s.classroom_id ?? s.classroomId ?? s.classroom ?? s.class?.id ?? s.class;
+        const cid = cidRaw != null ? String(cidRaw) : '';
+        if (freq === 'monthly' && cid && !monthlyByClass.has(cid)) monthlyByClass.set(cid, s);
+      });
+      let ok = 0;
+      for (const st of studentsArr) {
+        const cidRaw = st?.classroom?.id ?? st?.classroom;
+        const cid = cidRaw != null ? String(cidRaw) : '';
+        if (!cid) continue;
+        const mStruct = monthlyByClass.get(cid);
+        if (!mStruct) continue;
+        const payload = {
+          student: st.id,
+          student_id: st.id,
+          fee_structure: mStruct.id,
+          fee_structure_id: mStruct.id,
+          amount: Number(mStruct.amount ?? mStruct.default_amount ?? 0) || undefined,
+          month: feeAssignMonth ? Number(feeAssignMonth) : undefined,
+          due_date: feeAssignDueDate || undefined,
+          school: id
+        };
+        try {
+          await api.post(`/api/fees/assignments/`, payload);
+          ok++;
+        } catch (_) { continue; }
+      }
+      toast.success(`Fee assignments created: ${ok}`);
+    } catch (_) {
+      toast.error('Fee assignment তৈরি ব্যর্থ');
+    } finally {
+      setActionRunning(false);
+    }
+  };
+  const examSchedulePublish = async () => {
+    try {
+      setActionRunning(true);
+      const eRes = await api.get(`/api/academics/examinations/?school=${id}`);
+      const examsArr = Array.isArray(eRes.data) ? eRes.data : (eRes.data?.results || eRes.data?.data || []);
+      let ok = 0;
+      for (const ex of examsArr) {
+        const eid = String(ex.id || ex.exam_id || '');
+        if (!eid) continue;
+        if (examScheduleId && String(examScheduleId) !== eid) continue;
+        const payload = { published: true, status: 'published' };
+        const eps = [`/api/academics/examinations/${eid}/`, `/api/academics/exams/${eid}/`];
+        let done = false;
+        for (const ep of eps) {
+          try {
+            await api.put(ep, payload);
+            done = true;
+            break;
+          } catch (_) { continue; }
+        }
+        if (done) ok++;
+      }
+      toast.success(`Exam schedules published: ${ok}`);
+    } catch (_) {
+      toast.error('Exam schedule publish ব্যর্থ');
+    } finally {
+      setActionRunning(false);
+    }
+  };
+  const parentSmsTemplates = async () => {
+    try {
+      setActionRunning(true);
+      if (!classroomOptions.length) await loadClassroomOptions();
+      const classNameById = new Map(classroomOptions.map(c => [String(c.id), c.name || String(c.id)]));
+      const defaultMessage = parentTemplate === 'dues_reminder'
+        ? 'আপনার সন্তানের বকেয়া ফি দ্রুত পরিশোধ করুন। ধন্যবাদ।'
+        : parentTemplate === 'attendance_alert'
+          ? 'আপনার সন্তানের আজকের হাজিরা সম্পর্কে জানতে স্কুলে যোগাযোগ করুন।'
+          : parentTemplate === 'result_published'
+            ? 'রেজাল্ট প্রকাশ হয়েছে। স্কুলের ওয়েব অথবা অফিসে দেখুন।'
+            : parentTemplate === 'custom'
+              ? String(parentTemplateText || 'বিদ্যালয় থেকে বার্তা')
+              : 'বিদ্যালয় থেকে বার্তা';
+      const formatMsg = (tpl, ctx) => {
+        const map = {
+          '{student_name}': ctx.student_name || '',
+          '{class_name}': ctx.class_name || '',
+          '{due_amount}': ctx.due_amount != null ? String(ctx.due_amount) : ''
+        };
+        let out = String(tpl || '');
+        Object.entries(map).forEach(([k, v]) => { out = out.split(k).join(String(v)); });
+        return out;
+      };
+      const calcDue = async (sid) => {
+        try {
+          let gross = 0;
+          let paid = 0;
+          const aRes = await api.get(`/api/fees/assignments/?student=${sid}`);
+          const assignmentsArr = Array.isArray(aRes.data) ? aRes.data : (aRes.data?.results || aRes.data?.data || []);
+          for (const a of (assignmentsArr || [])) {
+            const feeObj = a.fee_structure || a.fee || {};
+            const baseCandidates = [a.custom_amount, a.amount, a.total_amount, a.payable_amount, a.original_amount, feeObj.amount, feeObj.default_amount];
+            let base = baseCandidates.find(x => x !== undefined && x !== null && Number(x) >= 0);
+            base = Number(base || 0);
+            const discountAmt = Number(a.discount_amount || 0) || 0;
+            const discountPct = Number(a.discount_percentage ?? a.discount_percent ?? a.discount ?? 0) || 0;
+            gross += Math.max(0, base - discountAmt - (base * discountPct / 100));
+          }
+          const pEndpoints = [
+            `/api/fees/payments/?student=${sid}`,
+            `/api/fees/collections/?student=${sid}`,
+            `/api/fees/payment/?student=${sid}`
+          ];
+          for (const ep of pEndpoints) {
+            try {
+              const pRes = await api.get(ep);
+              const paymentsArr = Array.isArray(pRes.data) ? pRes.data : (pRes.data?.results || pRes.data?.data || []);
+              if (Array.isArray(paymentsArr) && paymentsArr.length) {
+                paid += paymentsArr.reduce((sum, p) => sum + (Number(p.amount || p.paid_amount || 0) || 0), 0);
+                break;
+              }
+            } catch (_) { continue; }
+          }
+          return Math.max(0, gross - paid);
+        } catch (_) {
+          return null;
+        }
+      };
+      let ok = 0;
+      if (parentFilterClassroom) {
+        const sRes = await api.get(`/api/academics/students/?school=${id}&classroom=${parentFilterClassroom}`);
+        const sArr = Array.isArray(sRes.data) ? sRes.data : (sRes.data?.results || sRes.data?.data || []);
+        for (const st of (sArr || [])) {
+          const pid = st.parent?.id ?? st.parent_id ?? st.guardian?.id ?? st.guardian_id ?? st.father?.id ?? st.mother?.id ?? null;
+          if (!pid) continue;
+          const student_name = st.user?.first_name || st.name || st.user?.username || '';
+          const cidRaw = st?.classroom?.id ?? st?.classroom;
+          const class_name = classNameById.get(String(cidRaw)) || '';
+          const due_amount = await calcDue(st.id);
+          const msg = formatMsg(defaultMessage, { student_name, class_name, due_amount });
+          try {
+            await api.post(`/api/sms/messages/`, { school: id, message: msg, audience: 'parents', parent: pid });
+            ok++;
+          } catch (_) { continue; }
+        }
+      } else {
+        const pRes = await api.get(`/api/users/parents/?school=${id}`);
+        const pAll = Array.isArray(pRes.data) ? pRes.data : (pRes.data?.results || pRes.data?.data || []);
+        const childrenResults = await Promise.allSettled((pAll || []).map(p => api.get(`/api/users/parents/${p.id}/children/`)));
+        for (let i = 0; i < (pAll || []).length; i++) {
+          const p = pAll[i];
+          let child = null;
+          const res = childrenResults[i];
+          if (res.status === 'fulfilled') {
+            const arr = Array.isArray(res.value.data) ? res.value.data : (res.value.data?.results || res.value.data?.data || []);
+            child = Array.isArray(arr) && arr.length ? arr[0] : null;
+          }
+          let student_name = '';
+          let class_name = '';
+          let due_amount = null;
+          if (child) {
+            student_name = child.user?.first_name || child.name || child.user?.username || '';
+            const cidRaw = child?.classroom?.id ?? child?.classroom;
+            class_name = classNameById.get(String(cidRaw)) || '';
+            due_amount = await calcDue(child.id);
+          }
+          const msg = formatMsg(defaultMessage, { student_name, class_name, due_amount });
+          try {
+            await api.post(`/api/sms/messages/`, { school: id, message: msg, audience: 'parents', parent: p.id });
+            ok++;
+          } catch (_) { continue; }
+        }
+      }
+      toast.success(`Parent SMS পাঠানো হয়েছে: ${ok}`);
+    } catch (_) {
+      toast.error('Parent SMS পাঠানো ব্যর্থ');
+    } finally {
+      setActionRunning(false);
+    }
+  };
+  const monthlyAssignmentSchedule = async () => {
+    try {
+      setActionRunning(true);
+      if (!classroomOptions.length) await loadClassroomOptions();
+      const sEp = schedClassroom ? `/api/academics/students/?school=${id}&classroom=${schedClassroom}` : `/api/academics/students/?school=${id}`;
+      const sRes = await api.get(sEp);
+      const studentsArr = Array.isArray(sRes.data) ? sRes.data : (sRes.data?.results || sRes.data?.data || []);
+      const fsRes = await api.get(`/api/fees/fees/?school=${id}`);
+      const structArr = Array.isArray(fsRes.data) ? fsRes.data : (fsRes.data?.results || fsRes.data?.data || []);
+      const monthlyByClass = new Map();
+      structArr.forEach(s => {
+        const freq = String(s.frequency || '').toLowerCase();
+        const cidRaw = s.classroom?.id ?? s.classroom_id ?? s.classroomId ?? s.classroom ?? s.class?.id ?? s.class;
+        const cid = cidRaw != null ? String(cidRaw) : '';
+        if (freq === 'monthly' && cid && !monthlyByClass.has(cid)) monthlyByClass.set(cid, s);
+      });
+      const year = Number(schedYear || new Date().getFullYear());
+      const startM = Math.max(1, Math.min(12, Number(schedStartMonth || 0) || 1));
+      const endM = Math.max(startM, Math.min(12, Number(schedEndMonth || 0) || startM));
+      const dueDay = Math.max(1, Math.min(28, Number(schedDueDay || 0) || 10));
+      let ok = 0;
+      for (const st of studentsArr) {
+        const cidRaw = st?.classroom?.id ?? st?.classroom;
+        const cid = cidRaw != null ? String(cidRaw) : '';
+        if (!cid) continue;
+        const mStruct = monthlyByClass.get(cid);
+        if (!mStruct) continue;
+        for (let m = startM; m <= endM; m++) {
+          const dueDate = `${year}-${String(m).padStart(2,'0')}-${String(dueDay).padStart(2,'0')}`;
+          const payload = {
+            student: st.id,
+            student_id: st.id,
+            fee_structure: mStruct.id,
+            fee_structure_id: mStruct.id,
+            amount: Number(mStruct.amount ?? mStruct.default_amount ?? 0) || undefined,
+            month: m,
+            due_date: dueDate,
+            school: id
+          };
+          try {
+            await api.post(`/api/fees/assignments/`, payload);
+            ok++;
+          } catch (_) { continue; }
+        }
+      }
+      toast.success(`Scheduled assignments created: ${ok}`);
+    } catch (_) {
+      toast.error('Assignment শিডিউল তৈরি ব্যর্থ');
+    } finally {
+      setActionRunning(false);
+    }
   };
 
   // Load pending payments for this school (flexible to backend variations)
@@ -359,11 +1232,7 @@ const RoleDashboard = ({ role: roleProp }) => {
       toast.success('অ্যাডমিন যাচাইকরণ সম্পন্ন');
       // Refresh admin data immediately after reauth
       if (role === 'admin' && id) {
-        setAdminLoading(true);
-        getDashboardStats(id)
-          .then(stats => setAdminStats(stats))
-          .catch(() => setAdminError('Failed to load admin dashboard stats.'))
-          .finally(() => setAdminLoading(false));
+        await safeLoadAdminStats(id);
         fetchPendingPayments();
       }
     } catch (e) {
@@ -377,17 +1246,8 @@ const RoleDashboard = ({ role: roleProp }) => {
     if (!id || !role) return;
 
     if (role === 'admin') {
-      setAdminLoading(true);
-      setAdminError(null);
-      getDashboardStats(id)
-        .then(stats => setAdminStats(stats))
-        .catch(err => {
-          const status = err?.response?.status;
-          const detail = err?.response?.data?.detail || err?.message;
-          console.error('Error fetching admin dashboard stats:', status, detail);
-          setAdminError('Failed to load admin dashboard stats.');
-        })
-        .finally(() => setAdminLoading(false));
+      setDuesAdjustment(loadAdjustment(id));
+      safeLoadAdminStats(id);
       // Load pending payments for notifications
       fetchPendingPayments();
       return;
@@ -564,6 +1424,22 @@ const RoleDashboard = ({ role: roleProp }) => {
                   </IconButton>
                 </span>
               </MuiTooltip>
+              <Button 
+                variant="contained" 
+                sx={{ 
+                  bgcolor: 'rgba(255,255,255,0.2)', 
+                  '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' },
+                  px: { xs: 2, sm: 3 },
+                  py: 1,
+                  borderRadius: 2,
+                  fontSize: { xs: '0.875rem', sm: '1rem' },
+                  whiteSpace: 'nowrap',
+                  minWidth: 'fit-content'
+                }} 
+                onClick={() => setHelpOpen(true)}
+              >
+                ব্যবহারবিধি
+              </Button>
               <Button 
                 variant="contained" 
                 sx={{ 
@@ -808,26 +1684,54 @@ const RoleDashboard = ({ role: roleProp }) => {
   ));
 
   const handleRefreshDashboard = () => {
-    setAdminLoading(true);
-    setAdminError(null);
-    getDashboardStats(id)
-      .then(stats => {
-        setAdminStats(stats);
-        toast.success('Dashboard data refreshed successfully');
-      })
-      .catch(err => {
-        console.error('Error refreshing dashboard:', err);
-        setAdminError('Failed to refresh dashboard data. Please try again.');
-        toast.error('Failed to refresh dashboard data');
-      })
-      .finally(() => {
-        setAdminLoading(false);
-      });
+    safeLoadAdminStats(id).then(() => {
+      toast.success('Dashboard data refreshed');
+    }).catch(() => {
+      toast.error('Failed to refresh dashboard data');
+    });
+  };
+  const handleSaveAdjustment = () => {
+    const v = Number(duesAdjustment || 0) || 0;
+    saveAdjustment(id, v);
+    toast.success('Adjustment saved');
   };
 
   const renderCharts = () => {
     if (role === 'admin') {
       if (!adminStats) return null;
+      const adj = Number(duesAdjustment || 0) || 0;
+      const rawSummary = adminStats.fee_dues_summary || {};
+      const rawByClass = adminStats.fee_dues_by_class || [];
+      const tuitionTotal = Number(rawSummary.tuition_due_total || 0);
+      const examTotal = Number(rawSummary.exam_due_total || 0);
+      let reduceTuition = Math.min(adj, tuitionTotal);
+      let reduceExam = Math.max(0, adj - reduceTuition);
+      const feeSummaryAdj = {
+        tuition_due_total: Math.max(0, tuitionTotal - reduceTuition),
+        exam_due_total: Math.max(0, examTotal - reduceExam),
+        total_due: Math.max(0, (tuitionTotal + examTotal) - (reduceTuition + reduceExam))
+      };
+      let adjustedByClass = rawByClass;
+      try {
+        const tuitionSum = rawByClass.reduce((sum, c) => sum + (Number(c.tuition_due || 0) || 0), 0);
+        const examSum = rawByClass.reduce((sum, c) => sum + (Number(c.exam_due || 0) || 0), 0);
+        if ((tuitionSum > 0 && reduceTuition > 0) || (examSum > 0 && reduceExam > 0)) {
+          adjustedByClass = rawByClass.map((c, idx) => {
+            const t = Number(c.tuition_due || 0) || 0;
+            const e = Number(c.exam_due || 0) || 0;
+            const tReduce = tuitionSum > 0 ? (reduceTuition * t) / tuitionSum : 0;
+            const eReduce = examSum > 0 ? (reduceExam * e) / examSum : 0;
+            const tAdj = Math.max(0, t - tReduce);
+            const eAdj = Math.max(0, e - eReduce);
+            return {
+              ...c,
+              tuition_due: tAdj,
+              exam_due: eAdj,
+              total_due: Math.max(0, tAdj + eAdj)
+            };
+          });
+        }
+      } catch (_) {}
       return (
         <>
           <Box 
@@ -862,6 +1766,16 @@ const RoleDashboard = ({ role: roleProp }) => {
                 <RefreshIcon />
               </IconButton>
             </MuiTooltip>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <TextField
+                label="বকেয়া এডজাস্ট"
+                type="number"
+                value={duesAdjustment}
+                onChange={(e) => setDuesAdjustment(e.target.value)}
+                size="small"
+              />
+              <Button variant="contained" onClick={handleSaveAdjustment}>সংরক্ষণ</Button>
+            </Stack>
           </Box>
           <Grid container spacing={3} sx={{ mb: 4 }}>
             <Grid item xs={12} lg={6}>
@@ -924,11 +1838,338 @@ const RoleDashboard = ({ role: roleProp }) => {
                 </Typography>
                 <Divider sx={{ mb: 2, flexShrink: 0 }} />
                 <Box sx={{ height: 300, flex: 1, minHeight: 0 }}>
-                  <FeeCollectionChart feeData={adminStats.fee_data || []} />
+                  <FeeCollectionChart 
+                    feeData={adminStats.fee_collection || adminStats.fee_data || []}
+                    feeDuesSummary={feeSummaryAdj}
+                    feeDuesByClass={adjustedByClass}
+                  />
                 </Box>
               </Paper>
             </Grid>
           </Grid>
+          <Paper 
+            elevation={2} 
+            sx={{ 
+              p: 3, 
+              borderRadius: 2, 
+              mb: 4,
+              background: 'linear-gradient(to bottom, #ffffff, #f5f5f5)'
+            }}
+          >
+            <Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+              <AccountBalanceIcon /> Admin Control Center
+            </Typography>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 2 }}>
+              <TextField
+                label="রিসোর্স"
+                select
+                value={ccResource}
+                onChange={(e) => setCcResource(e.target.value)}
+                sx={{ minWidth: 200 }}
+              >
+                {['students','teachers','classrooms','subjects','fees','assignments','payments','exams','results','attendance','sms'].map(r => (
+                  <MenuItem key={r} value={r}>{r}</MenuItem>
+                ))}
+              </TextField>
+              <TextField
+                label="সার্চ"
+                value={ccQuery}
+                onChange={(e) => setCcQuery(e.target.value)}
+              />
+              <Button variant="contained" onClick={fetchCcList} disabled={ccLoading}>লোড</Button>
+            </Stack>
+            {ccError ? <Typography color="error" sx={{ mb: 2 }}>{ccError}</Typography> : null}
+            <Box sx={{ overflowX: 'auto' }}>
+              <Grid container spacing={2}>
+                {(ccList || []).slice(0, 20).map((item) => (
+                  <Grid item xs={12} md={6} key={item.id || JSON.stringify(item)}>
+                    <Paper sx={{ p: 2, borderRadius: 2 }}>
+                      <Stack direction="row" justifyContent="space-between" alignItems="center">
+                        <Box sx={{ mr: 2, minWidth: 0 }}>
+                          <Typography variant="subtitle2">ID: {item.id ?? 'N/A'}</Typography>
+                          <Typography variant="body2" color="text.secondary" noWrap>
+                            {item.name || item.title || item.user?.username || item.user?.first_name || item.classroom?.name || 'Item'}
+                          </Typography>
+                        </Box>
+                        <Stack direction="row" spacing={1}>
+                          <Button size="small" onClick={() => openCcEditor(item)}>এডিট</Button>
+                          <Button size="small" color="error" onClick={() => deleteCcItem(item)}>ডিলিট</Button>
+                        </Stack>
+                      </Stack>
+                    </Paper>
+                  </Grid>
+                ))}
+              </Grid>
+            </Box>
+            <Dialog open={ccEditorOpen} onClose={() => setCcEditorOpen(false)} fullWidth maxWidth="md">
+              <DialogTitle>এডিট</DialogTitle>
+              <DialogContent dividers>
+                <TextField
+                  multiline
+                  minRows={12}
+                  fullWidth
+                  value={ccEditorJson}
+                  onChange={(e) => setCcEditorJson(e.target.value)}
+                />
+              </DialogContent>
+              <DialogActions>
+                <Button onClick={() => setCcEditorOpen(false)}>বাতিল</Button>
+                <Button variant="contained" onClick={saveCcEditor}>সংরক্ষণ</Button>
+              </DialogActions>
+            </Dialog>
+            <Divider sx={{ my: 3 }} />
+            <Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+              স্পেশাল অ্যাকশন
+            </Typography>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 2 }}>
+              <TextField
+                label="অ্যাকশন"
+                select
+                value={actionType}
+                onChange={(e) => { 
+                  setActionType(e.target.value); 
+                  if (e.target.value === 'sms_broadcast' || e.target.value === 'bulk_fee_waiver' || e.target.value === 'attendance_reset' || e.target.value === 'bulk_fee_assignment' || e.target.value === 'parent_sms_templates' || e.target.value === 'monthly_assignment_schedule') loadClassroomOptions(); 
+                }}
+                sx={{ minWidth: 220 }}
+              >
+                <MenuItem value="bulk_promote">Bulk Promote</MenuItem>
+                <MenuItem value="fee_plan_generator">Fee Plan Generator</MenuItem>
+                <MenuItem value="sms_broadcast">SMS Broadcast</MenuItem>
+                <MenuItem value="bulk_fee_waiver">Bulk Fee Waiver</MenuItem>
+                <MenuItem value="result_publish">Result Publish</MenuItem>
+                <MenuItem value="attendance_reset">Attendance Reset</MenuItem>
+                <MenuItem value="bulk_fee_assignment">Bulk Fee Assignment Create</MenuItem>
+                <MenuItem value="exam_schedule_publish">Exam Schedule Publish</MenuItem>
+                <MenuItem value="parent_sms_templates">Parent SMS Templates</MenuItem>
+                <MenuItem value="monthly_assignment_schedule">Monthly Assignment Scheduler</MenuItem>
+              </TextField>
+              {actionType === 'sms_broadcast' && (
+                <>
+                  <TextField
+                    label="শ্রেণি"
+                    select
+                    value={smsClassroom}
+                    onChange={(e) => setSmsClassroom(e.target.value)}
+                    sx={{ minWidth: 200 }}
+                  >
+                    <MenuItem value="">All</MenuItem>
+                    {classroomOptions.map(c => (
+                      <MenuItem key={c.id} value={String(c.id)}>{c.name || c.id}</MenuItem>
+                    ))}
+                  </TextField>
+                  <TextField
+                    label="বার্তা"
+                    value={smsMessage}
+                    onChange={(e) => setSmsMessage(e.target.value)}
+                    sx={{ minWidth: 300 }}
+                  />
+                </>
+              )}
+              {actionType === 'bulk_fee_waiver' && (
+                <>
+                  <TextField
+                    label="শ্রেণি"
+                    select
+                    value={feeWaiverClassroom}
+                    onChange={(e) => setFeeWaiverClassroom(e.target.value)}
+                    sx={{ minWidth: 200 }}
+                  >
+                    <MenuItem value="">All</MenuItem>
+                    {classroomOptions.map(c => (
+                      <MenuItem key={c.id} value={String(c.id)}>{c.name || c.id}</MenuItem>
+                    ))}
+                  </TextField>
+                  <TextField
+                    label="ডিসকাউন্ট (%)"
+                    type="number"
+                    value={feeWaiverPct}
+                    onChange={(e) => setFeeWaiverPct(e.target.value)}
+                    sx={{ minWidth: 150 }}
+                  />
+                </>
+              )}
+              {actionType === 'result_publish' && (
+                <TextField
+                  label="Exam ID (optional)"
+                  value={resultExamId}
+                  onChange={(e) => setResultExamId(e.target.value)}
+                  sx={{ minWidth: 220 }}
+                />
+              )}
+              {actionType === 'attendance_reset' && (
+                <>
+                  <TextField
+                    label="শ্রেণি"
+                    select
+                    value={attendanceResetClassroom}
+                    onChange={(e) => setAttendanceResetClassroom(e.target.value)}
+                    sx={{ minWidth: 200 }}
+                  >
+                    {classroomOptions.map(c => (
+                      <MenuItem key={c.id} value={String(c.id)}>{c.name || c.id}</MenuItem>
+                    ))}
+                  </TextField>
+                  <TextField
+                    label="তারিখ (YYYY-MM-DD)"
+                    value={attendanceResetDate}
+                    onChange={(e) => setAttendanceResetDate(e.target.value)}
+                    sx={{ minWidth: 200 }}
+                  />
+                </>
+              )}
+              {actionType === 'bulk_fee_assignment' && (
+                <>
+                  <TextField
+                    label="শ্রেণি"
+                    select
+                    value={feeAssignClassroom}
+                    onChange={(e) => setFeeAssignClassroom(e.target.value)}
+                    sx={{ minWidth: 200 }}
+                  >
+                    <MenuItem value="">All</MenuItem>
+                    {classroomOptions.map(c => (
+                      <MenuItem key={c.id} value={String(c.id)}>{c.name || c.id}</MenuItem>
+                    ))}
+                  </TextField>
+                  <TextField
+                    label="মাস (১-১২)"
+                    type="number"
+                    value={feeAssignMonth}
+                    onChange={(e) => setFeeAssignMonth(e.target.value)}
+                    sx={{ minWidth: 150 }}
+                  />
+                  <TextField
+                    label="Due Date (YYYY-MM-DD)"
+                    value={feeAssignDueDate}
+                    onChange={(e) => setFeeAssignDueDate(e.target.value)}
+                    sx={{ minWidth: 220 }}
+                  />
+                </>
+              )}
+              {actionType === 'exam_schedule_publish' && (
+                <TextField
+                  label="Exam Schedule ID (optional)"
+                  value={examScheduleId}
+                  onChange={(e) => setExamScheduleId(e.target.value)}
+                  sx={{ minWidth: 260 }}
+                />
+              )}
+              {actionType === 'parent_sms_templates' && (
+                <>
+                  <TextField
+                    label="শ্রেণি"
+                    select
+                    value={parentFilterClassroom}
+                    onChange={(e) => setParentFilterClassroom(e.target.value)}
+                    sx={{ minWidth: 200 }}
+                  >
+                    <MenuItem value="">All</MenuItem>
+                    {classroomOptions.map(c => (
+                      <MenuItem key={c.id} value={String(c.id)}>{c.name || c.id}</MenuItem>
+                    ))}
+                  </TextField>
+                  <TextField
+                    label="Template"
+                    select
+                    value={parentTemplate}
+                    onChange={(e) => setParentTemplate(e.target.value)}
+                    sx={{ minWidth: 220 }}
+                  >
+                    <MenuItem value="dues_reminder">Dues Reminder</MenuItem>
+                    <MenuItem value="attendance_alert">Attendance Alert</MenuItem>
+                    <MenuItem value="result_published">Result Published</MenuItem>
+                    <MenuItem value="custom">Custom</MenuItem>
+                  </TextField>
+                  {parentTemplate === 'custom' && (
+                    <TextField
+                      label="Message"
+                      value={parentTemplateText}
+                      onChange={(e) => setParentTemplateText(e.target.value)}
+                      sx={{ minWidth: 320 }}
+                    />
+                  )}
+                </>
+              )}
+              {actionType === 'monthly_assignment_schedule' && (
+                <>
+                  <TextField
+                    label="শ্রেণি"
+                    select
+                    value={schedClassroom}
+                    onChange={(e) => setSchedClassroom(e.target.value)}
+                    sx={{ minWidth: 200 }}
+                  >
+                    <MenuItem value="">All</MenuItem>
+                    {classroomOptions.map(c => (
+                      <MenuItem key={c.id} value={String(c.id)}>{c.name || c.id}</MenuItem>
+                    ))}
+                  </TextField>
+                  <TextField
+                    label="বছর (YYYY)"
+                    value={schedYear}
+                    onChange={(e) => setSchedYear(e.target.value)}
+                    sx={{ minWidth: 140 }}
+                  />
+                  <TextField
+                    label="শুরু মাস (১-১২)"
+                    type="number"
+                    value={schedStartMonth}
+                    onChange={(e) => setSchedStartMonth(e.target.value)}
+                    sx={{ minWidth: 160 }}
+                  />
+                  <TextField
+                    label="শেষ মাস (১-১২)"
+                    type="number"
+                    value={schedEndMonth}
+                    onChange={(e) => setSchedEndMonth(e.target.value)}
+                    sx={{ minWidth: 160 }}
+                  />
+                  <TextField
+                    label="Due Day (১-২৮)"
+                    type="number"
+                    value={schedDueDay}
+                    onChange={(e) => setSchedDueDay(e.target.value)}
+                    sx={{ minWidth: 160 }}
+                  />
+                </>
+              )}
+            </Stack>
+            <Stack direction="row" spacing={2}>
+              {actionType === 'bulk_promote' && (
+                <>
+                  <Button variant="outlined" disabled={actionRunning} onClick={() => bulkPromote(true)}>Preview</Button>
+                  <Button variant="contained" disabled={actionRunning} onClick={() => bulkPromote(false)}>Execute</Button>
+                </>
+              )}
+              {actionType === 'fee_plan_generator' && (
+                <Button variant="contained" disabled={actionRunning} onClick={feePlanGenerate}>Execute</Button>
+              )}
+              {actionType === 'sms_broadcast' && (
+                <Button variant="contained" disabled={actionRunning} onClick={smsBroadcast}>Send</Button>
+              )}
+              {actionType === 'bulk_fee_waiver' && (
+                <Button variant="contained" disabled={actionRunning} onClick={bulkFeeWaiver}>Execute</Button>
+              )}
+              {actionType === 'result_publish' && (
+                <Button variant="contained" disabled={actionRunning} onClick={resultPublish}>Publish</Button>
+              )}
+              {actionType === 'attendance_reset' && (
+                <Button variant="contained" disabled={actionRunning} onClick={attendanceReset}>Reset</Button>
+              )}
+              {actionType === 'bulk_fee_assignment' && (
+                <Button variant="contained" disabled={actionRunning} onClick={bulkFeeAssignment}>Execute</Button>
+              )}
+              {actionType === 'exam_schedule_publish' && (
+                <Button variant="contained" disabled={actionRunning} onClick={examSchedulePublish}>Publish</Button>
+              )}
+              {actionType === 'parent_sms_templates' && (
+                <Button variant="contained" disabled={actionRunning} onClick={parentSmsTemplates}>Send</Button>
+              )}
+              {actionType === 'monthly_assignment_schedule' && (
+                <Button variant="contained" disabled={actionRunning} onClick={monthlyAssignmentSchedule}>Execute</Button>
+              )}
+            </Stack>
+          </Paper>
           <Paper 
             elevation={2} 
             sx={{ 
@@ -1165,6 +2406,46 @@ const RoleDashboard = ({ role: roleProp }) => {
           <Button variant="contained" onClick={handleReauth} disabled={reauthLoading}>
             {reauthLoading ? 'যাচাই হচ্ছে...' : 'যাচাই করুন'}
           </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={helpOpen} onClose={() => setHelpOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>এডমিন পেজ ব্যবহারের নির্দেশনা</DialogTitle>
+        <DialogContent dividers>
+          <Typography variant="body2" sx={{ mb: 2 }}>
+            এই এডমিন পেজ থেকে আপনার স্কুলের সকল তথ্য এক জায়গা থেকে নিয়ন্ত্রণ করা যায়।
+          </Typography>
+          <Typography variant="subtitle1" sx={{ mb: 1 }}>কি কি করতে পারবেন</Typography>
+          <Typography variant="body2" sx={{ mb: 1 }}>
+            • Admin Control Center থেকে Students, Teachers, Classrooms, Subjects, Fees, Assignments, Payments, Exams, Results, Attendance, SMS—সব রিসোর্স লোড, এডিট, ডিলিট করতে পারবেন।
+          </Typography>
+          <Typography variant="body2" sx={{ mb: 1 }}>
+            • Special Actions থেকে Bulk Promote, Fee Plan Generator, SMS Broadcast, Parent SMS Templates (প্লেসহোল্ডারসহ), Bulk Fee Waiver, Result Publish, Attendance Reset, Bulk Fee Assignment Create, Monthly Assignment Scheduler (বছরভিত্তিক), Exam Schedule Publish করতে পারবেন।
+          </Typography>
+          <Typography variant="body2" sx={{ mb: 1 }}>
+            • বকেয়ার সমন্বয় করতে Dues Adjustment ইনপুটে পরিমাণ দিয়ে সংরক্ষণ করুন; মোট বকেয়া, বেতন এবং পরীক্ষার ফি উপযুক্তভাবে অ্যাডজাস্ট হবে।
+          </Typography>
+          <Typography variant="body2" sx={{ mb: 1 }}>
+            • Pending Payments আইকনে ক্লিক করে অপেক্ষমাণ পেমেন্টগুলো দেখুন।
+          </Typography>
+          <Typography variant="subtitle1" sx={{ mt: 2, mb: 1 }}>কিভাবে ব্যবহার করবেন</Typography>
+          <Typography variant="body2" sx={{ mb: 1 }}>
+            ১) Admin Control Center-এ রিসোর্স নির্বাচন করুন, সার্চ দিলে ফিল্টার হবে, তারপর লোড চাপুন। তালিকা থেকে এডিট বা ডিলিট করুন।
+          </Typography>
+          <Typography variant="body2" sx={{ mb: 1 }}>
+            ২) Special Actions-এ অ্যাকশন নির্বাচন করুন। প্রয়োজনীয় ইনপুট (শ্রেণি, মাস/বছর, ডিউ ডে, টেমপ্লেট) দিন, তারপর Execute/Publish/Send চাপুন।
+          </Typography>
+          <Typography variant="body2" sx={{ mb: 1 }}>
+            ৩) SMS টেমপ্লেটে {`{student_name}`}, {`{class_name}`}, {`{due_amount}`} প্লেসহোল্ডার ব্যবহার করলে বার্তায় স্বয়ংক্রিয়ভাবে শিক্ষার্থীর নাম, শ্রেণি ও বকেয়া বসে যাবে।
+          </Typography>
+          <Typography variant="body2" sx={{ mb: 1 }}>
+            ৪) চার্ট সেকশনে Attendance, Fee Collection, Class Distribution থেকে সার্বিক অবস্থা দেখুন।
+          </Typography>
+          <Typography variant="body2">
+            কোনো সমস্যায় পড়লে School Settings বা সংশ্লিষ্ট রিসোর্সে গিয়ে তথ্য ঠিক করে নিন।
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setHelpOpen(false)}>বন্ধ করুন</Button>
         </DialogActions>
       </Dialog>
 

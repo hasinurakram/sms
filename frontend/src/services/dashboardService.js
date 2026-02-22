@@ -12,7 +12,7 @@ const configureAxios = () => {
 };
 
 // Get dashboard statistics
-export const getDashboardStats = async (schoolId = null) => {
+export const getDashboardStats = async (schoolId = null, year = null) => {
   try {
     console.log('getDashboardStats called with schoolId:', schoolId);
     const config = configureAxios();
@@ -20,7 +20,7 @@ export const getDashboardStats = async (schoolId = null) => {
     console.log('Making request to: /api/dashboard-stats/');
     const response = await api.get('/api/dashboard-stats/', {
       ...config,
-      params: { school_id: schoolId || undefined, _t: Date.now() },
+      params: { school_id: schoolId || undefined, year: year || undefined, _t: Date.now() },
       timeout: 15000
     });
     console.log('Dashboard stats response:', response.data);

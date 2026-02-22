@@ -240,6 +240,17 @@ export default function ResultCard({ studentData, results, overallResult, examin
     if (schoolId) return `School #${schoolId}`;
     return 'School Name';
   })();
+  const headerSchoolAddress = (() => {
+    const candidates = [
+      resolvedSchool?.address,
+      examination?.school?.address,
+      student?.classroom?.school?.address
+    ].map(v => String(v || '').trim()).filter(v => v);
+    const bnCandidates = candidates.filter(v => /[\u0980-\u09FF]/.test(v));
+    if (bnCandidates.length > 0) return bnCandidates[0];
+    if (candidates.length > 0) return candidates[0];
+    return '';
+  })();
 
   // Resolve student photo URL similar to StudentCard
   const resolvePhotoUrl = (raw) => {
@@ -548,7 +559,11 @@ export default function ResultCard({ studentData, results, overallResult, examin
         <Typography variant="h4" sx={{ fontWeight: 'bold', color: '#1976d2', mb: 0.5, fontSize: { xs: '1.1rem', sm: '1.6rem' } }}>
           {headerSchoolName}
         </Typography>
-        {/* Address Removed */}
+        {headerSchoolAddress && (
+          <Typography variant="body2" sx={{ color: 'text.secondary', mt: 0.25 }}>
+            {headerSchoolAddress}
+          </Typography>
+        )}
         <Typography variant="h5" sx={{ mt: 1, fontWeight: 'bold', color: '#424242', fontSize: { xs: '0.95rem', sm: '1.3rem' } }}>
           ACADEMIC RESULT CARD
         </Typography>
@@ -760,6 +775,47 @@ export default function ResultCard({ studentData, results, overallResult, examin
           </Grid>
         </Box>
       )}
+
+      {/* Grading Scale */}
+      <Box className="result-card-grading" sx={{ mt: 2, p: 1.5, borderRadius: 1, border: '1px dashed #1976d2' }}>
+        <Typography variant="body2" sx={{ fontWeight: 'bold', textAlign: 'center', mb: 1 }}>
+          নাম্বার বণ্টন ও গ্রেডিং স্কেল (GPA)
+        </Typography>
+        {(() => {
+          const gradeScale = [
+            { grade: 'A+', range: '80-100', gpa: '5.00' },
+            { grade: 'A',  range: '70-79',  gpa: '4.00' },
+            { grade: 'A-', range: '60-69',  gpa: '3.50' },
+            { grade: 'B',  range: '50-59',  gpa: '3.00' },
+            { grade: 'C',  range: '40-49',  gpa: '2.00' },
+            { grade: 'D',  range: '33-39',  gpa: '1.00' },
+            { grade: 'F',  range: '0-32',   gpa: '0.00' }
+          ];
+          return (
+            <Grid container spacing={1} justifyContent="center">
+              {gradeScale.map(item => (
+                <Grid key={item.grade} size={{ xs: 6, sm: 3, md: 2 }}>
+                  <Box sx={{ 
+                    textAlign: 'center',
+                    borderRadius: 1,
+                    p: 1,
+                    bgcolor: getGradeColor(item.grade),
+                    color: 'white',
+                    border: '1px solid rgba(255,255,255,0.7)'
+                  }}>
+                    <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                      {item.grade} • GPA {toBnDigits(item.gpa)}
+                    </Typography>
+                    <Typography variant="caption" sx={{ display: 'block', opacity: 0.95 }}>
+                      {toBnDigits(item.range)}
+                    </Typography>
+                  </Box>
+                </Grid>
+              ))}
+            </Grid>
+          );
+        })()}
+      </Box>
 
 
 

@@ -326,6 +326,16 @@ export default function ResultsPage() {
     const cid = parseInt(cidStr, 10);
     return examinations.filter(ex => getClassroomId(ex.classroom) === cid);
   };
+  const getExamYear = (exam) => {
+    try {
+      const d = exam?.exam_date ? new Date(exam.exam_date) : null;
+      if (d && !Number.isNaN(d.getTime())) return d.getFullYear();
+      const name = String(exam?.name || '');
+      const m = name.match(/(19|20)\d{2}/);
+      if (m) return parseInt(m[0], 10);
+      return null;
+    } catch (_) { return null; }
+  };
   const normalizeName = (s) => String(s || '').replace(/\s*\(.*?\)\s*/g, '').trim().toLowerCase();
   const findSubjectExam = (subjectName) => {
     try {
@@ -1063,6 +1073,9 @@ export default function ResultsPage() {
       toast.error('শুধু এ্যাডমিন বা শিক্ষক বাল্ক ইনপুট দিতে পারবেন');
       return;
     }
+    if (!classes.length) {
+      loadClasses();
+    }
     setBulkDialogOpen(true);
     const cls = selectedClass || (classes[0]?.id || '');
     const ex = selectedExam || (getExamsForClass(cls)[0]?.id || '');
@@ -1142,21 +1155,11 @@ export default function ResultsPage() {
     const cls = bulkForm.classroom;
     if (!cls) return;
     const exams = getExamsForClass(cls);
-    const years = Array.from(new Set(exams.map(ex => {
-      try {
-        const d = ex.exam_date ? new Date(ex.exam_date) : null;
-        return d ? d.getFullYear() : null;
-      } catch (_) { return null; }
-    }).filter(Boolean))).sort((a, b) => b - a);
+    const years = Array.from(new Set(exams.map(ex => getExamYear(ex)).filter(Boolean))).sort((a, b) => b - a);
     if (!bulkYear && years.length) {
       setBulkYear(String(years[0]));
     }
-    const filtered = years.length && bulkYear ? exams.filter(ex => {
-      try {
-        const d = ex.exam_date ? new Date(ex.exam_date) : null;
-        return d ? String(d.getFullYear()) === String(bulkYear) : false;
-      } catch (_) { return false; }
-    }) : exams;
+    const filtered = years.length && bulkYear ? exams.filter(ex => String(getExamYear(ex) || '') === String(bulkYear)) : exams;
     if (!bulkForm.exam && filtered.length) {
       setBulkForm(prev => ({ ...prev, exam: filtered[0].id }));
     }
@@ -1165,12 +1168,7 @@ export default function ResultsPage() {
     const cls = bulkForm.classroom;
     if (!cls || !bulkYear) return;
     const exams = getExamsForClass(cls);
-    const filtered = exams.filter(ex => {
-      try {
-        const d = ex.exam_date ? new Date(ex.exam_date) : null;
-        return d ? String(d.getFullYear()) === String(bulkYear) : false;
-      } catch (_) { return false; }
-    });
+    const filtered = exams.filter(ex => String(getExamYear(ex) || '') === String(bulkYear));
     if (filtered.length && !filtered.some(ex => String(ex.id) === String(bulkForm.exam))) {
       setBulkForm(prev => ({ ...prev, exam: filtered[0].id }));
     }
@@ -2189,12 +2187,9 @@ export default function ResultsPage() {
                   label="পরীক্ষা"
                 >
                   {getExamsForClass(bulkForm.classroom).filter(exam => {
-                    try {
-                      if (!bulkYear) return true;
-                      const d = exam.exam_date ? new Date(exam.exam_date) : null;
-                      if (!d) return false;
-                      return String(d.getFullYear()) === String(bulkYear);
-                    } catch (_) { return true; }
+                    if (!bulkYear) return true;
+                    const yr = getExamYear(exam);
+                    return yr != null && String(yr) === String(bulkYear);
                   }).map(exam => (
                     <MenuItem key={exam.id} value={exam.id}>
                       {`${exam.name} (${getExamTypeLabel(exam.exam_type)}) — মোট: ${exam.total_marks}`}
@@ -2212,12 +2207,7 @@ export default function ResultsPage() {
                   label="সাল"
                   disabled={!bulkForm.classroom}
                 >
-                  {Array.from(new Set(getExamsForClass(bulkForm.classroom).map(ex => {
-                    try {
-                      const d = ex.exam_date ? new Date(ex.exam_date) : null;
-                      return d ? d.getFullYear() : null;
-                    } catch (_) { return null; }
-                  }).filter(Boolean))).sort((a, b) => b - a).map(y => (
+                  {Array.from(new Set(getExamsForClass(bulkForm.classroom).map(ex => getExamYear(ex)).filter(Boolean))).sort((a, b) => b - a).map(y => (
                     <MenuItem key={y} value={String(y)}>{y}</MenuItem>
                   ))}
                 </Select>

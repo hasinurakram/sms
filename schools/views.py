@@ -1,21 +1,94 @@
-from rest_framework import viewsets, permissions
+from rest_framework import viewsets, permissions, status
 from users.permissions import AdminOrReadOnly
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from django.db.models import Count, Sum, Q, IntegerField, F
 from django.db.models.functions import Cast
-from .models import School
-from .serializers import SchoolSerializer
+from .models import School, Advertisement
+from .serializers import SchoolSerializer, AdvertisementSerializer
 from academics.models import ClassRoom, StudentProfile, TeacherAssignment, Subject
 from users.models import Profile, User
 from attendance.models import AttendanceRecord
 from fees.models import Payment, FeeStructure, StudentFeeAssignment
 from datetime import datetime, timedelta
+from rest_framework.views import APIView
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 
 class SchoolViewSet(viewsets.ModelViewSet):
     queryset = School.objects.all()
     serializer_class = SchoolSerializer
     permission_classes = [AdminOrReadOnly]
+
+class AdvertisementViewSet(viewsets.ModelViewSet):
+    queryset = Advertisement.objects.select_related('school').all()
+    serializer_class = AdvertisementSerializer
+    permission_classes = [permissions.AllowAny]  # Adjust as needed
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        school_id = self.request.query_params.get('school') or self.request.query_params.get('school_id')
+        if school_id:
+            try:
+                qs = qs.filter(school_id=int(school_id))
+            except Exception:
+                pass
+        return qs
+
+class AdvertisementBySchool(APIView):
+    permission_classes = [permissions.AllowAny]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def get(self, request, school_id):
+        ads = Advertisement.objects.filter(school_id=school_id).order_by('-created_at', '-id')
+        serializer = AdvertisementSerializer(ads, many=True, context={'request': request})
+        return Response(serializer.data)
+
+    def post(self, request, school_id):
+        data = request.data.copy()
+        data['school'] = school_id
+        serializer = AdvertisementSerializer(data=data, context={'request': request})
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class AdvertisementBulk(APIView):
+    permission_classes = [permissions.AllowAny]
+    parser_classes = [JSONParser]
+
+    def put(self, request, *args, **kwargs):
+        items = request.data.get('ads') or []
+        created = []
+        for item in items:
+            try:
+                school_id = item.get('school')
+                if not school_id:
+                    continue
+                payload = {
+                    'school': school_id,
+                    'text': item.get('text', ''),
+                    'link': item.get('link', ''),
+                    'type': (item.get('type') or 'image').lower()
+                }
+                # Handle media data URL if provided
+                media_data_url = item.get('media_data_url')
+                if media_data_url:
+                    import re, base64
+                    from django.core.files.base import ContentFile
+                    m = re.match(r'^data:(.+);base64,(.*)$', media_data_url)
+                    if m:
+                        mime = m.group(1)
+                        b64 = m.group(2)
+                        ext = (mime.split('/')[-1] or 'bin')
+                        payload['media'] = ContentFile(base64.b64decode(b64), name=f"ad_{school_id}_{payload['type']}.{ext}")
+                ser = AdvertisementSerializer(data=payload, context={'request': request})
+                if ser.is_valid():
+                    ser.save()
+                    created.append(ser.data)
+            except Exception:
+                continue
+        return Response({'created': created}, status=status.HTTP_200_OK)
 
 @api_view(['GET'])
 @permission_classes([permissions.AllowAny])  # TEMP: dev-only open access
@@ -120,49 +193,187 @@ def dashboard_stats(request):
     exam_due_total = 0
     class_dues_map = {} # {class_name: {tuition_due, exam_due, total_due}}
     
-    cutoff_date = datetime(2026, 1, 1).date()
-    def _is_tuition_countable(assign):
+    # Determine target year (query param or current year)
+    try:
+        year_param = request.query_params.get('year')
+        target_year = int(year_param) if year_param is not None else datetime.now().year
+    except Exception:
+        target_year = datetime.now().year
+    cutoff_date = datetime(target_year, 1, 1).date()
+    def _is_target_year(assign):
+        # 1) Assigned date in current year
         try:
-            freq = (assign.fee_structure.frequency or '').lower()
-        except Exception:
-            freq = ''
-        if freq == 'one_time':
-            return True
-        try:
-            if assign.assigned_date and assign.assigned_date >= cutoff_date:
+            if assign.assigned_date and assign.assigned_date.year == target_year:
                 return True
         except Exception:
             pass
+        # 2) Fee structure academic year equals current year (handles string/bangla digits)
         try:
-            ay = str(getattr(assign.fee_structure, 'academic_year', '') or '').strip()
-            if '2026' in ay:
+            ay_raw = getattr(assign.fee_structure, 'academic_year', '') or ''
+            ay = str(ay_raw).strip()
+            import re
+            m = re.search(r'(19|20)\d{2}', ay)
+            if m and int(m.group(0)) == target_year:
+                return True
+            if ay.isdigit() and int(ay) == target_year:
                 return True
         except Exception:
             pass
         return False
     
+    def _is_tuition_in_scope(assign):
+        try:
+            freq = (assign.fee_structure.frequency or '').lower()
+        except Exception:
+            freq = ''
+        if freq == 'one_time':
+            return False
+        # Include tuition if assignment is not in the future relative to target year
+        try:
+            if assign.assigned_date and assign.assigned_date.year <= target_year:
+                return True
+        except Exception:
+            pass
+        # If academic_year is available, include when it is <= target year
+        try:
+            ay_raw = getattr(assign.fee_structure, 'academic_year', '') or ''
+            ay = str(ay_raw).strip()
+            import re
+            m = re.search(r'(19|20)\d{2}', ay)
+            if m and int(m.group(0)) <= target_year:
+                return True
+            if ay.isdigit() and int(ay) <= target_year:
+                return True
+        except Exception:
+            pass
+        # Default: include tuition when year cannot be determined (to avoid missing active dues)
+        return True
+    
+    def _safe_float(val):
+        try:
+            if val is None: return 0.0
+            v = float(val)
+            if v != v: return 0.0  # NaN check
+            return v
+        except Exception:
+            return 0.0
+    
+    def _select_base_amount(assign):
+        try:
+            fee = getattr(assign, 'fee_structure', None)
+            candidates = [
+                getattr(assign, 'custom_amount', None),
+                getattr(assign, 'amount', None),
+                getattr(assign, 'total_amount', None),
+                getattr(assign, 'payable_amount', None),
+                getattr(assign, 'original_amount', None),
+                getattr(fee, 'amount', None),
+                getattr(fee, 'default_amount', None),
+            ]
+            for c in candidates:
+                v = _safe_float(c)
+                if v > 0:
+                    return v
+            return _safe_float(getattr(fee, 'amount', None))
+        except Exception:
+            return 0.0
+    
+    def _months_in_scope(assign):
+        now = datetime.now()
+        current_year = now.year
+        current_month = now.month
+        if target_year > current_year:
+            return 0
+        end_month = 12 if target_year < current_year else current_month
+        try:
+            if assign.assigned_date:
+                if assign.assigned_date.year > target_year:
+                    return 0
+                start_month = assign.assigned_date.month if assign.assigned_date.year == target_year else 1
+            else:
+                start_month = 1
+        except Exception:
+            start_month = 1
+        m = max(0, end_month - start_month + 1)
+        return min(m, 12)
+    
+    seen_monthly_groups = set()
     for a in assignments:
-        # Calculate gross payable
-        base = a.custom_amount if a.custom_amount is not None else a.fee_structure.amount
-        if a.discount_percentage > 0:
-            discount = base * (a.discount_percentage / 100)
-            gross = base - discount
+        try:
+            freq = (a.fee_structure.frequency or '').lower()
+        except Exception:
+            freq = ''
+        base = _select_base_amount(a)
+        discount_pct = _safe_float(getattr(a, 'discount_percentage', 0))
+        discount_amt = _safe_float(getattr(a, 'discount_amount', 0))
+        monthly_net = max(0.0, base - discount_amt - (base * (discount_pct / 100.0)))
+        if freq == 'monthly':
+            if not _is_tuition_in_scope(a):
+                gross = 0.0
+            else:
+                try:
+                    sid = getattr(getattr(a, 'student', None), 'id', None) or getattr(a, 'student_id', None)
+                except Exception:
+                    sid = None
+                try:
+                    cls = getattr(getattr(a.fee_structure, 'classroom', None), 'id', None) or getattr(a.fee_structure, 'classroom_id', None) or getattr(getattr(a.student, 'classroom', None), 'id', None)
+                except Exception:
+                    cls = None
+                gkey = (sid, cls, target_year)
+                if gkey in seen_monthly_groups:
+                    gross = 0.0
+                else:
+                    months = int(_months_in_scope(a))
+                    gross = monthly_net * max(0, months)
+                    seen_monthly_groups.add(gkey)
         else:
-            gross = base
-            
-        paid = paid_map.get(a.id, 0)
-        due = max(0, gross - paid)
+            gross = monthly_net
+        paid = _safe_float(paid_map.get(a.id, 0))
+        due = max(0.0, gross - paid)
         
         if due > 0:
             freq = a.fee_structure.frequency
             # Frontend logic: monthly -> tuition, one_time -> exam, others -> tuition
             is_exam = freq == 'one_time'
             
+            # Only count dues for target academic year and apply exam scheduling rules
             if is_exam:
+                import re
+                # Year gating
+                now = datetime.now()
+                current_year = now.year
+                current_month = now.month
+                if not _is_target_year(a):
+                    continue
+                # Identify exam type
+                nm = str(getattr(a.fee_structure, 'name', '') or '').lower()
+                cat = str(getattr(a.fee_structure, 'category', '') or '').lower()
+                text = f"{nm} {cat}"
+                is_half = bool(re.search(r'half|mid|অর্ধ', text))
+                is_annual = bool(re.search(r'annual|final|বার্ষিক', text))
+                # Due date (optional, for other exam types)
+                dd = getattr(a.fee_structure, 'due_date', None) or getattr(a, 'due_date', None)
+                include_exam = False
+                if target_year < current_year:
+                    include_exam = True
+                elif target_year > current_year:
+                    include_exam = False
+                else:
+                    if is_half:
+                        include_exam = current_month >= 5
+                    elif is_annual:
+                        include_exam = current_month >= 9
+                    else:
+                        # For other exams, require due_date in target year and due month not in the future
+                        if dd and hasattr(dd, 'year') and dd.year == target_year:
+                            include_exam = dd.month <= current_month
+                        else:
+                            include_exam = False
+                if not include_exam:
+                    continue
                 exam_due_total += due
             else:
-                if not _is_tuition_countable(a):
-                    # Pre-2026 tuition dues are ignored for aggregation
+                if not _is_tuition_in_scope(a):
                     continue
                 tuition_due_total += due
             
@@ -172,12 +383,33 @@ def dashboard_stats(request):
                 class_dues_map[cname] = {'tuition_due': 0, 'exam_due': 0, 'total_due': 0}
             
             if is_exam:
-                class_dues_map[cname]['exam_due'] += due
+                if _is_target_year(a):
+                    # Same include logic as above
+                    import re
+                    nm2 = str(getattr(a.fee_structure, 'name', '') or '').lower()
+                    cat2 = str(getattr(a.fee_structure, 'category', '') or '').lower()
+                    text2 = f"{nm2} {cat2}"
+                    is_half2 = bool(re.search(r'half|mid|অর্ধ', text2))
+                    is_annual2 = bool(re.search(r'annual|final|বার্ষিক', text2))
+                    dd2 = getattr(a.fee_structure, 'due_date', None) or getattr(a, 'due_date', None)
+                    now2 = datetime.now()
+                    cy = now2.year
+                    cm = now2.month
+                    if target_year < cy:
+                        class_dues_map[cname]['exam_due'] += due
+                    elif target_year > cy:
+                        pass
+                    else:
+                        if (is_half2 and cm >= 5) or (is_annual2 and cm >= 9):
+                            class_dues_map[cname]['exam_due'] += due
+                        else:
+                            if dd2 and hasattr(dd2, 'year') and dd2.year == target_year and dd2.month <= cm:
+                                class_dues_map[cname]['exam_due'] += due
+                            else:
+                                pass
             else:
-                if not _is_tuition_countable(a):
-                    # Skip adding pre-2026 tuition to class breakdown
-                    continue
-                class_dues_map[cname]['tuition_due'] += due
+                if _is_tuition_in_scope(a):
+                    class_dues_map[cname]['tuition_due'] += due
             
             class_dues_map[cname]['total_due'] += due
 
@@ -212,6 +444,7 @@ def dashboard_stats(request):
         'fee_collection': fee_collection, # New format
         'fee_data': list(fee_data_qs),    # Keep old format for backward compat if needed
         'fee_dues_summary': fee_dues_summary,
+        'dues_year': target_year,
         'fee_dues_by_class': fee_dues_by_class,
         'class_distribution': list(class_distribution)
     })

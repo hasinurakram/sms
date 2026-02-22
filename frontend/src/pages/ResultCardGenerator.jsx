@@ -53,6 +53,8 @@ export default function ResultCardGenerator() {
   const [selectedStudent, setSelectedStudent] = useState('');
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [loading, setLoading] = useState(false);
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkCards, setBulkCards] = useState([]);
   
   // Result data
   const [studentData, setStudentData] = useState(null);
@@ -903,6 +905,129 @@ export default function ResultCardGenerator() {
     }
   };
 
+  const buildCardForStudent = async (stuId) => {
+    try {
+      const studentRes = await api.get(`/api/academics/students/${stuId}/`);
+      const student = studentRes.data;
+      const selType = normalizeExamType(selectedExamType);
+      let matchingExams = examinations.filter(exam =>
+        normalizeExamType(exam.exam_type, exam.name) === selType &&
+        getClassroomId(exam.classroom) === selectedClass
+      );
+      if (matchingExams.length === 0) {
+        const fallbackExams = examinations.filter(ex => getClassroomId(ex.classroom) === selectedClass);
+        let alt = [];
+        if (selType === 'annual') alt = fallbackExams.filter(ex => /(বার্ষিক|final|annual)/i.test(String(ex.name || '')));
+        else if (selType === 'half_yearly') alt = fallbackExams.filter(ex => /(অর্ধ|half|mid)/i.test(String(ex.name || '')));
+        else if (selType === 'terminal') alt = fallbackExams.filter(ex => /(টার্মিনাল|terminal|term)/i.test(String(ex.name || '')));
+        else if (selType === 'model') alt = fallbackExams.filter(ex => /(মডেল|model)/i.test(String(ex.name || '')));
+        else if (selType === 'test') alt = fallbackExams.filter(ex => /(টেস্ট|test|monthly)/i.test(String(ex.name || '')));
+        else if (selType === 'first_term') alt = fallbackExams.filter(ex => /(first\s*term|প্রথম\s*টার্ম)/i.test(String(ex.name || '')));
+        if (alt.length > 0) matchingExams = alt;
+      }
+      let chosenExam = null;
+      try {
+        const examResList = await Promise.all(matchingExams.map(ex => api.get(`/api/results/examinations/${ex.id}/`).then(r => r.data).catch(() => null)));
+        const valid = examResList.filter(Boolean);
+        const validSorted = [...valid].sort((a, b) => new Date(b.exam_date || 0) - new Date(a.exam_date || 0));
+        chosenExam = validSorted[0] || valid[0] || null;
+      } catch (_) {
+        chosenExam = matchingExams[0] || null;
+      }
+      const originalMatching = [...matchingExams];
+      matchingExams = originalMatching.length ? originalMatching : (chosenExam ? [chosenExam] : []);
+      let fetchedResults = [];
+      for (const ex of matchingExams) {
+        try {
+          const params = { examination: ex.id, student: stuId, page_size: 1000 };
+          if (selectedSection) params.section = selectedSection;
+          const resultsRes = await scopedGet('/api/results/results/', id, params, { timeout: 15000 });
+          const arr = Array.isArray(resultsRes.data) ? resultsRes.data : (resultsRes.data?.results || []);
+          fetchedResults = fetchedResults.concat(arr);
+        } catch (_) {}
+      }
+      if ((!fetchedResults || fetchedResults.length === 0) && matchingExams.length > 1) {
+        const sortedPossible = [...matchingExams].sort((a, b) => new Date(b.exam_date || 0) - new Date(a.exam_date || 0));
+        for (const ex of sortedPossible) {
+          try {
+            const params = { examination: ex.id, student: stuId, page_size: 1000 };
+            if (selectedSection) params.section = selectedSection;
+            const resA = await scopedGet('/api/results/results/', id, params, { timeout: 15000 });
+            const arrA = Array.isArray(resA.data) ? resA.data : (resA.data?.results || []);
+            if (arrA && arrA.length) {
+              fetchedResults = arrA;
+              matchingExams = [ex];
+              chosenExam = ex;
+              break;
+            }
+          } catch (_) {}
+        }
+      }
+      const merged = dedupeAndFillResults(fetchedResults, matchingExams);
+      let overall = null;
+      try {
+        let url = `/api/results/overall/combined_by_exam_type/?student=${stuId}&exam_type=${normalizeExamType(selectedExamType)}&classroom=${selectedClass}&school=${id}&year=${selectedYear}`;
+        if (selectedSection) url += `&section=${selectedSection}`;
+        const overallRes = await api.get(url);
+        overall = overallRes.data;
+      } catch (_) {
+        overall = null;
+      }
+      const examObj = chosenExam || (merged.length ? merged[0]?.examination : null);
+      return {
+        studentData: { student },
+        results: merged,
+        overallResult: overall,
+        examination: examObj
+      };
+    } catch (_) {
+      return null;
+    }
+  };
+
+  const handleGenerateBulkCards = async () => {
+    if (!selectedClass || !selectedSection || !selectedExamType) {
+      toast.error('শ্রেণি, সেকশন ও পরীক্ষার ধরন নির্বাচন করুন');
+      return;
+    }
+    if (!Array.isArray(students) || students.length === 0) {
+      toast.error('এই সেকশনে কোনো শিক্ষার্থী পাওয়া যায়নি');
+      return;
+    }
+    setBulkLoading(true);
+    setBulkCards([]);
+    try {
+      const list = students.filter(s => {
+        const secId = (typeof s.section === 'object') ? (s.section?.id ?? s.section?.section_id) : s.section_id;
+        return String(secId || '') === String(selectedSection || '');
+      });
+      const cards = [];
+      for (const s of list) {
+        const card = await buildCardForStudent(s.id);
+        if (card) {
+          cards.push(card);
+        }
+      }
+      setBulkCards(cards);
+      if (!cards.length) {
+        toast.warning('কোনো কার্ড তৈরি হয়নি');
+      } else {
+        toast.success(`মোট ${cards.length} শিক্ষার্থীর কার্ড তৈরি হয়েছে`);
+      }
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const handleBulkPrint = () => {
+    if (!bulkCards.length) {
+      toast.warning('প্রিন্ট করার জন্য কার্ড তৈরি করুন');
+      return;
+    }
+    toast.info('প্রিন্ট ডায়ালগ খুলছে...');
+    setTimeout(() => window.print(), 100);
+  };
+
   const handleReset = () => {
     setSelectedClass('');
     setSelectedStudent('');
@@ -1118,6 +1243,25 @@ export default function ResultCardGenerator() {
               </Button>
               <Button
                 variant="outlined"
+                startIcon={<PrintIcon />}
+                onClick={handleGenerateBulkCards}
+                color="secondary"
+                disabled={!selectedSection || bulkLoading}
+              >
+                {bulkLoading ? 'লোড হচ্ছে...' : 'সেকশনের সব কার্ড তৈরি'}
+              </Button>
+              {bulkCards.length > 0 && (
+                <Button
+                  variant="contained"
+                  startIcon={<PrintIcon />}
+                  onClick={handleBulkPrint}
+                  color="success"
+                >
+                  সব কার্ড প্রিন্ট
+                </Button>
+              )}
+              <Button
+                variant="outlined"
                 startIcon={<DownloadIcon />}
                 onClick={handleDownloadPDF}
                 color="secondary"
@@ -1169,6 +1313,24 @@ export default function ResultCardGenerator() {
             school={school || {}}
             schoolId={id}
           />
+          {bulkCards.length > 0 && (
+            <Box sx={{ mt: 4 }} className="bulk-print-mode">
+              {bulkCards.map((card, idx) => (
+                <Box key={idx} className="bulk-sheet">
+                  <Box className="bulk-card-wrap">
+                    <ResultCard
+                      studentData={card.studentData}
+                      results={card.results}
+                      overallResult={card.overallResult}
+                      examination={card.examination}
+                      school={school || {}}
+                      schoolId={id}
+                    />
+                  </Box>
+                </Box>
+              ))}
+            </Box>
+          )}
         </>
       ) : (
         <EmptyState

@@ -58,6 +58,10 @@ import {
   TableCell,
   TableBody,
   TableContainer,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from "@mui/material";
 import MenuIcon from '@mui/icons-material/Menu';
 import LockIcon from '@mui/icons-material/Lock';
@@ -172,6 +176,13 @@ const SchoolDashboard = () => {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryRows, setSummaryRows] = useState([]);
   const [summaryFailBuckets, setSummaryFailBuckets] = useState(Array.from({ length: 10 }, (_, i) => i + 1));
+  const [feeYear, setFeeYear] = useState(new Date().getFullYear());
+  const [adsOpen, setAdsOpen] = useState(false);
+  const [adsSlots, setAdsSlots] = useState([]);
+  const [adText, setAdText] = useState('');
+  const [adLink, setAdLink] = useState('');
+  const [adMediaType, setAdMediaType] = useState('image');
+  const [adMediaDataUrl, setAdMediaDataUrl] = useState('');
   
   // Check if we're on the main dashboard page with no sub-route
   const isMainDashboard = location.pathname === `/school/${id}` || location.pathname === `/school/${id}/`;
@@ -250,9 +261,107 @@ const SchoolDashboard = () => {
   };
   useEffect(() => {
     generateSummary();
-  }, [id, summaryExamType, summaryYear]);
+  }, [id, summaryExamType, summaryYear, feeYear]);
 
   useEffect(() => {
+    const computeSchoolStatsFallback = async (schoolId, targetYear) => {
+      const enriched = {};
+      const requests = [
+        api.get(`/api/academics/students/?school=${schoolId}`),
+        api.get(`/api/users/teachers/?school=${schoolId}`),
+        api.get(`/api/users/parents/?school=${schoolId}`),
+        api.get(`/api/academics/classrooms/?school=${schoolId}`),
+        api.get(`/api/academics/subjects/?school=${schoolId}`),
+        api.get(`/api/fees/payments/?school=${schoolId}`),
+        api.get(`/api/fees/assignments/?school=${schoolId}`),
+        api.get(`/api/fees/fees/?school=${schoolId}`),
+        api.get(`/api/attendance/records/?school=${schoolId}`)
+      ];
+      const results = await Promise.allSettled(requests);
+      const studentsRes = results[0];
+      const teachersRes = results[1];
+      const parentsRes = results[2];
+      const classesRes = results[3];
+      const subjectsRes = results[4];
+      const feeRes = results[5];
+      const assignRes = results[6];
+      const feeStructRes = results[7];
+      const attRes = results[8];
+      const students = studentsRes.status === 'fulfilled' ? (studentsRes.value.data?.results || studentsRes.value.data || []) : [];
+      const teachers = teachersRes.status === 'fulfilled' ? (teachersRes.value.data?.results || teachersRes.value.data || []) : [];
+      const parents = parentsRes.status === 'fulfilled' ? (parentsRes.value.data?.results || parentsRes.value.data || []) : [];
+      const classrooms = classesRes.status === 'fulfilled' ? (classesRes.value.data?.results || classesRes.value.data || []) : [];
+      const subjects = subjectsRes.status === 'fulfilled' ? (subjectsRes.value.data?.results || subjectsRes.value.data || []) : [];
+      enriched.students_count = students.length;
+      enriched.teachers_count = teachers.length;
+      enriched.parents_count = parents.length;
+      enriched.classes_count = classrooms.length;
+      enriched.subjects_count = subjects.length;
+      const map = new Map();
+      for (const s of students) { const cname = s.classroom?.name || s.classroom_name || s.classroom || 'Unknown'; map.set(cname, (map.get(cname) || 0) + 1); }
+      enriched.class_distribution = Array.from(map.entries()).map(([classroom__name, count]) => ({ classroom__name, count }));
+      const payments = feeRes?.status === 'fulfilled' ? (feeRes.value.data?.results || feeRes.value.data || []) : [];
+      const byDate = new Map(); const now = new Date(); const cutoff = new Date(now.getTime() - 30*24*60*60*1000);
+      for (const p of payments) { const ds = new Date(p.payment_date || p.date || p.created_at || now); if (isNaN(ds) || ds < cutoff) continue; const key = ds.toISOString().slice(0,10); byDate.set(key, (byDate.get(key) || 0) + Number(p.amount || p.paid_amount || 0)); }
+      enriched.fee_collection = Array.from(byDate.entries()).sort(([a],[b]) => a.localeCompare(b)).map(([date, amount]) => ({ date, amount }));
+      const assignments = assignRes?.status === 'fulfilled' ? (assignRes.value.data?.results || assignRes.value.data || []) : [];
+      const feeStructs = feeStructRes?.status === 'fulfilled' ? (feeStructRes.value.data?.results || feeStructRes.value.data || []) : [];
+      const structMap = {}; for (const s of (feeStructs || [])) { structMap[String(s.id)] = s; }
+      const studentMap = new Map(); for (const s of (students || [])) { studentMap.set(String(s.id), s); }
+      const paidByAssign = new Map(); for (const pay of (payments || [])) { const aidRaw = pay.assignment_id || pay.assignment || pay.fee_assignment || pay.student_fee_assignment || pay.assignment?.id; const aid = aidRaw != null ? String(aidRaw) : ''; if (!aid) continue; const amount = Number(pay.amount || pay.paid_amount || 0) || 0; paidByAssign.set(aid, (paidByAssign.get(aid) || 0) + amount); }
+      const classMap = new Map(); let tuition_due_total = 0; let exam_due_total = 0; const seenMonthlyByStudentMonth = new Set(); const currentMonthNo = new Date().getMonth() + 1;
+      for (const a of (assignments || [])) {
+        const aid = String(a.id || a._id || a.assignment_id || a.assignment || ''); if (!aid) continue;
+        const feeObj = a.fee_structure || a.fee || {}; const sid = String(a.fee_structure_id || a.fee_id || feeObj.id || a.fee_structure || a.fee || ''); const sObj = (typeof feeObj === 'object' && feeObj) ? feeObj : (structMap[sid] || {});
+        const baseCandidates = [a.custom_amount, a.amount, a.total_amount, a.payable_amount, a.original_amount, sObj.amount, sObj.default_amount]; let base = baseCandidates.find(x => x !== undefined && x !== null && Number(x) >= 0); base = Number(base || 0);
+        const discountAmt = Number(a.discount_amount || 0) || 0; const discountPct = Number(a.discount_percentage ?? a.discount_percent ?? a.discount ?? 0) || 0;
+        let gross = Math.max(0, base - discountAmt - (base * discountPct / 100)); const paid = Number(paidByAssign.get(aid) || 0); let due = Math.max(0, gross - paid); if (due <= 0) continue;
+        const stuId = String(a.student_id || a.student || a.studentId || ''); const stu = studentMap.get(stuId); const classId = stu?.classroom?.id ?? stu?.classroom ?? null; const classObj = (classrooms || []).find(c => String(c.id) === String(classId)); const className = classObj?.name || (typeof classId === 'string' || typeof classId === 'number' ? String(classId) : 'Unknown');
+        const freq = String((sObj && sObj.frequency) || a.frequency || a.fee_frequency || '').toLowerCase(); const rtype = freq === 'monthly' ? 'tuition' : (freq === 'one_time' ? 'exam' : 'other');
+        try {
+          const bnMap = { 'প্রথম': 1, 'দ্বিতীয়': 2, 'দ্বিতীয়': 2, 'তৃতীয়': 3, 'তৃতীয়': 3, 'চতুর্থ': 4, 'পঞ্চম': 5, 'ষষ্ঠ': 6, 'সপ্তম': 7, 'অষ্টম': 8, 'নবম': 9, 'দশম': 10 };
+          let classOrder = 0; for (const k in bnMap) { if (String(className).includes(k)) { classOrder = bnMap[k]; break; } } if (!classOrder) { const m = String(className).match(/\d+/); if (m) classOrder = parseInt(m[0], 10); }
+          const monthlyFixed = classOrder >= 1 && classOrder <= 5 ? 250 : (classOrder >= 6 && classOrder <= 10 ? 150 : 0);
+          const monthNo = Number(sObj.month || sObj.month_no || sObj.month_number || a.month || 0) || 0; const nameStr = String(sObj.name || sObj.title || sObj.label || '').toLowerCase(); const isHalf = /half|mid|অর্ধ/.test(nameStr); const isAnnual = /annual|final|বার্ষিক/.test(nameStr);
+          if (rtype === 'tuition') { const effectiveMonth = monthNo || currentMonthNo; if (monthNo && monthNo > currentMonthNo) continue; const seenKey = `${stuId}:${effectiveMonth}`; if (seenMonthlyByStudentMonth.has(seenKey)) continue; seenMonthlyByStudentMonth.add(seenKey); gross = monthlyFixed || gross; due = Math.max(0, gross - paid); if (due <= 0) continue; }
+          else if (rtype === 'exam') {
+            const targetYearNum = Number(targetYear); const currentYear = new Date().getFullYear(); const ddSrc = sObj.due_date || a.due_date || null; let allow = false;
+            if (targetYearNum < currentYear) { allow = true; } else if (targetYearNum > currentYear) { allow = false; }
+            else { const allowHalf = isHalf && currentMonthNo >= 5; const allowAnnual = isAnnual && currentMonthNo >= 9; let allowOther = false; if (!isHalf && !isAnnual && ddSrc) { const ddObj = new Date(ddSrc); if (!isNaN(ddObj) && ddObj.getFullYear() === targetYearNum) { allowOther = ddObj.getMonth() + 1 <= currentMonthNo; } } allow = allowHalf || allowAnnual || allowOther; }
+            if (!allow) continue; gross = Number(sObj.amount || a.amount || gross || 0); due = Math.max(0, gross - paid); if (due <= 0) continue;
+          }
+        } catch (_) {}
+        const entry = classMap.get(className) || { tuition_due: 0, exam_due: 0, total_due: 0 };
+        if (rtype === 'tuition') { entry.tuition_due += due; tuition_due_total += due; }
+        else if (rtype === 'exam') { entry.exam_due += due; exam_due_total += due; }
+        entry.total_due += due; classMap.set(className, entry);
+      }
+      try {
+        const monthlyRateByClass = new Map();
+        for (const s of (feeStructs || [])) { const freq = String(s.frequency || '').toLowerCase(); const cidRaw = s.classroom?.id ?? s.classroom_id ?? s.classroomId ?? s.classroom ?? s.class?.id ?? s.class; const cid = cidRaw != null ? String(cidRaw) : ''; if (freq === 'monthly' && cid) { const amt = Number(s.amount ?? s.default_amount ?? 0) || 0; if (amt > 0 && !monthlyRateByClass.has(cid)) monthlyRateByClass.set(cid, amt); } }
+        for (const cls of (classrooms || [])) {
+          const cname = cls?.name || String(cls?.id || ''); let entry = classMap.get(cname); if (!entry) { entry = { tuition_due: 0, exam_due: 0, total_due: 0 }; classMap.set(cname, entry); }
+          const cidStr = String(cls.id); let monthlyRate = Number(monthlyRateByClass.get(cidStr) || 0) || 0;
+          if (monthlyRate <= 0) { let order = 0; const m = String(cname).match(/\d+/); if (m) order = parseInt(m[0], 10); monthlyRate = order >= 1 && order <= 5 ? 250 : (order >= 6 && order <= 10 ? 150 : 0); }
+          if (monthlyRate > 0) {
+            let classStudents = (students || []).filter(s => { const cidRaw = s?.classroom?.id ?? s?.classroom_id ?? s?.classroomId ?? s?.classroom ?? s?.class?.id ?? s?.class ?? null; const cid = cidRaw != null ? String(cidRaw) : ''; return cid && cid === cidStr; });
+            if ((classStudents || []).length < 30) {
+              const endpoints = [`/api/academics/students/?school=${schoolId}&classroom=${cidStr}`, `/api/academics/students/?classroom=${cidStr}`, `/api/students/?school=${schoolId}&classroom=${cidStr}`, `/api/students/?classroom=${cidStr}`];
+              for (const ep of endpoints) { try { const r = await api.get(ep); const arr = Array.isArray(r.data) ? r.data : (r.data?.results || r.data?.data || []); if (Array.isArray(arr) && arr.length) { classStudents = arr; break; } } catch (_) {} }
+            }
+            for (const stu of classStudents) { const sid = String(stu.id); for (let m = 1; m <= currentMonthNo; m++) { const seenKey = `${sid}:${m}`; if (!seenMonthlyByStudentMonth.has(seenKey)) { entry.tuition_due += monthlyRate; entry.total_due += monthlyRate; tuition_due_total += monthlyRate; seenMonthlyByStudentMonth.add(seenKey); } } }
+          }
+        }
+      } catch (_) {}
+      enriched.fee_dues_summary = { tuition_due_total, exam_due_total, total_due: tuition_due_total + exam_due_total };
+      enriched.fee_dues_by_class = Array.from(classMap.entries()).map(([class_name, v]) => ({ class_name, ...v }))
+        .sort((a, b) => { const ao = String(a.class_name).localeCompare(String(b.class_name)); return ao; });
+      const records = attRes?.status === 'fulfilled' ? (attRes.value.data?.results || attRes.value.data || []) : [];
+      const attMap = new Map(); const now2 = new Date(); const cutoff2 = new Date(now2.getTime() - 7*24*60*60*1000);
+      for (const r of records) { const ds = new Date(r.date || now2); if (isNaN(ds) || ds < cutoff2) continue; const key = ds.toISOString().slice(0,10); const entry = attMap.get(key) || { date: key, present: 0, absent: 0 }; if (r.present === true) entry.present += 1; else entry.absent += 1; attMap.set(key, entry); }
+      enriched.attendance_data = Array.from(attMap.values()).sort((a,b) => a.date.localeCompare(b.date));
+      return enriched;
+    };
     if (id) {
       console.log('SchoolDashboard useEffect triggered with id:', id);
       setCurrentSchoolId(id);
@@ -272,7 +381,7 @@ const SchoolDashboard = () => {
       // Fetch dashboard stats
       console.log('Starting to fetch dashboard stats...');
       setLoading(true);
-      getDashboardStats(id)
+      getDashboardStats(id, feeYear)
         .then(async data => {
           console.log('Dashboard stats received:', data);
           // Fallback enrichment if some fields are missing
@@ -282,10 +391,7 @@ const SchoolDashboard = () => {
             const needsClassDist = !Array.isArray(enriched.class_distribution);
             const needsFee = !Array.isArray(enriched.fee_collection);
             const needsAttendance = !Array.isArray(enriched.attendance_data);
-            let needsFeeDues = !enriched.fee_dues_summary || !Array.isArray(enriched.fee_dues_by_class);
-            if (Number(id) === 19) {
-              needsFeeDues = true;
-            }
+            let needsFeeDues = true;
             const requests = [];
             if (needsCounts || needsClassDist) {
               requests.push(api.get(`/api/academics/students/?school=${id}`));
@@ -435,26 +541,46 @@ const SchoolDashboard = () => {
                       const nameStr = String(sObj.name || sObj.title || sObj.label || '').toLowerCase();
                       const isHalf = /half|mid|অর্ধ/.test(nameStr);
                       const isAnnual = /annual|final|বার্ষিক/.test(nameStr);
-                      const schoolIdNum = Number(id || 0);
-                      if (schoolIdNum === 19) {
-                        if (rtype === 'tuition') {
-                          const effectiveMonth = monthNo || currentMonthNo;
-                          if (monthNo && monthNo > currentMonthNo) continue;
-                          const seenKey = `${stuId}:${effectiveMonth}`;
-                          if (seenMonthlyByStudentMonth.has(seenKey)) continue;
-                          seenMonthlyByStudentMonth.add(seenKey);
-                          gross = monthlyFixed || 0;
-                          due = Math.max(0, gross - paid);
-                          if (due <= 0) continue;
-                        } else if (rtype === 'exam') {
-                          const effectiveMonth = monthNo || 0;
-                          if (effectiveMonth === 0) continue;
-                          if (effectiveMonth < 4) continue;
-                          if (effectiveMonth > currentMonthNo) continue;
-                          gross = Number(sObj.amount || a.amount || 500) || 500;
-                          due = Math.max(0, gross - paid);
-                          if (due <= 0) continue;
+                      // Gating aligned with backend:
+                      // monthly accumulates up to current month;
+                      // exam: half-yearly only from May (>=5), annual only from September (>=9),
+                      // other exam only if due_date month reached in target year
+                      if (rtype === 'tuition') {
+                        const effectiveMonth = monthNo || currentMonthNo;
+                        if (monthNo && monthNo > currentMonthNo) continue;
+                        const seenKey = `${stuId}:${effectiveMonth}`;
+                        if (seenMonthlyByStudentMonth.has(seenKey)) continue;
+                        seenMonthlyByStudentMonth.add(seenKey);
+                        gross = monthlyFixed || gross;
+                        due = Math.max(0, gross - paid);
+                        if (due <= 0) continue;
+                      } else if (rtype === 'exam') {
+                        const targetYear = Number(feeYear);
+                        const currentYear = new Date().getFullYear();
+                        const ddSrc = sObj.due_date || a.due_date || null;
+                        let allow = false;
+                        if (targetYear < currentYear) {
+                          allow = true;
+                        } else if (targetYear > currentYear) {
+                          allow = false;
+                        } else {
+                          const allowHalf = isHalf && currentMonthNo >= 5;
+                          const allowAnnual = isAnnual && currentMonthNo >= 9;
+                          let allowOther = false;
+                          if (!isHalf && !isAnnual && ddSrc) {
+                            try {
+                              const ddObj = new Date(ddSrc);
+                              if (!isNaN(ddObj) && ddObj.getFullYear() === targetYear) {
+                                allowOther = ddObj.getMonth() + 1 <= currentMonthNo;
+                              }
+                            } catch (_) {}
+                          }
+                          allow = allowHalf || allowAnnual || allowOther;
                         }
+                        if (!allow) continue;
+                        gross = Number(sObj.amount || a.amount || gross || 0);
+                        due = Math.max(0, gross - paid);
+                        if (due <= 0) continue;
                       }
                     } catch (_) {}
 
@@ -473,39 +599,68 @@ const SchoolDashboard = () => {
                   }
 
                   try {
-                    const schoolIdNum2 = Number(id || 0);
-                    if (schoolIdNum2 === 19) {
-                      const currentMonthNo = new Date().getMonth() + 1;
-                      for (const cls of (classrooms || [])) {
-                        const cname = cls?.name || String(cls?.id || '');
-                        let entry = classMap.get(cname);
-                        if (!entry) {
-                          entry = { tuition_due: 0, exam_due: 0, total_due: 0 };
-                          classMap.set(cname, entry);
+                    const currentMonthNo = new Date().getMonth() + 1;
+                    const monthlyRateByClass = new Map();
+                    for (const s of (feeStructs || [])) {
+                      const freq = String(s.frequency || '').toLowerCase();
+                      const cidRaw = s.classroom?.id ?? s.classroom_id ?? s.classroomId ?? s.classroom ?? s.class?.id ?? s.class;
+                      const cid = cidRaw != null ? String(cidRaw) : '';
+                      if (freq === 'monthly' && cid) {
+                        const amt = Number(s.amount ?? s.default_amount ?? 0) || 0;
+                        if (amt > 0 && !monthlyRateByClass.has(cid)) {
+                          monthlyRateByClass.set(cid, amt);
                         }
-                        
+                      }
+                    }
+                    for (const cls of (classrooms || [])) {
+                      const cname = cls?.name || String(cls?.id || '');
+                      let entry = classMap.get(cname);
+                      if (!entry) {
+                        entry = { tuition_due: 0, exam_due: 0, total_due: 0 };
+                        classMap.set(cname, entry);
+                      }
+                      const cidStr = String(cls.id);
+                      let monthlyRate = Number(monthlyRateByClass.get(cidStr) || 0) || 0;
+                      if (monthlyRate <= 0) {
                         const order = getClassOrder(cname);
-                        const monthlyRate = order >= 1 && order <= 5 ? 250 : (order >= 6 && order <= 10 ? 150 : 0);
-                        
-                        if (monthlyRate > 0) {
-                          // Find students in this class
-                          const classStudents = (students || []).filter(s => {
-                            const cid = s?.classroom?.id ?? s?.classroom ?? null;
-                            return String(cid) === String(cls.id);
-                          });
-
-                          for (const stu of classStudents) {
-                             const sid = String(stu.id);
-                             for (let m = 1; m <= currentMonthNo; m++) {
-                                const seenKey = `${sid}:${m}`;
-                                if (!seenMonthlyByStudentMonth.has(seenKey)) {
-                                   // Missing month! Add virtual due.
-                                   entry.tuition_due += monthlyRate;
-                                   entry.total_due += monthlyRate;
-                                   tuition_due_total += monthlyRate;
-                                   seenMonthlyByStudentMonth.add(seenKey);
+                        monthlyRate = order >= 1 && order <= 5 ? 250 : (order >= 6 && order <= 10 ? 150 : 0);
+                      }
+                      if (monthlyRate > 0) {
+                        let classStudents = (students || []).filter(s => {
+                          const cidRaw = s?.classroom?.id ?? s?.classroom_id ?? s?.classroomId ?? s?.classroom ?? s?.class?.id ?? s?.class ?? null;
+                          const cid = cidRaw != null ? String(cidRaw) : '';
+                          return cid && cid === cidStr;
+                        });
+                        if ((classStudents || []).length < 30) {
+                          try {
+                            const endpoints = [
+                              `/api/academics/students/?school=${id}&classroom=${cidStr}`,
+                              `/api/academics/students/?classroom=${cidStr}`,
+                              `/api/students/?school=${id}&classroom=${cidStr}`,
+                              `/api/students/?classroom=${cidStr}`
+                            ];
+                            for (const ep of endpoints) {
+                              try {
+                                const r = await api.get(ep);
+                                const arr = Array.isArray(r.data) ? r.data : (r.data?.results || r.data?.data || []);
+                                if (Array.isArray(arr) && arr.length) {
+                                  classStudents = arr;
+                                  break;
                                 }
-                             }
+                              } catch (_) {}
+                            }
+                          } catch (_) {}
+                        }
+                        for (const stu of classStudents) {
+                          const sid = String(stu.id);
+                          for (let m = 1; m <= currentMonthNo; m++) {
+                            const seenKey = `${sid}:${m}`;
+                            if (!seenMonthlyByStudentMonth.has(seenKey)) {
+                              entry.tuition_due += monthlyRate;
+                              entry.total_due += monthlyRate;
+                              tuition_due_total += monthlyRate;
+                              seenMonthlyByStudentMonth.add(seenKey);
+                            }
                           }
                         }
                       }
@@ -604,13 +759,22 @@ const SchoolDashboard = () => {
         })
         .catch(err => {
           console.error("Error fetching dashboard stats:", err);
-          setError("Failed to load dashboard statistics");
-          setLoading(false);
+          (async () => {
+            try {
+              const enriched = await computeSchoolStatsFallback(id, feeYear);
+              setStats(enriched);
+              setError(null);
+            } catch (_) {
+              setError("Failed to load dashboard statistics");
+            } finally {
+              setLoading(false);
+            }
+          })();
         });
     } else {
       console.log('SchoolDashboard useEffect: no id provided');
     }
-  }, [id]);
+  }, [id, feeYear]);
 
   // Load all schools for the top-right search (once)
   useEffect(() => {
@@ -624,6 +788,110 @@ const SchoolDashboard = () => {
     return () => { mounted = false; };
   }, []);
 
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(`schoolAds:${id}`);
+      const arr = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(arr)) setAdsSlots(arr);
+    } catch (_) {
+      setAdsSlots([]);
+    }
+  }, [id]);
+
+  const loadAdsFromApi = async (schoolId) => {
+    const candidates = [
+      `/api/schools/${schoolId}/ads/`,
+      `/api/ads/?school=${schoolId}`,
+    ];
+    for (const url of candidates) {
+      try {
+        const resp = await api.get(url, { params: { _t: Date.now() } });
+        const data = Array.isArray(resp.data) ? resp.data : (resp.data?.results || resp.data?.data || []);
+        if (Array.isArray(data) && data.length) {
+          const normalized = data.map(item => ({
+            id: item.id,
+            text: item.text || item.title || '',
+            link: item.link || item.url || '',
+            type: (item.type || 'image').toLowerCase(),
+            src: item.media_url || item.media || item.image_url || item.video_url || ''
+          })).filter(a => a.src);
+          if (normalized.length) { setAdsSlots(normalized); return true; }
+        }
+      } catch (_) { continue; }
+    }
+    return false;
+  };
+  useEffect(() => {
+    (async () => {
+      const ok = await loadAdsFromApi(id);
+      if (!ok) {
+        try {
+          const raw = localStorage.getItem(`schoolAds:${id}`);
+          const arr = raw ? JSON.parse(raw) : [];
+          if (Array.isArray(arr)) setAdsSlots(arr);
+        } catch (_) { setAdsSlots([]); }
+      }
+    })();
+  }, [id]);
+
+  const userRole = String(user?.profile?.role || user?.role || '').toLowerCase();
+  const isSuperUser = !!(user?.is_superuser || user?.profile?.is_superuser || user?.is_staff || userRole === 'superadmin' || userRole === 'admin');
+  const handleAdsFile = async (e) => {
+    try {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result;
+        setAdMediaDataUrl(typeof result === 'string' ? result : '');
+      };
+      reader.readAsDataURL(file);
+    } catch (_) {}
+  };
+  const saveAds = () => {
+    try {
+      const nextAd = { text: adText, link: adLink, type: adMediaType, src: adMediaDataUrl };
+      const next = [nextAd, ...adsSlots].filter(a => a.src);
+      setAdsSlots(next);
+      localStorage.setItem(`schoolAds:${id}`, JSON.stringify(next));
+      (async () => {
+        try {
+          await api.post(`/api/schools/${id}/ads/`, {
+            school: id,
+            text: nextAd.text || '',
+            link: nextAd.link || '',
+            type: nextAd.type || 'image',
+            media_data_url: nextAd.src || '',
+          });
+          await loadAdsFromApi(id);
+        } catch (_) {}
+      })();
+      setAdText('');
+      setAdLink('');
+      setAdMediaType('image');
+      setAdMediaDataUrl('');
+      setAdsOpen(false);
+    } catch (_) {}
+  };
+  const removeAd = async (idx) => {
+    try {
+      const ad = adsSlots[idx];
+      if (ad && ad.id) {
+        try {
+          await api.delete(`/api/ads/${ad.id}/`);
+          await loadAdsFromApi(id);
+        } catch (_) {
+          const next = adsSlots.filter((_, i) => i !== idx);
+          setAdsSlots(next);
+          localStorage.setItem(`schoolAds:${id}`, JSON.stringify(next));
+        }
+      } else {
+        const next = adsSlots.filter((_, i) => i !== idx);
+        setAdsSlots(next);
+        localStorage.setItem(`schoolAds:${id}`, JSON.stringify(next));
+      }
+    } catch (_) {}
+  };
   // Dashboard content to show when no specific section is selected
   const renderDashboardContent = () => {
     if (loading) {
@@ -677,13 +945,32 @@ const SchoolDashboard = () => {
                 {schoolData?.address || 'Welcome to your school management dashboard'}
               </Typography>
             </Box>
-            {schoolData?.logo && (
-              <Avatar
-                src={getMediaUrl(schoolData.logo)}
-                alt={schoolData?.name}
-                sx={{ width: 64, height: 64, border: '2px solid #fff', boxShadow: 2 }}
-              />
-            )}
+            <Stack direction="row" alignItems="center" sx={{ overflowX: 'auto', maxWidth: { xs: '50%', md: '60%' }, m: 0, p: 0, gap: '20px' }}>
+              {(() => {
+                const all = Array.isArray(adsSlots) ? adsSlots : [];
+            const seen = new Set();
+            const base = all.filter(ad => {
+              const key = `${ad?.type || ''}:${ad?.src || ''}`;
+              if (!ad?.src || seen.has(key)) return false;
+              seen.add(key);
+              return true;
+            });
+            const NUM_SLOTS = 3;
+            const makeGroup = (slotIndex) => base.filter((_, idx) => (idx % NUM_SLOTS) === slotIndex);
+                const W = { xs: 200, sm: 240, md: 280 };
+                const H = { xs: 120, sm: 120, md: 120 };
+            return Array.from({ length: NUM_SLOTS }, (_, i) => (
+              <AdSlot key={i} slotIndex={i} items={makeGroup(i)} width={W} height={H} />
+            ));
+              })()}
+              {(!adsSlots || adsSlots.length === 0) && schoolData?.logo && (
+                <Avatar
+                  src={getMediaUrl(schoolData.logo)}
+                  alt={schoolData?.name}
+                  sx={{ width: 64, height: 64, border: '2px solid #fff', boxShadow: 2 }}
+                />
+              )}
+            </Stack>
           </Box>
         </Paper>
 
@@ -872,7 +1159,29 @@ const SchoolDashboard = () => {
           </Grid>
           <Grid item xs={12}>
             <Card>
-              <CardHeader title="ফি সংগ্রহের অবস্থা" />
+              <CardHeader 
+                title="ফি সংগ্রহের অবস্থা"
+                action={
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    {Number(feeYear) === new Date().getFullYear() ? (
+                      <Chip label="চলতি বছর" color="primary" size="small" />
+                    ) : null}
+                    <TextField
+                      select
+                      size="small"
+                      label="সাল"
+                      value={feeYear}
+                      onChange={(e) => setFeeYear(parseInt(e.target.value, 10))}
+                      sx={{ minWidth: 110 }}
+                    >
+                      {Array.from({ length: 6 }, (_, i) => String(new Date().getFullYear() - i)).map(y => (
+                        <MenuItem key={y} value={parseInt(y, 10)}>{y}</MenuItem>
+                      ))}
+                    </TextField>
+                  </Stack>
+                }
+                subheader={stats?.dues_year ? `দেখানো সাল: ${stats.dues_year}` : undefined}
+              />
               <CardContent>
                 <FeeCollectionChart 
                   feeData={stats?.fee_collection || []}
@@ -883,6 +1192,49 @@ const SchoolDashboard = () => {
             </Card>
           </Grid>
         </Grid>
+      </Box>
+    );
+  };
+
+  const AdSlot = ({ items, width, height, slotIndex }) => {
+    const [idx, setIdx] = useState(0);
+    const timerRef = React.useRef(null);
+    useEffect(() => { setIdx(0); }, [items?.length]);
+    useEffect(() => {
+      if (!items || items.length <= 1) return;
+      const current = items[Math.min(idx, items.length - 1)];
+      if (current?.type === 'video') {
+        if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+        return;
+      }
+      timerRef.current = setInterval(() => setIdx((i) => (i + 1) % items.length), 5000);
+      return () => { if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; } };
+    }, [items, idx]);
+    if (!items || items.length === 0) return null;
+    const ad = items[Math.min(idx, items.length - 1)];
+    return (
+      <Box
+        sx={{
+          position: 'relative',
+          width,
+          height,
+          borderRadius: 1,
+          overflow: 'hidden',
+          bgcolor: 'rgba(255,255,255,0.2)',
+          cursor: ad.link ? 'pointer' : 'default',
+          m: 0,
+          p: 0
+        }}
+        onClick={() => { if (ad.link) window.open(ad.link, '_blank'); }}
+      >
+        {ad.type === 'video' ? (
+          <Box component="video" src={ad.src} autoPlay muted playsInline onEnded={() => setIdx((i) => (i + 1) % items.length)} sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        ) : (
+          <Box component="img" src={ad.src} alt={ad.text || ''} sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        )}
+        <Box sx={{ position: 'absolute', left: 0, right: 0, bottom: 0, bgcolor: 'rgba(0,0,0,0.35)', color: '#fff', px: 0, py: 0, fontSize: 12 }}>
+          <Typography variant="caption" noWrap>{ad.text || ''}</Typography>
+        </Box>
       </Box>
     );
   };
@@ -951,6 +1303,9 @@ const SchoolDashboard = () => {
                 <Button color="inherit" variant="outlined" onClick={() => navigate(`/school/${id}/results`)}>রেজাল্ট ইনপুট</Button>
                 <Button color="inherit" variant="text" onClick={() => navigate('/change-password')}>পাসওয়ার্ড পরিবর্তন</Button>
                 <Button color="inherit" variant="contained" onClick={logout}>লগআউট</Button>
+                {isSuperUser && (
+                  <Button color="inherit" variant="contained" onClick={() => setAdsOpen(true)}>বিজ্ঞাপন যোগ করুন</Button>
+                )}
               </Stack>
             )}
           </Stack>
@@ -976,6 +1331,31 @@ const SchoolDashboard = () => {
             স্কুল মেনু
           </Typography>
         </Toolbar>
+        <Box sx={{ px: 2, pb: 1 }}>
+          <Stack direction="row" spacing={1} sx={{ overflowX: 'auto' }}>
+            {(adsSlots || []).map((ad, idx) => (
+              <Box
+                key={idx}
+                sx={{ position: 'relative', width: 200, height: 56, borderRadius: 1, overflow: 'hidden', bgcolor: 'primary.light', cursor: ad.link ? 'pointer' : 'default' }}
+                onClick={() => { if (ad.link) window.open(ad.link, '_blank'); }}
+              >
+                {ad.type === 'video' ? (
+                  <Box component="video" src={ad.src} autoPlay muted loop sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : (
+                  <Box component="img" src={ad.src} alt={ad.text || ''} sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                )}
+                <Box sx={{ position: 'absolute', left: 0, right: 0, bottom: 0, bgcolor: 'rgba(0,0,0,0.35)', color: '#fff', px: 1, py: 0.5, fontSize: 12 }}>
+                  <Typography variant="caption" noWrap>{ad.text || ''}</Typography>
+                </Box>
+              </Box>
+            ))}
+            {Array.isArray(adsSlots) && adsSlots.length === 0 && (
+              <Typography variant="body2" sx={{ color: 'primary.main', alignSelf: 'center' }}>
+                এখানে বিজ্ঞাপন দেখা যাবে
+              </Typography>
+            )}
+          </Stack>
+        </Box>
         <Divider />
         <List sx={{ px: 1 }}>
           {menuItems.map((item, i) => (
@@ -1083,6 +1463,50 @@ const SchoolDashboard = () => {
       >
         {isMainDashboard ? renderDashboardContent() : <Outlet />}
       </Box>
+      <Dialog open={adsOpen} onClose={() => setAdsOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>বিজ্ঞাপন ইনপুট</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2}>
+            <TextField label="টেক্সট" value={adText} onChange={(e) => setAdText(e.target.value)} />
+            <TextField label="লিংক (optional)" value={adLink} onChange={(e) => setAdLink(e.target.value)} />
+            <TextField
+              label="মিডিয়া টাইপ"
+              select
+              value={adMediaType}
+              onChange={(e) => setAdMediaType(e.target.value)}
+              sx={{ minWidth: 180 }}
+            >
+              <MenuItem value="image">Image</MenuItem>
+              <MenuItem value="video">Video</MenuItem>
+            </TextField>
+            <Button variant="outlined" component="label">
+              ফাইল নির্বাচন করুন
+              <input hidden type="file" accept={adMediaType === 'video' ? 'video/*' : 'image/*'} onChange={handleAdsFile} />
+            </Button>
+            {adMediaDataUrl && (
+              adMediaType === 'video' ? (
+                <Box component="video" src={adMediaDataUrl} controls sx={{ width: '100%', borderRadius: 1 }} />
+              ) : (
+                <Box component="img" src={adMediaDataUrl} alt="" sx={{ width: '100%', borderRadius: 1 }} />
+              )
+            )}
+            {adsSlots.length > 0 && (
+              <Stack spacing={1}>
+                {adsSlots.map((ad, idx) => (
+                  <Stack key={idx} direction="row" spacing={1} alignItems="center">
+                    <Typography variant="body2" sx={{ flex: 1 }}>{ad.text || 'বিজ্ঞাপন'} ({ad.type})</Typography>
+                    <Button size="small" color="error" onClick={() => removeAd(idx)}>রিমুভ</Button>
+                  </Stack>
+                ))}
+              </Stack>
+            )}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAdsOpen(false)}>বাতিল</Button>
+          <Button variant="contained" onClick={saveAds} disabled={!adMediaDataUrl}>সংরক্ষণ</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

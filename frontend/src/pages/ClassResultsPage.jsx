@@ -132,7 +132,7 @@ export default function ClassResultsPage() {
           const maxPages = 15;
           for (; page <= maxPages; page++) {
             try {
-              const res = await scopedGet('/api/results/results/', id, { examination: examId, page, page_size: pageSize }, { timeout: 15000 });
+              const res = await scopedGet('/api/results/results/', id, { examination: examId, page, page_size: pageSize, year: selectedYear }, { timeout: 15000 });
               const data = res.data;
               const arr = Array.isArray(data) ? data : (data?.results || []);
               if (!arr.length) break;
@@ -148,7 +148,7 @@ export default function ClassResultsPage() {
         const loadResultsForExams = async (list) => {
           for (const ex of list) {
             try {
-              const params = { examination: ex.id, page_size: 3000 };
+              const params = { examination: ex.id, page_size: 3000, year: selectedYear };
               if (typeof selectedSection === 'number' && Number.isFinite(selectedSection)) params.section = selectedSection;
               const rRes = await scopedGet('/api/results/results/', id, params, { timeout: 30000 });
               let arr = Array.isArray(rRes.data) ? rRes.data : (rRes.data?.results || []);

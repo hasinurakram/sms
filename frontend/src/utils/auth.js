@@ -1,5 +1,6 @@
 // src/utils/auth.js
 import api from './api';
+import axios from 'axios';
 
 // Save tokens to localStorage
 export function saveTokens(access, refresh = null) {
@@ -23,25 +24,55 @@ export function clearTokens() {
 // Login function with fallback to session auth
 export async function login(username, password) {
   try {
-    // Try JWT login first
-    const response = await api.post('/api/token/', { username, password });
-    saveTokens(response.data.access, response.data.refresh);
-    return { success: true, data: response.data };
+    clearTokens();
+    const candidates = [
+      (process.env.REACT_APP_API_URL || '').replace(/\/$/, ''),
+      (typeof window !== 'undefined' ? window.location.origin : '').replace(/\/$/, ''),
+      'http://127.0.0.1:8000',
+      'http://localhost:8000'
+    ].filter(Boolean);
+    let lastErr;
+    for (const origin of candidates) {
+      try {
+        const resp = await axios.post(`${origin}/api/token/`, { username, password }, { withCredentials: true });
+        if (resp?.data?.access) {
+          saveTokens(resp.data.access, resp.data.refresh);
+          api.defaults.baseURL = origin;
+          return { success: true, data: resp.data };
+        }
+      } catch (e) {
+        lastErr = e;
+        continue;
+      }
+    }
+    if (lastErr) throw lastErr;
   } catch (error) {
     console.error('JWT Login failed, trying session auth:', error);
     try {
-      // Fallback to session auth
-      const sessionResponse = await api.post('/api/auth/login/', { 
-        username, 
-        password,
-        csrfmiddlewaretoken: getCSRFToken()
-      }, {
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'X-Requested-With': 'XMLHttpRequest'
-        }
-      });
-      return { success: true, data: sessionResponse.data };
+      const params = new URLSearchParams();
+      params.append('username', username);
+      params.append('password', password);
+      const csrf = getCSRFToken();
+      if (csrf) params.append('csrfmiddlewaretoken', csrf);
+      const candidates = [
+        (process.env.REACT_APP_API_URL || '').replace(/\/$/, ''),
+        (typeof window !== 'undefined' ? window.location.origin : '').replace(/\/$/, ''),
+        'http://127.0.0.1:8000',
+        'http://localhost:8000'
+      ].filter(Boolean);
+      let okData = null;
+      for (const origin of candidates) {
+        try {
+          const r = await axios.post(`${origin}/api/auth/login/`, params, { withCredentials: true, headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' } });
+          if (r?.data) {
+            api.defaults.baseURL = origin;
+            okData = r.data;
+            break;
+          }
+        } catch (_) { continue; }
+      }
+      if (!okData) throw new Error('Session login failed');
+      return { success: true, data: okData };
     } catch (sessionError) {
       console.error('Session login failed:', sessionError);
       throw sessionError;
