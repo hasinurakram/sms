@@ -65,6 +65,7 @@ export default function AttendanceReportCard() {
   const [showReport, setShowReport] = useState(false);
   const [photoMap, setPhotoMap] = useState({}); // student_id -> resolved photo URL
   const [students, setStudents] = useState([]);
+  const studentsCacheRef = useRef(new Map());
   const [guardianMap, setGuardianMap] = useState({}); // student_id -> guardian name
   const [selectedStudent, setSelectedStudent] = useState(''); // optional
   const [expandedRows, setExpandedRows] = useState({});
@@ -169,8 +170,13 @@ export default function AttendanceReportCard() {
   const loadStudents = async (classroomId, sectionId) => {
     if (!classroomId) { setStudents([]); return; }
     try {
-      const res = await scopedGet('/api/academics/students/', id, { classroom: classroomId, section: sectionId || undefined }, { timeout: 15000 });
-      const items = Array.isArray(res.data) ? res.data : (res.data?.results || []);
+      const cacheKey = `${classroomId}|${sectionId || ''}`;
+      let items = studentsCacheRef.current.get(cacheKey);
+      if (!items) {
+        const res = await scopedGet('/api/academics/students/', id, { classroom: classroomId, section: sectionId || undefined }, { timeout: 15000 });
+        items = Array.isArray(res.data) ? res.data : (res.data?.results || []);
+        studentsCacheRef.current.set(cacheKey, items);
+      }
       const sorted = [...items].sort((a, b) => {
         const ar = parseInt(String(a?.roll_number ?? '').replace(/\D/g, ''), 10);
         const br = parseInt(String(b?.roll_number ?? '').replace(/\D/g, ''), 10);
@@ -240,44 +246,58 @@ export default function AttendanceReportCard() {
 
   const downloadPDF = async () => {
     const cards = document.querySelectorAll('.student-report-card');
-    if (!cards.length) {
-      toast.warning('No report cards to download');
+    const useLedger = showReport && reportRef?.current;
+    if (!cards.length && !useLedger) {
+      toast.warning('No report to download');
       return;
     }
 
     toast.info('Generating PDF... Please wait (this may take a moment for many students)');
 
     try {
-      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdf = new jsPDF(useLedger ? 'l' : 'p', 'mm', 'a4');
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = pdf.internal.pageSize.getHeight();
 
-      for (let i = 0; i < cards.length; i++) {
-        if (i > 0) pdf.addPage();
-
-        const card = cards[i];
-        const canvas = await html2canvas(card, {
-          scale: 2,
-          useCORS: true,
-          logging: false,
-          backgroundColor: '#ffffff'
-        });
-
-        const imgData = canvas.toDataURL('image/png');
-        const imgWidth = canvas.width;
-        const imgHeight = canvas.height;
-        
-        // Calculate dimensions to fit A4 width, maintaining aspect ratio
-        const ratio = pdfWidth / imgWidth;
-        const finalWidth = pdfWidth;
-        const finalHeight = imgHeight * ratio;
-
-        // If height exceeds page, we might need to handle it (but report cards usually fit)
-        // For now, just add it at top-left
-        pdf.addImage(imgData, 'PNG', 0, 10, finalWidth, finalHeight);
+      if (useLedger) {
+        const canvas = await html2canvas(reportRef.current, { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' });
+        const ratio = pdfWidth / canvas.width;
+        const pageHeightPx = pdfHeight / ratio;
+        const totalPages = Math.ceil(canvas.height / pageHeightPx);
+        for (let i = 0; i < totalPages; i++) {
+          if (i > 0) pdf.addPage();
+          const sliceHeight = Math.min(pageHeightPx, canvas.height - i * pageHeightPx);
+          const sliceCanvas = document.createElement('canvas');
+          sliceCanvas.width = canvas.width;
+          sliceCanvas.height = sliceHeight;
+          const ctx = sliceCanvas.getContext('2d');
+          ctx.drawImage(
+            canvas,
+            0, i * pageHeightPx,
+            canvas.width, sliceHeight,
+            0, 0,
+            canvas.width, sliceHeight
+          );
+          const imgData = sliceCanvas.toDataURL('image/png');
+          pdf.addImage(imgData, 'PNG', 0, 10, pdfWidth, sliceHeight * ratio);
+        }
+      } else {
+        for (let i = 0; i < cards.length; i++) {
+          if (i > 0) pdf.addPage();
+          const card = cards[i];
+          const canvas = await html2canvas(card, {
+            scale: 2,
+            useCORS: true,
+            logging: false,
+            backgroundColor: '#ffffff'
+          });
+          const imgData = canvas.toDataURL('image/png');
+          const ratio = pdfWidth / canvas.width;
+          pdf.addImage(imgData, 'PNG', 0, 10, pdfWidth, canvas.height * ratio);
+        }
       }
       
-      const fileName = `Attendance_Report_${selectedMonth}_${selectedClassroom}.pdf`;
+      const fileName = `Attendance_Report_${selectedMonth}_${selectedClassroom}_ledger.pdf`;
       pdf.save(fileName);
       
       toast.success('PDF downloaded successfully!');
@@ -335,6 +355,42 @@ export default function AttendanceReportCard() {
   const classroomName = classrooms.find(c => c.id === parseInt(selectedClassroom))?.name || '';
   const sectionName = sections.find(s => s.id === parseInt(selectedSection))?.name || 'All Sections';
   const monthName = dayjs(selectedMonth).format('MMMM YYYY');
+  const sortedReportData = useMemo(() => {
+    const parseRoll = (r) => {
+      const n = parseInt(String(r || '').replace(/\D/g, ''), 10);
+      return Number.isNaN(n) ? null : n;
+    };
+    const arr = Array.isArray(reportData) ? [...reportData] : [];
+    arr.sort((a, b) => {
+      const ar = parseRoll(a.roll_number);
+      const br = parseRoll(b.roll_number);
+      if (ar !== null && br !== null) return ar - br;
+      const as = String(a.roll_number || '');
+      const bs = String(b.roll_number || '');
+      return as.localeCompare(bs, undefined, { numeric: true, sensitivity: 'base' });
+    });
+    return arr;
+  }, [reportData]);
+  
+  useEffect(() => {
+    try {
+      let el = document.getElementById('print-ledger-style');
+      if (!el) {
+        el = document.createElement('style');
+        el.id = 'print-ledger-style';
+        el.innerHTML = `
+          @media print {
+            @page { size: A4 landscape; margin: 5mm; }
+            #attendance-ledger { page-break-inside: avoid; width: 100%; }
+            #attendance-ledger table { font-size: 10px; border-collapse: collapse; }
+            #attendance-ledger th, #attendance-ledger td { padding: 2px; }
+            #attendance-ledger .day-cell { width: 16px !important; }
+          }
+        `;
+        document.head.appendChild(el);
+      }
+    } catch (_) {}
+  }, []);
   
   // Generate all dates in the selected month
   const daysInMonth = useMemo(() => {
@@ -570,20 +626,64 @@ export default function AttendanceReportCard() {
         </Stack>
       )}
 
+      {/* Ledger View - placed above student cards */}
+      {showReport && reportData.length > 0 && (
+        <Paper sx={{ p: { xs: 1, sm: 2 }, borderRadius: 2, mb: 3 }} ref={reportRef} id="attendance-ledger">
+          <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2, textAlign: 'center' }}>
+            মাসিক হাজিরা খাতা • {monthName}
+          </Typography>
+          <Table size="small" sx={{ tableLayout: 'fixed' }}>
+            <TableHead>
+              <TableRow>
+                <TableCell sx={{ fontWeight: 'bold', width: 80 }}>রোল</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', width: 220 }}>নাম</TableCell>
+                {daysInMonth.map(d => (
+                  <TableCell key={d.date} align="center" className="day-cell" sx={{ fontWeight: 'bold', width: 20 }}>
+                    {dayjs(d.date).date()}
+                  </TableCell>
+                ))}
+                <TableCell align="center" sx={{ fontWeight: 'bold', width: 60 }}>উপস্থিত</TableCell>
+                <TableCell align="center" sx={{ fontWeight: 'bold', width: 60 }}>অনুপস্থিত</TableCell>
+                <TableCell align="center" sx={{ fontWeight: 'bold', width: 80 }}>%</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {sortedReportData.map((row) => {
+                const detailsMap = new Map((row.attendance_details || []).map(it => [it.date, it.status]));
+                return (
+                  <TableRow key={row.student_id}>
+                    <TableCell>{row.roll_number || '-'}</TableCell>
+                    <TableCell>{row.student_name}</TableCell>
+                    {daysInMonth.map(d => {
+                      const st = detailsMap.get(d.date);
+                      const mark = st === 'present' ? '✓' : (st === 'absent' ? '×' : '');
+                      const color = st === 'present' ? 'success.main' : (st === 'absent' ? 'error.main' : 'text.secondary');
+                      return (
+                        <TableCell key={d.date} align="center" sx={{ color }}>
+                          {mark}
+                        </TableCell>
+                      );
+                    })}
+                    <TableCell align="center">{row.present_days}</TableCell>
+                    <TableCell align="center">{row.absent_days}</TableCell>
+                    <TableCell align="center">{row.attendance_percentage}%</TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </Paper>
+      )}
+
       {/* Report Card */}
       {showReport && reportData.length > 0 && (
         <Paper
-          ref={reportRef}
           sx={{
             p: { xs: 2, sm: 4 },
             borderRadius: 2,
-            '@media print': {
-              boxShadow: 'none',
-              p: 0,
-              backgroundColor: 'transparent'
-            }
+            '@media print': { display: 'none' }
           }}
-          id="attendance-report-card"
+          id="attendance-student-cards"
         >
           {/* Report Header - Hidden in Print (Each card has its own header) */}
           <Box sx={{ mb: 4, display: 'block', '@media print': { display: 'none' } }}>
@@ -1250,6 +1350,8 @@ export default function AttendanceReportCard() {
           </Box>
         </Paper>
       )}
+
+      {/* Ledger View removed here; moved above cards */}
 
       {/* No Data Message */}
       {showReport && reportData.length === 0 && (

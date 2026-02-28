@@ -6,10 +6,16 @@ class AttendanceRecordSerializer(serializers.ModelSerializer):
     student_name = serializers.SerializerMethodField()
     classroom_name = serializers.SerializerMethodField()
     section_name = serializers.SerializerMethodField()
+    taken_by = serializers.SerializerMethodField()
     
     class Meta:
         model = AttendanceRecord
-        fields = ['id','school','student','student_name','classroom_name','section_name','date','present','note']
+        fields = [
+            'id','school','student',
+            'student_name','classroom_name','section_name',
+            'date','present','note',
+            'taken_by','taken_by_name','created_at'
+        ]
     
     def get_student_name(self, obj):
         return f"{obj.student.user.first_name} {obj.student.user.last_name}".strip() or obj.student.user.username
@@ -19,6 +25,16 @@ class AttendanceRecordSerializer(serializers.ModelSerializer):
     
     def get_section_name(self, obj):
         return obj.student.section.name if obj.student.section else 'N/A'
+    
+    def get_taken_by(self, obj):
+        u = getattr(obj, 'taken_by_user', None)
+        if not u:
+            return None
+        return {
+            'id': getattr(u, 'id', None),
+            'username': getattr(u, 'username', None),
+            'name': (f"{getattr(u, 'first_name', '')} {getattr(u, 'last_name', '')}".strip() or getattr(u, 'username', None))
+        }
 
 class AttendanceSummarySerializer(serializers.Serializer):
     """Serializer for attendance summary/report"""
@@ -36,7 +52,9 @@ class MonthlyAttendanceSerializer(serializers.Serializer):
     student_name = serializers.CharField()
     classroom = serializers.CharField()
     section = serializers.CharField()
+    roll_number = serializers.CharField(required=False, allow_blank=True)
     total_days = serializers.IntegerField()
     present_days = serializers.IntegerField()
     absent_days = serializers.IntegerField()
     attendance_percentage = serializers.FloatField()
+    attendance_details = serializers.ListField(child=serializers.DictField(), required=False)

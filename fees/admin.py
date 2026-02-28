@@ -36,15 +36,37 @@ class StudentFeeAssignmentAdmin(admin.ModelAdmin):
 
 @admin.register(Payment)
 class PaymentAdmin(admin.ModelAdmin):
-    list_display = ['id', 'receipt_number', 'student_name', 'amount', 'payment_method', 'payment_status', 'payment_date', 'receipt_link']
+    list_display = ['id', 'receipt_number', 'student_name', 'student_class', 'student_section', 'student_roll', 'amount', 'payment_method', 'payment_status', 'payment_date', 'receipt_link']
     list_filter = ['payment_method', 'payment_status', 'payment_date']
     search_fields = ['student__user__first_name', 'student__user__last_name', 'receipt_number', 'transaction_id']
     readonly_fields = ['receipt_number', 'created_at', 'updated_at']
     date_hierarchy = 'payment_date'
+    list_select_related = ['student__classroom', 'student__section', 'student__school']
     
     def student_name(self, obj):
         return obj.student.user.get_full_name() or obj.student.user.username
     student_name.short_description = 'Student'
+    
+    def student_class(self, obj):
+        try:
+            return obj.student.classroom.name if obj.student and obj.student.classroom else '-'
+        except Exception:
+            return '-'
+    student_class.short_description = 'Class'
+    
+    def student_section(self, obj):
+        try:
+            return obj.student.section.name if obj.student and obj.student.section else '-'
+        except Exception:
+            return '-'
+    student_section.short_description = 'Section'
+    
+    def student_roll(self, obj):
+        try:
+            return obj.student.roll_number or '-'
+        except Exception:
+            return '-'
+    student_roll.short_description = 'Roll'
     
     def receipt_link(self, obj):
         if obj.receipt_number:

@@ -1376,7 +1376,7 @@ const ParentDashboard = () => {
             <Divider sx={{ my: 2 }} />
             <Grid container spacing={2}>
               {children.map((child) => (
-                <Grid item xs={12} sm={6} md={4} key={child.id}>
+                <Grid size={{ xs: 12, sm: 6, md: 4 }} key={child.id}>
                   <Card
                     sx={{
                       cursor: 'pointer',

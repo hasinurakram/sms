@@ -140,13 +140,11 @@ class SectionViewSet(viewsets.ModelViewSet):
         name = (request.data.get('name') or '').strip()
         if not classroom_id or not name:
             return super().create(request, *args, **kwargs)
-        allowed = {'ক', 'খ', 'গ'}
-        if name not in allowed:
-            return Response({"detail": "শুধু ক, খ, বা গ সেকশন অনুমোদিত"}, status=status.HTTP_400_BAD_REQUEST)
         try:
             count = Section.objects.filter(classroom_id=classroom_id).count()
-            if count >= 3:
-                return Response({"detail": "প্রতি শ্রেণিতে সর্বোচ্চ তিনটি সেকশন (ক, খ, গ)"}, status=status.HTTP_400_BAD_REQUEST)
+            # Optional: keep a soft cap to avoid explosion, but do not hard-fail for groups like বিজ্ঞান/মানবিক/ব্যবসায়
+            if count >= 12:
+                return Response({"detail": "Too many sections for this class"}, status=status.HTTP_400_BAD_REQUEST)
         except Exception:
             pass
         return super().create(request, *args, **kwargs)
@@ -336,7 +334,7 @@ class StudentProfileViewSet(viewsets.ModelViewSet):
         return queryset
     
     def _validate_section(self, data):
-        """Ensure section belongs to classroom and name is one of ক/খ/গ"""
+        """Ensure section belongs to classroom"""
         section_id = data.get('section_id')
         classroom_id = data.get('classroom_id')
         if section_id:
@@ -346,8 +344,6 @@ class StudentProfileViewSet(viewsets.ModelViewSet):
                 raise ValidationError({"section_id": "Invalid section"})
             if classroom_id and int(section.classroom_id) != int(classroom_id):
                 raise ValidationError({"section_id": "Section must belong to the selected classroom"})
-            if section.name not in {'ক', 'খ', 'গ'}:
-                raise ValidationError({"section_id": "Only ক, খ, গ sections are allowed"})
     
     def perform_create(self, serializer):
         self._validate_section(self.request.data)
@@ -632,20 +628,40 @@ class StudentProfileViewSet(viewsets.ModelViewSet):
         except ClassRoom.DoesNotExist:
             return Response({"detail": "Invalid from_class_id or to_class_id for this school"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Determine the exam: explicit or auto-detected "final/annual"
+        # Determine the exam: explicit, or by exam_type/year, or auto-detected "final/annual"
         exam = None
         if explicit_exam_id:
             exam = Examination.objects.filter(pk=explicit_exam_id, school=school, classroom=from_class).first()
         if not exam:
-            exam = Examination.objects.filter(
-                school=school,
-                classroom=from_class
-            ).filter(
-                Q(exam_type='annual') |
-                Q(name__icontains='final') |
-                Q(name__icontains='বার্ষিক') |
-                Q(name__icontains='ফাইনাল')
-            ).order_by('-exam_date', '-id').first()
+            req_exam_type = (request.data.get('exam_type') or request.query_params.get('exam_type') or '').strip().lower()
+            req_year = request.data.get('year') or request.query_params.get('year')
+            qs = Examination.objects.filter(school=school, classroom=from_class)
+            # Optional: filter by year if provided
+            try:
+                if req_year:
+                    qs = qs.filter(exam_date__year=int(req_year))
+            except Exception:
+                pass
+            # If a specific exam_type requested, try that first
+            if req_exam_type:
+                # Attempt direct match
+                exam = qs.filter(exam_type=req_exam_type).order_by('-exam_date', '-id').first()
+                # Fallbacks for common aliases
+                if not exam and req_exam_type in ('final', 'annual'):
+                    exam = qs.filter(
+                        Q(exam_type='annual') |
+                        Q(name__icontains='final') |
+                        Q(name__icontains='বার্ষিক') |
+                        Q(name__icontains='ফাইনাল')
+                    ).order_by('-exam_date', '-id').first()
+            # If still not found, auto-detect annual/final by name/type
+            if not exam:
+                exam = qs.filter(
+                    Q(exam_type='annual') |
+                    Q(name__icontains='final') |
+                    Q(name__icontains='বার্ষিক') |
+                    Q(name__icontains='ফাইনাল')
+                ).order_by('-exam_date', '-id').first()
 
         # If no exam found, create snapshot with 'retained' and do not move anyone
         if not exam:
@@ -763,6 +779,70 @@ class StudentProfileViewSet(viewsets.ModelViewSet):
             "total_candidates": total_candidates,
             "skipped_not_passed": skipped_not_passed
         }, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['get'])
+    def year_report(self, request):
+        """
+        Revert promotion using StudentYearRecord snapshots.
+        Params:
+        - school (required)
+        - year (required): academic year string or int
+        - target_class_id (optional): only revert those currently promoted_to_classroom == target
+        - student_ids (optional): JSON list of student ids to restrict
+        Behavior:
+        - For matching StudentYearRecord entries with status='promoted', move student back to the snapshot 'classroom' and 'section'
+        """
+        school_id = request.data.get('school') or request.query_params.get('school')
+        year = request.data.get('year') or request.query_params.get('year')
+        target_class_id = request.data.get('target_class_id') or request.query_params.get('target_class_id')
+        student_ids = request.data.get('student_ids') or request.query_params.get('student_ids')
+        if not school_id or not year:
+            return Response({"detail": "school and year are required"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            school = School.objects.get(pk=school_id)
+        except School.DoesNotExist:
+            return Response({"detail": "Invalid school id"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            from academics.models import StudentYearRecord
+            qs = StudentYearRecord.objects.select_related('student', 'classroom', 'section', 'promoted_to_classroom') \
+                .filter(school_id=school_id, academic_year=str(year), status='promoted')
+            if target_class_id:
+                qs = qs.filter(promoted_to_classroom_id=target_class_id)
+            # Restrict to provided student ids if any
+            ids_set = None
+            if student_ids:
+                try:
+                    if isinstance(student_ids, str):
+                        import json
+                        ids_set = set(json.loads(student_ids))
+                    elif isinstance(student_ids, list):
+                        ids_set = set(student_ids)
+                except Exception:
+                    pass
+                if ids_set:
+                    qs = qs.filter(student_id__in=list(ids_set))
+            records = list(qs)
+            reverted, skipped_missing = 0, 0
+            with transaction.atomic():
+                for r in records:
+                    sp = r.student
+                    if not sp:
+                        skipped_missing += 1
+                        continue
+                    sp.classroom = r.classroom
+                    sp.section = r.section
+                    sp.save(update_fields=['classroom', 'section'])
+                    reverted += 1
+            return Response({
+                "status": "ok",
+                "school": school.id,
+                "year": str(year),
+                "reverted": reverted,
+                "skipped_missing": skipped_missing,
+                "target_class_id": int(target_class_id) if target_class_id else None
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"detail": f"Failed to revert promotion: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=False, methods=['get'])
     def year_report(self, request):

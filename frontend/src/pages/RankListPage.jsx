@@ -58,6 +58,13 @@ const RankListPage = () => {
   const [resultsByStudent, setResultsByStudent] = useState(new Map());
   const [activeExamId, setActiveExamId] = useState(null);
   const [sortBy, setSortBy] = useState('current');
+  const passMarks = React.useMemo(() => {
+    try {
+      const ex = (examinations || []).find(e => e && e.pass_marks != null);
+      const pm = parseFloat(ex?.pass_marks);
+      return Number.isFinite(pm) && pm > 0 ? pm : 33;
+    } catch (_) { return 33; }
+  }, [examinations]);
 
   useEffect(() => {
     if (!schoolId) return;
@@ -800,7 +807,12 @@ const RankListPage = () => {
                     const map = getStudentResultsMap(sid);
                     const r = resolveResult(sid, item, map);
                     const val = r ? resultTotal(r) : null;
-                    return <TableCell key={item.canonical} align="center">{val != null ? `${val}` : '—'}</TableCell>;
+                    const fail = r ? (
+                      (r?.grade === 'F') ||
+                      (r?.is_passed === false) ||
+                      (typeof val === 'number' && val < passMarks)
+                    ) : false;
+                    return <TableCell key={item.canonical} align="center" sx={{ color: fail ? '#d32f2f' : 'inherit', fontWeight: fail ? 700 : 400 }}>{val != null ? `${val}` : '—'}</TableCell>;
                   })}
                 </TableRow>
               ))}
@@ -856,7 +868,12 @@ const RankListPage = () => {
                     const map = getStudentResultsMap(sid);
                     const r = resolveResult(sid, item, map);
                     const val = r ? resultTotal(r) : null;
-                    return <TableCell key={item.canonical} sx={{ border: '1px solid #ddd' }} align="center">{val != null ? `${val}` : '—'}</TableCell>;
+                    const fail = r ? (
+                      (r?.grade === 'F') ||
+                      (r?.is_passed === false) ||
+                      (typeof val === 'number' && val < passMarks)
+                    ) : false;
+                    return <TableCell key={item.canonical} sx={{ border: '1px solid #ddd', color: fail ? '#d32f2f' : 'inherit', fontWeight: fail ? 700 : 400 }} align="center">{val != null ? `${val}` : '—'}</TableCell>;
                   })}
                 </TableRow>
               ))}

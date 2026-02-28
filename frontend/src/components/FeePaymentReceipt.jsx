@@ -453,6 +453,21 @@ const FeePaymentReceipt = () => {
     if (!content) return;
     const prevWidth = content.style.width;
     const prevMaxWidth = content.style.maxWidth;
+    const prevFlexDirection = content.style.flexDirection;
+    const prevGap = content.style.gap;
+    // Force side-by-side layout for print
+    content.style.flexDirection = 'row';
+    content.style.gap = '8px';
+    // Ensure three columns
+    const cols = Array.from(content.children || []);
+    const prevStyles = cols.map(el => ({
+      flex: el.style.flex,
+      maxWidth: el.style.maxWidth
+    }));
+    cols.forEach(el => {
+      el.style.flex = '1 1 33.333%';
+      el.style.maxWidth = '33.333%';
+    });
     content.style.width = '1800px';
     content.style.maxWidth = '1800px';
     const canvas = await html2canvas(content, {
@@ -461,8 +476,15 @@ const FeePaymentReceipt = () => {
       useCORS: true,
       foreignObjectRendering: false
     });
+    // Restore styles
     content.style.width = prevWidth;
     content.style.maxWidth = prevMaxWidth;
+    content.style.flexDirection = prevFlexDirection;
+    content.style.gap = prevGap;
+    cols.forEach((el, i) => {
+      el.style.flex = prevStyles[i].flex || '';
+      el.style.maxWidth = prevStyles[i].maxWidth || '';
+    });
     const img = canvas.toDataURL('image/jpeg', 0.95);
     const w = window.open('', '_blank');
     if (!w) return;
@@ -929,9 +951,25 @@ const FeePaymentReceipt = () => {
     );
 
     return (
-      <Box id="receipt-content" sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'nowrap' }}>
+      <Box
+        id="receipt-content"
+        sx={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'space-between',
+          flexDirection: { xs: 'column', md: 'row' },
+          gap: { xs: 2, md: 1 }
+        }}
+      >
         {['বিদ্যালয় কপি','শিক্ষার্থী কপি','ব্যাংক কপি'].map((lbl) => (
-          <Box key={lbl} sx={{ flex: '1 1 33.333%', maxWidth: '33.333%', boxSizing: 'border-box' }}>
+          <Box
+            key={lbl}
+            sx={{
+              flex: { xs: '1 1 100%', md: '1 1 33.333%' },
+              maxWidth: { xs: '100%', md: '33.333%' },
+              boxSizing: 'border-box'
+            }}
+          >
             {renderCopy(lbl)}
           </Box>
         ))}

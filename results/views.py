@@ -287,73 +287,47 @@ class ResultViewSet(viewsets.ModelViewSet):
     pagination_class = ResultPagination
     
     def get_queryset(self):
+        """Unified filtering with historical correctness (filters on examination, not current student class)"""
         qs = super().get_queryset()
-        # Manual filtering to support frontend queries without requiring django-filters
-        params = self.request.query_params
-        exam_id = params.get('examination') or params.get('examination_id')
-        exam_type = params.get('exam_type')
-        classroom_id = params.get('classroom') or params.get('classroom_id')
-        section_id = params.get('section') or params.get('section_id')
-        student_id = params.get('student') or params.get('student_id')
-        school_id = params.get('school')
+        p = self.request.query_params
+        exam_id = p.get('examination') or p.get('examination_id')
+        student_id = p.get('student') or p.get('student_id')
+        school_id = p.get('school')
+        classroom_id = p.get('classroom') or p.get('classroom_id')
+        section_id = p.get('section') or p.get('section_id')
+        exam_type = p.get('exam_type')
+        year = p.get('year')
         try:
             if exam_id:
                 qs = qs.filter(examination_id=exam_id)
-            if exam_type:
-                qs = qs.filter(examination__exam_type__iexact=exam_type)
-            if classroom_id:
-                qs = qs.filter(examination__classroom_id=classroom_id)
-            if section_id:
-                # allow null section filter only when explicitly provided as 'null'
-                if str(section_id).lower() in ('', 'null', 'none'):
-                    qs = qs.filter(examination__section__isnull=True)
-                else:
-                    qs = qs.filter(examination__section_id=section_id)
             if student_id:
                 qs = qs.filter(student_id=student_id)
             if school_id:
                 qs = qs.filter(examination__school_id=school_id)
+            if classroom_id:
+                qs = qs.filter(examination__classroom_id=classroom_id)
+            if section_id:
+                if str(section_id).lower() in ('', 'null', 'none'):
+                    qs = qs.filter(examination__section__isnull=True)
+                else:
+                    qs = qs.filter(examination__section_id=section_id)
+            if exam_type:
+                qs = qs.filter(examination__exam_type__iexact=exam_type)
+            if year:
+                try:
+                    y = int(year)
+                except Exception:
+                    y = None
+                if y is not None:
+                    # Prefer examination.year when available; fallback to exam_date/year in name
+                    from django.db.models import Q
+                    qs = qs.filter(
+                        Q(examination__year=y) |
+                        Q(examination__exam_date__year=y) |
+                        (Q(examination__exam_date__isnull=True) & Q(examination__name__icontains=str(y)))
+                    )
         except Exception:
             pass
-        return qs
-    
-    def get_queryset(self):
-        """Filter results by examination and/or student"""
-        qs = super().get_queryset()
-        
-        # Filter by examination if provided
-        exam_id = self.request.query_params.get('examination')
-        if exam_id:
-            qs = qs.filter(examination_id=exam_id)
-        
-        # Filter by student if provided
-        student_id = self.request.query_params.get('student')
-        if student_id:
-            qs = qs.filter(student_id=student_id)
-        
-        # Filter by school if provided (via examination's school)
-        school_id = self.request.query_params.get('school')
-        if school_id:
-            qs = qs.filter(examination__school_id=school_id)
-        
-        classroom_id = self.request.query_params.get('classroom')
-        if classroom_id:
-            qs = qs.filter(student__classroom_id=classroom_id)
-        
-        section_id = self.request.query_params.get('section')
-        if section_id:
-            qs = qs.filter(student__section_id=section_id)
-        
-        # Optional year filter via examination year (exam_date.year or name contains year)
-        year = self.request.query_params.get('year')
-        if year:
-            try:
-                y = int(year)
-            except Exception:
-                y = None
-            if y:
-                from django.db.models import Q
-                qs = qs.filter(Q(examination__exam_date__year=y) | (Q(examination__exam_date__isnull=True) & Q(examination__name__icontains=str(y))))
         return qs
     
     @action(detail=False, methods=['get'])
@@ -412,6 +386,15 @@ class StudentOverallResultViewSet(viewsets.ModelViewSet):
         student_id = self.request.query_params.get('student')
         if student_id:
             qs = qs.filter(student_id=student_id)
+        classroom_id = self.request.query_params.get('classroom')
+        if classroom_id:
+            qs = qs.filter(examination__classroom_id=classroom_id)
+        section_id = self.request.query_params.get('section')
+        if section_id:
+            if str(section_id).lower() in ('', 'null', 'none'):
+                qs = qs.filter(examination__section__isnull=True)
+            else:
+                qs = qs.filter(examination__section_id=section_id)
         # Optional year filter (exam_date year or name contains year)
         year = self.request.query_params.get('year')
         if year:
@@ -421,7 +404,11 @@ class StudentOverallResultViewSet(viewsets.ModelViewSet):
                 y = None
             if y:
                 from django.db.models import Q
-                qs = qs.filter(Q(examination__exam_date__year=y) | (Q(examination__exam_date__isnull=True) & Q(examination__name__icontains=str(y))))
+                qs = qs.filter(
+                    Q(examination__year=y) |
+                    Q(examination__exam_date__year=y) |
+                    (Q(examination__exam_date__isnull=True) & Q(examination__name__icontains=str(y)))
+                )
         return qs.select_related('examination', 'examination__classroom', 'examination__section', 'student__user')
     
     @action(detail=False, methods=['get'])

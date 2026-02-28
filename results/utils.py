@@ -50,9 +50,17 @@ SECTION_MAXIMA = {
         "english first paper": DIST_100_NO_PRACTICAL,
         "ইংরেজি প্রথম পত্র": DIST_100_NO_PRACTICAL,
         "ইংরেজী-১ম": DIST_100_NO_PRACTICAL,
+        "ইংরেজি-১ম": DIST_100_NO_PRACTICAL,
+        "ইংরেজি ১ম": DIST_100_NO_PRACTICAL,
+        "ইংরেজী ১ম": DIST_100_NO_PRACTICAL,
         "english second paper": {"written": 50, "mcq": 0, "practical": 0}, # Total 50
         "ইংরেজি দ্বিতীয় পত্র": {"written": 50, "mcq": 0, "practical": 0},
         "ইংরেজী-২য়": {"written": 50, "mcq": 0, "practical": 0},
+        "ইংরেজি-২য়": {"written": 50, "mcq": 0, "practical": 0},
+        "ইংরেজি ২য়": {"written": 50, "mcq": 0, "practical": 0},
+        "ইংরেজী ২য়": {"written": 50, "mcq": 0, "practical": 0},
+        "ইংরেজি ২য়": {"written": 50, "mcq": 0, "practical": 0},
+        "ইংরেজী ২য়": {"written": 50, "mcq": 0, "practical": 0},
         
         # Math
         "mathematics": DIST_70_30,
@@ -102,9 +110,12 @@ SECTION_MAXIMA = {
         "bangla 1st paper": DIST_70_30, # Actually often 100 in 9-10? No, 70+30 is standard
         "বাংলা প্রথম পত্র": DIST_70_30,
         "বাংলা-১ম": DIST_70_30,
+        "বাংলা ১ম": DIST_70_30,
         "bangla 2nd paper": DIST_100_NO_PRACTICAL, # Often grammar only
         "বাংলা দ্বিতীয় পত্র": DIST_100_NO_PRACTICAL,
         "বাংলা-২য়": DIST_100_NO_PRACTICAL,
+        "বাংলা ২য়": DIST_100_NO_PRACTICAL,
+        "বাংলা ২য়": DIST_100_NO_PRACTICAL,
         "bangla 1+2": {"written": 140, "mcq": 60, "practical": 0}, # Combined
         "বাংলা ১+২": {"written": 140, "mcq": 60, "practical": 0},
         
@@ -112,9 +123,17 @@ SECTION_MAXIMA = {
         "english 1st paper": DIST_100_NO_PRACTICAL,
         "ইংরেজি প্রথম পত্র": DIST_100_NO_PRACTICAL,
         "ইংরেজী-১ম": DIST_100_NO_PRACTICAL,
+        "ইংরেজি-১ম": DIST_100_NO_PRACTICAL,
+        "ইংরেজি ১ম": DIST_100_NO_PRACTICAL,
+        "ইংরেজী ১ম": DIST_100_NO_PRACTICAL,
         "english 2nd paper": DIST_100_NO_PRACTICAL,
         "ইংরেজি দ্বিতীয় পত্র": DIST_100_NO_PRACTICAL,
         "ইংরেজী-২য়": DIST_100_NO_PRACTICAL,
+        "ইংরেজি-২য়": DIST_100_NO_PRACTICAL,
+        "ইংরেজি ২য়": DIST_100_NO_PRACTICAL,
+        "ইংরেজী ২য়": DIST_100_NO_PRACTICAL,
+        "ইংরেজি ২য়": DIST_100_NO_PRACTICAL,
+        "ইংরেজী ২য়": DIST_100_NO_PRACTICAL,
         "english 1+2": {"written": 200, "mcq": 0, "practical": 0}, # Combined
         "ইংরেজি ১+২": {"written": 200, "mcq": 0, "practical": 0},
         

@@ -192,6 +192,37 @@ def dashboard_stats(request):
     tuition_due_total = 0
     exam_due_total = 0
     class_dues_map = {} # {class_name: {tuition_due, exam_due, total_due}}
+
+    # Precompute monthly payment totals per (student, classroom, target_year) group
+    monthly_group_assignments = {}
+    try:
+        for a in assignments:
+            try:
+                freq = (a.fee_structure.frequency or '').lower()
+            except Exception:
+                freq = ''
+            if freq != 'monthly':
+                continue
+            if not _is_tuition_in_scope(a):
+                continue
+            try:
+                sid = getattr(getattr(a, 'student', None), 'id', None) or getattr(a, 'student_id', None)
+            except Exception:
+                sid = None
+            try:
+                cls = getattr(getattr(a.fee_structure, 'classroom', None), 'id', None) or getattr(a.fee_structure, 'classroom_id', None) or getattr(getattr(a.student, 'classroom', None), 'id', None)
+            except Exception:
+                cls = None
+            gkey = (sid, cls, target_year)
+            monthly_group_assignments.setdefault(gkey, []).append(a.id)
+    except Exception:
+        monthly_group_assignments = {}
+    paid_group_map = {}
+    try:
+        for gkey, ids in monthly_group_assignments.items():
+            paid_group_map[gkey] = sum(float(paid_map.get(i, 0) or 0) for i in ids)
+    except Exception:
+        paid_group_map = {}
     
     # Determine target year (query param or current year)
     try:
@@ -322,13 +353,16 @@ def dashboard_stats(request):
                 gkey = (sid, cls, target_year)
                 if gkey in seen_monthly_groups:
                     gross = 0.0
+                    paid = 0.0
                 else:
                     months = int(_months_in_scope(a))
                     gross = monthly_net * max(0, months)
                     seen_monthly_groups.add(gkey)
+                    paid = _safe_float(paid_group_map.get(gkey, 0))
         else:
             gross = monthly_net
-        paid = _safe_float(paid_map.get(a.id, 0))
+        if freq != 'monthly':
+            paid = _safe_float(paid_map.get(a.id, 0))
         due = max(0.0, gross - paid)
         
         if due > 0:

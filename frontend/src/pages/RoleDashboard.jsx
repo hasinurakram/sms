@@ -359,17 +359,11 @@ const RoleDashboard = ({ role: roleProp }) => {
   const [schedEndMonth, setSchedEndMonth] = useState('');
   const [schedDueDay, setSchedDueDay] = useState('');
   const [schedYear, setSchedYear] = useState(String(new Date().getFullYear()));
-  const loadAdjustment = (sid) => {
-    try {
-      const v = localStorage.getItem(`adminDuesAdjustment:${sid}`);
-      return Number(v || 0) || 0;
-    } catch (_) {
-      return 0;
-    }
-  };
+  const loadAdjustment = (_sid) => 0;
   const saveAdjustment = (sid, v) => {
     try {
-      localStorage.setItem(`adminDuesAdjustment:${sid}`, String(v || 0));
+      localStorage.setItem(`adminDuesAdjustmentOnce:${sid}`, String(v || 0));
+      localStorage.removeItem(`adminDuesAdjustment:${sid}`);
     } catch (_) {}
   };
 
@@ -385,7 +379,7 @@ const RoleDashboard = ({ role: roleProp }) => {
       return incoming || {};
     }
   };
-  const safeLoadAdminStats = async (schoolId, timeoutMs = 8000) => {
+  const safeLoadAdminStats = async (schoolId, timeoutMs = 45000) => {
     try {
       setAdminLoading(true);
       setAdminError(null);
@@ -1517,7 +1511,7 @@ const RoleDashboard = ({ role: roleProp }) => {
         )}
         {adminStats && (
           <Grid container spacing={3} sx={{ mb: 4 }}>
-            <Grid item xs={12} sm={6} md={4}>
+            <Grid size={{ xs: 12, sm: 6, md: 4 }}>
               <Paper 
                 elevation={3} 
                 sx={{ 
@@ -1555,7 +1549,7 @@ const RoleDashboard = ({ role: roleProp }) => {
                 </Stack>
               </Paper>
             </Grid>
-            <Grid item xs={12} sm={6} md={4}>
+            <Grid size={{ xs: 12, sm: 6, md: 4 }}>
               <Paper 
                 elevation={3} 
                 sx={{ 
@@ -1593,7 +1587,7 @@ const RoleDashboard = ({ role: roleProp }) => {
                 </Stack>
               </Paper>
             </Grid>
-            <Grid item xs={12} sm={6} md={4}>
+            <Grid size={{ xs: 12, sm: 6, md: 4 }}>
               <Paper 
                 elevation={3} 
                 sx={{ 
@@ -1692,14 +1686,25 @@ const RoleDashboard = ({ role: roleProp }) => {
   };
   const handleSaveAdjustment = () => {
     const v = Number(duesAdjustment || 0) || 0;
-    saveAdjustment(id, v);
+    try {
+      localStorage.setItem(`adminDuesAdjustment:${id}`, String(v || 0));
+      localStorage.removeItem(`adminDuesAdjustmentOnce:${id}`);
+    } catch (_) {}
     toast.success('Adjustment saved');
+    setDuesAdjustment(0);
   };
 
   const renderCharts = () => {
     if (role === 'admin') {
       if (!adminStats) return null;
-      const adj = Number(duesAdjustment || 0) || 0;
+      let adj = 0;
+      const inputAdj = Number(duesAdjustment || 0) || 0;
+      let persisted = 0;
+      try {
+        const persistedRaw = localStorage.getItem(`adminDuesAdjustment:${id}`);
+        persisted = Number(persistedRaw || 0) || 0;
+      } catch (_) {}
+      adj = inputAdj > 0 ? inputAdj : persisted;
       const rawSummary = adminStats.fee_dues_summary || {};
       const rawByClass = adminStats.fee_dues_by_class || [];
       const tuitionTotal = Number(rawSummary.tuition_due_total || 0);
@@ -1778,7 +1783,7 @@ const RoleDashboard = ({ role: roleProp }) => {
             </Stack>
           </Box>
           <Grid container spacing={3} sx={{ mb: 4 }}>
-            <Grid item xs={12} lg={6}>
+            <Grid size={{ xs: 12, lg: 6 }}>
               <Paper 
                 elevation={2} 
                 sx={{ 
@@ -1810,7 +1815,7 @@ const RoleDashboard = ({ role: roleProp }) => {
                 </Box>
               </Paper>
             </Grid>
-            <Grid item xs={12} lg={6}>
+            <Grid size={{ xs: 12, lg: 6 }}>
               <Paper 
                 elevation={2} 
                 sx={{ 
@@ -1882,7 +1887,7 @@ const RoleDashboard = ({ role: roleProp }) => {
             <Box sx={{ overflowX: 'auto' }}>
               <Grid container spacing={2}>
                 {(ccList || []).slice(0, 20).map((item) => (
-                  <Grid item xs={12} md={6} key={item.id || JSON.stringify(item)}>
+                  <Grid size={{ xs: 12, md: 6 }} key={item.id || JSON.stringify(item)}>
                     <Paper sx={{ p: 2, borderRadius: 2 }}>
                       <Stack direction="row" justifyContent="space-between" alignItems="center">
                         <Box sx={{ mr: 2, minWidth: 0 }}>

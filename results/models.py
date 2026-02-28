@@ -29,6 +29,7 @@ class Examination(models.Model):
     written_max = models.IntegerField(null=True, blank=True)
     mcq_max = models.IntegerField(null=True, blank=True)
     practical_max = models.IntegerField(null=True, blank=True)
+    year = models.IntegerField(null=True, blank=True, db_index=True)
     
     class Meta:
         ordering = ['-exam_date', 'name']
@@ -39,6 +40,25 @@ class Examination(models.Model):
     
     def __str__(self):
         return f"{self.name} - {self.classroom.name}"
+    
+    def save(self, *args, **kwargs):
+        if not self.year:
+            y = None
+            try:
+                if self.exam_date:
+                    y = self.exam_date.year
+            except Exception:
+                y = None
+            if y is None:
+                try:
+                    import re
+                    m = re.search(r'(19|20)\d{2}', self.name or '')
+                    if m:
+                        y = int(m.group(0))
+                except Exception:
+                    y = None
+            self.year = y
+        super().save(*args, **kwargs)
 
 
 class Result(models.Model):
@@ -85,13 +105,14 @@ class Result(models.Model):
         group = _class_group(getattr(self.examination.classroom, "name", None))
         maxima = get_subject_maxima(group, getattr(self.subject, "name", None)) or {}
         
-        # Override with exam-level maxima when provided
-        ex_w = getattr(self.examination, "written_max", None)
-        ex_m = getattr(self.examination, "mcq_max", None)
-        ex_p = getattr(self.examination, "practical_max", None)
-        wm = int(ex_w) if isinstance(ex_w, int) or (isinstance(ex_w, (str, float)) and str(ex_w).strip()) else int(maxima.get("written", 0))
-        mm = int(ex_m) if isinstance(ex_m, int) or (isinstance(ex_m, (str, float)) and str(ex_m).strip()) else int(maxima.get("mcq", 0))
-        pm = int(ex_p) if isinstance(ex_p, int) or (isinstance(ex_p, (str, float)) and str(ex_p).strip()) else int(maxima.get("practical", 0))
+        if maxima:
+            wm = int(maxima.get("written", 0))
+            mm = int(maxima.get("mcq", 0))
+            pm = int(maxima.get("practical", 0))
+        else:
+            wm = 0
+            mm = 0
+            pm = 0
         denom = Decimal(wm + mm + pm) if (wm or mm or pm) else Decimal(self.examination.total_marks)
         percentage = (self.total_obtained / denom) * 100 if denom > 0 else 0
         

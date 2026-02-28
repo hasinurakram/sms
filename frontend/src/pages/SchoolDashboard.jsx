@@ -70,14 +70,18 @@ import { useAuth } from '../context/AuthContext';
 
 
 
-// Build absolute media URL from relative path
 const getMediaUrl = (path) => {
   if (!path) return null;
   if (typeof path !== 'string') return null;
-  if (path.startsWith('http')) return path;
+  const val = path.replace(/\\/g, '/');
+  if (/^https?:\/\//i.test(val)) return val;
   try {
     const base = (api?.defaults?.baseURL || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/+$/,'');
-    return `${base}/media/${path.replace(/\\/g, '/')}`;
+    if (/^\/?media\//i.test(val)) {
+      const rel = val.startsWith('/') ? val : `/${val}`;
+      return `${base}${rel}`;
+    }
+    return `${base}/media/${val.replace(/^\/+/, '')}`;
   } catch (_) {
     return null;
   }
@@ -155,15 +159,24 @@ const SchoolDashboard = () => {
   const [schoolData, setSchoolData] = useState(null);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
-  
-  // Reset state when school ID changes to show loading screen immediately
-  const [prevId, setPrevId] = useState(id);
-  if (id !== prevId) {
-    setPrevId(id);
+  useEffect(() => {
     setLoading(true);
     setStats(null);
     setSchoolData(null);
-  }
+    setError(null);
+    const cached = adsCacheRef.current.get(String(id));
+    if (Array.isArray(cached)) { setAdsSlots(cached); return; }
+    try {
+      const raw = localStorage.getItem(`schoolAds:${id}`);
+      const arr = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(arr) && arr.length) {
+        setAdsSlots(arr);
+        adsCacheRef.current.set(String(id), arr);
+        return;
+      }
+    } catch (_) {}
+    setAdsSlots([]);
+  }, [id]);
 
   const [error, setError] = useState(null);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -183,10 +196,14 @@ const SchoolDashboard = () => {
   const [adLink, setAdLink] = useState('');
   const [adMediaType, setAdMediaType] = useState('image');
   const [adMediaDataUrl, setAdMediaDataUrl] = useState('');
+  const [adMediaFile, setAdMediaFile] = useState(null);
   
   // Check if we're on the main dashboard page with no sub-route
   const isMainDashboard = location.pathname === `/school/${id}` || location.pathname === `/school/${id}/`;
   const { user, logout } = useAuth();
+  const currentSchoolIdRef = React.useRef(id);
+  useEffect(() => { currentSchoolIdRef.current = id; }, [id]);
+  const adsCacheRef = React.useRef(new Map());
   const isBanglaFirst = (name) => {
     const n = String(name || '').replace(/\s*\(.*?\)\s*/g, '').trim().toLowerCase();
     // Must contain 'bangla' or 'বাংলা' AND ('1st', 'first', '১ম', etc.)
@@ -319,7 +336,7 @@ const SchoolDashboard = () => {
         const stuId = String(a.student_id || a.student || a.studentId || ''); const stu = studentMap.get(stuId); const classId = stu?.classroom?.id ?? stu?.classroom ?? null; const classObj = (classrooms || []).find(c => String(c.id) === String(classId)); const className = classObj?.name || (typeof classId === 'string' || typeof classId === 'number' ? String(classId) : 'Unknown');
         const freq = String((sObj && sObj.frequency) || a.frequency || a.fee_frequency || '').toLowerCase(); const rtype = freq === 'monthly' ? 'tuition' : (freq === 'one_time' ? 'exam' : 'other');
         try {
-          const bnMap = { 'প্রথম': 1, 'দ্বিতীয়': 2, 'দ্বিতীয়': 2, 'তৃতীয়': 3, 'তৃতীয়': 3, 'চতুর্থ': 4, 'পঞ্চম': 5, 'ষষ্ঠ': 6, 'সপ্তম': 7, 'অষ্টম': 8, 'নবম': 9, 'দশম': 10 };
+          const bnMap = { 'প্রথম': 1, 'দ্বিতীয়': 2, 'দ্বিতীয়': 2, 'তৃতীয়': 3, 'তৃতীয়': 3, 'চতুর্থ': 4, 'পঞ্চম': 5, 'ষষ্ঠ': 6, 'সপ্তম': 7, 'অষ্টম': 8, 'নবম': 9, 'দশম': 10, 'এসএসসি': 10, 'এসএসসি পরীক্ষার্থী': 10 };
           let classOrder = 0; for (const k in bnMap) { if (String(className).includes(k)) { classOrder = bnMap[k]; break; } } if (!classOrder) { const m = String(className).match(/\d+/); if (m) classOrder = parseInt(m[0], 10); }
           const monthlyFixed = classOrder >= 1 && classOrder <= 5 ? 250 : (classOrder >= 6 && classOrder <= 10 ? 150 : 0);
           const monthNo = Number(sObj.month || sObj.month_no || sObj.month_number || a.month || 0) || 0; const nameStr = String(sObj.name || sObj.title || sObj.label || '').toLowerCase(); const isHalf = /half|mid|অর্ধ/.test(nameStr); const isAnnual = /annual|final|বার্ষিক/.test(nameStr);
@@ -346,7 +363,7 @@ const SchoolDashboard = () => {
           if (monthlyRate > 0) {
             let classStudents = (students || []).filter(s => { const cidRaw = s?.classroom?.id ?? s?.classroom_id ?? s?.classroomId ?? s?.classroom ?? s?.class?.id ?? s?.class ?? null; const cid = cidRaw != null ? String(cidRaw) : ''; return cid && cid === cidStr; });
             if ((classStudents || []).length < 30) {
-              const endpoints = [`/api/academics/students/?school=${schoolId}&classroom=${cidStr}`, `/api/academics/students/?classroom=${cidStr}`, `/api/students/?school=${schoolId}&classroom=${cidStr}`, `/api/students/?classroom=${cidStr}`];
+              const endpoints = [`/api/academics/students/?school=${schoolId}&classroom=${cidStr}`, `/api/academics/students/?classroom=${cidStr}`];
               for (const ep of endpoints) { try { const r = await api.get(ep); const arr = Array.isArray(r.data) ? r.data : (r.data?.results || r.data?.data || []); if (Array.isArray(arr) && arr.length) { classStudents = arr; break; } } catch (_) {} }
             }
             for (const stu of classStudents) { const sid = String(stu.id); for (let m = 1; m <= currentMonthNo; m++) { const seenKey = `${sid}:${m}`; if (!seenMonthlyByStudentMonth.has(seenKey)) { entry.tuition_due += monthlyRate; entry.total_due += monthlyRate; tuition_due_total += monthlyRate; seenMonthlyByStudentMonth.add(seenKey); } } }
@@ -391,7 +408,7 @@ const SchoolDashboard = () => {
             const needsClassDist = !Array.isArray(enriched.class_distribution);
             const needsFee = !Array.isArray(enriched.fee_collection);
             const needsAttendance = !Array.isArray(enriched.attendance_data);
-            let needsFeeDues = true;
+            const needsFeeDues = !('fee_dues_summary' in enriched) || !Array.isArray(enriched.fee_dues_by_class);
             const requests = [];
             if (needsCounts || needsClassDist) {
               requests.push(api.get(`/api/academics/students/?school=${id}`));
@@ -425,11 +442,21 @@ const SchoolDashboard = () => {
                 const parentsRes = results[idx++];
                 const classesRes = results[idx++];
                 const subjectsRes = results[idx++];
-                const students = studentsRes.status === 'fulfilled' ? (studentsRes.value.data || []) : [];
-                const teachers = teachersRes.status === 'fulfilled' ? (teachersRes.value.data || []) : [];
-                const parents = parentsRes.status === 'fulfilled' ? (parentsRes.value.data || []) : [];
-                const classes = classesRes.status === 'fulfilled' ? (classesRes.value.data || []) : [];
-                const subjects = subjectsRes.status === 'fulfilled' ? (subjectsRes.value.data || []) : [];
+                const students = studentsRes.status === 'fulfilled'
+                  ? (Array.isArray(studentsRes.value.data) ? studentsRes.value.data : (studentsRes.value.data?.results || studentsRes.value.data?.data || []))
+                  : [];
+                const teachers = teachersRes.status === 'fulfilled'
+                  ? (Array.isArray(teachersRes.value.data) ? teachersRes.value.data : (teachersRes.value.data?.results || teachersRes.value.data?.data || []))
+                  : [];
+                const parents = parentsRes.status === 'fulfilled'
+                  ? (Array.isArray(parentsRes.value.data) ? parentsRes.value.data : (parentsRes.value.data?.results || parentsRes.value.data?.data || []))
+                  : [];
+                const classes = classesRes.status === 'fulfilled'
+                  ? (Array.isArray(classesRes.value.data) ? classesRes.value.data : (classesRes.value.data?.results || classesRes.value.data?.data || []))
+                  : [];
+                const subjects = subjectsRes.status === 'fulfilled'
+                  ? (Array.isArray(subjectsRes.value.data) ? subjectsRes.value.data : (subjectsRes.value.data?.results || subjectsRes.value.data?.data || []))
+                  : [];
                 if (needsCounts) {
                   enriched.students_count = enriched.students_count ?? students.length;
                   enriched.teachers_count = enriched.teachers_count ?? teachers.length;
@@ -612,7 +639,9 @@ const SchoolDashboard = () => {
                         }
                       }
                     }
-                    for (const cls of (classrooms || [])) {
+                    // Only run class-level fallback when there are no assignment records
+                    if ((assignments || []).length === 0) {
+                      for (const cls of (classrooms || [])) {
                       const cname = cls?.name || String(cls?.id || '');
                       let entry = classMap.get(cname);
                       if (!entry) {
@@ -635,9 +664,7 @@ const SchoolDashboard = () => {
                           try {
                             const endpoints = [
                               `/api/academics/students/?school=${id}&classroom=${cidStr}`,
-                              `/api/academics/students/?classroom=${cidStr}`,
-                              `/api/students/?school=${id}&classroom=${cidStr}`,
-                              `/api/students/?classroom=${cidStr}`
+                              `/api/academics/students/?classroom=${cidStr}`
                             ];
                             for (const ep of endpoints) {
                               try {
@@ -663,6 +690,7 @@ const SchoolDashboard = () => {
                             }
                           }
                         }
+                      }
                       }
                     }
                   } catch (_) {}
@@ -754,6 +782,139 @@ const SchoolDashboard = () => {
           } catch (e) {
             console.warn('Dashboard fallback enrichment failed:', e);
           }
+          try {
+            const adjEnabledRaw = localStorage.getItem(`adminDuesAdjustmentEnabled:${String(id)}`);
+            const adjEnabled = String(adjEnabledRaw || '').trim().toLowerCase();
+            if (adjEnabled === 'on') {
+              const adjRawFinal = localStorage.getItem(`adminDuesAdjustment:${String(id)}`);
+              const adjFinal = Number(adjRawFinal || 0) || 0;
+              if (adjFinal > 0 && enriched?.fee_dues_summary && Array.isArray(enriched?.fee_dues_by_class)) {
+                const tTotalF = Number(enriched.fee_dues_summary.tuition_due_total || 0);
+                const eTotalF = Number(enriched.fee_dues_summary.exam_due_total || 0);
+                const reduceTuitionF = Math.min(adjFinal, tTotalF);
+                const reduceExamF = Math.max(0, adjFinal - reduceTuitionF);
+                enriched.fee_dues_summary = {
+                  tuition_due_total: Math.max(0, tTotalF - reduceTuitionF),
+                  exam_due_total: Math.max(0, eTotalF - reduceExamF),
+                  total_due: Math.max(0, (tTotalF + eTotalF) - (reduceTuitionF + reduceExamF))
+                };
+                const tuitionSumF = enriched.fee_dues_by_class.reduce((sum, c) => sum + (Number(c.tuition_due || 0) || 0), 0);
+                const examSumF = enriched.fee_dues_by_class.reduce((sum, c) => sum + (Number(c.exam_due || 0) || 0), 0);
+                if ((tuitionSumF > 0 && reduceTuitionF > 0) || (examSumF > 0 && reduceExamF > 0)) {
+                  enriched.fee_dues_by_class = enriched.fee_dues_by_class.map((c) => {
+                    const t = Number(c.tuition_due || 0) || 0;
+                    const e = Number(c.exam_due || 0) || 0;
+                    const tReduce = tuitionSumF > 0 ? (reduceTuitionF * t) / tuitionSumF : 0;
+                    const eReduce = examSumF > 0 ? (reduceExamF * e) / examSumF : 0;
+                    const tAdj = Math.max(0, t - tReduce);
+                    const eAdj = Math.max(0, e - eReduce);
+                    return { ...c, tuition_due: tAdj, exam_due: eAdj, total_due: Math.max(0, tAdj + eAdj) };
+                  });
+                }
+              }
+            }
+          } catch (_) {}
+          // Optional: override dues using simple class count × rate × months (when enabled)
+          try {
+            const simpleFlag = String(localStorage.getItem(`dashboardSimpleDue:${String(id)}`) || '').trim().toLowerCase();
+            if (simpleFlag !== '0' && simpleFlag !== 'off') {
+              const now = new Date();
+              const currentMonthNo = now.getMonth() + 1;
+              // Load rate map from localStorage or defaults
+              let rateMap = {
+                6: 150,
+                7: 180,
+                8: 200,
+                9: 250,
+                10: 250
+              };
+              try {
+                const raw = localStorage.getItem(`classRateMap:${String(id)}`);
+                if (raw) {
+                  const parsed = JSON.parse(raw);
+                  if (parsed && typeof parsed === 'object') {
+                    rateMap = { ...rateMap, ...parsed };
+                  }
+                }
+              } catch (_) {}
+              const bnToOrder = (name) => {
+                const map = { 'ষষ্ঠ': 6, 'সপ্তম': 7, 'অষ্টম': 8, 'নবম': 9, 'দশম': 10, 'এসএসসি': 10, 'এসএসসি পরীক্ষার্থী': 10 };
+                for (const k in map) { if (String(name).includes(k)) return map[k]; }
+                const m = String(name).match(/\d+/); return m ? parseInt(m[0], 10) : 0;
+              };
+              const dist = Array.isArray(enriched?.class_distribution) ? enriched.class_distribution : [];
+              const monthsOverrideRaw = localStorage.getItem(`dashboardSimpleMonths:${String(id)}`);
+              const monthsBase = parseInt(monthsOverrideRaw || '', 10);
+              const months = Number.isFinite(monthsBase) && monthsBase > 0 ? monthsBase : currentMonthNo;
+              const computedRows = dist.map(row => {
+                const cname = row.classroom__name || row.class_name || row.name || 'Unknown';
+                const count = Number(row.count || 0);
+                const order = bnToOrder(cname);
+                const rate = Number(rateMap[order] || 0);
+                const tuitionDue = Math.round(count * rate * months);
+                return { class_name: cname, tuition_due: tuitionDue, exam_due: 0, total_due: tuitionDue };
+              });
+              const sumTuition = computedRows.reduce((s, r) => s + Number(r.tuition_due || 0), 0);
+              const sumExam = 0;
+              enriched.fee_dues_by_class = computedRows;
+              enriched.fee_dues_summary = {
+                tuition_due_total: sumTuition,
+                exam_due_total: sumExam,
+                total_due: sumTuition + sumExam
+              };
+            }
+          } catch (_) {}
+          try {
+            if (Array.isArray(enriched?.fee_dues_by_class)) {
+              enriched.fee_dues_by_class = enriched.fee_dues_by_class.map((c) => ({
+                ...c,
+                tuition_due: Math.round(Number(c.tuition_due || 0)),
+                exam_due: Math.round(Number(c.exam_due || 0)),
+                total_due: Math.round(Number(c.total_due || (Number(c.tuition_due||0)+Number(c.exam_due||0)) )),
+              }));
+              const sumTuitionRounded = enriched.fee_dues_by_class.reduce((s, c) => s + (Number(c.tuition_due || 0) || 0), 0);
+              const sumExamRounded = enriched.fee_dues_by_class.reduce((s, c) => s + (Number(c.exam_due || 0) || 0), 0);
+              enriched.fee_dues_summary = {
+                tuition_due_total: sumTuitionRounded,
+                exam_due_total: sumExamRounded,
+                total_due: sumTuitionRounded + sumExamRounded
+              };
+            }
+            if (enriched?.fee_dues_summary) {
+              try {
+                const rawOnce = localStorage.getItem(`adminDuesAdjustmentOnce:${String(id)}`);
+                const adjOnce = Number(rawOnce || 0) || 0;
+                if (adjOnce > 0) {
+                  const t = Number(enriched.fee_dues_summary.tuition_due_total || 0);
+                  const e = Number(enriched.fee_dues_summary.exam_due_total || 0);
+                  const reduce = Math.min(adjOnce, t + e);
+                  const reduceTuition = Math.min(reduce, t);
+                  const reduceExam = Math.min(reduce - reduceTuition, e);
+                  enriched.fee_dues_summary = {
+                    tuition_due_total: t - reduceTuition,
+                    exam_due_total: e - reduceExam,
+                    total_due: (t - reduceTuition) + (e - reduceExam)
+                  };
+                }
+              } catch (_) {}
+              try {
+                const rawPersist = localStorage.getItem(`adminDuesAdjustment:${String(id)}`);
+                const adjPersist = Number(rawPersist || 0) || 0;
+                if (adjPersist > 0) {
+                  const t = Number(enriched.fee_dues_summary.tuition_due_total || 0);
+                  const e = Number(enriched.fee_dues_summary.exam_due_total || 0);
+                  const reduce = Math.min(adjPersist, t + e);
+                  const reduceTuition = Math.min(reduce, t);
+                  const reduceExam = Math.min(reduce - reduceTuition, e);
+                  enriched.fee_dues_summary = {
+                    tuition_due_total: t - reduceTuition,
+                    exam_due_total: e - reduceExam,
+                    total_due: (t - reduceTuition) + (e - reduceExam)
+                  };
+                }
+              } catch (_) {}
+            }
+          } catch (_) {}
           setStats(enriched);
           setLoading(false);
         })
@@ -815,23 +976,69 @@ const SchoolDashboard = () => {
             type: (item.type || 'image').toLowerCase(),
             src: item.media_url || item.media || item.image_url || item.video_url || ''
           })).filter(a => a.src);
-          if (normalized.length) { setAdsSlots(normalized); return true; }
+          if (normalized.length) {
+            if (String(currentSchoolIdRef.current) !== String(schoolId)) return false;
+            setAdsSlots(normalized);
+            localStorage.setItem(`schoolAds:${schoolId}`, JSON.stringify(normalized));
+            adsCacheRef.current.set(String(schoolId), normalized);
+            return true;
+          }
         }
       } catch (_) { continue; }
     }
     return false;
   };
   useEffect(() => {
+    let mounted = true;
     (async () => {
+      // Do NOT clear immediately; show cached/local first to avoid blank on reload
+      try {
+        const cached = adsCacheRef.current.get(String(id));
+        if (mounted && Array.isArray(cached) && cached.length) {
+          setAdsSlots(cached);
+        } else {
+          const raw = localStorage.getItem(`schoolAds:${id}`);
+          const arr = raw ? JSON.parse(raw) : [];
+          if (mounted && Array.isArray(arr) && arr.length) {
+            setAdsSlots(arr);
+            adsCacheRef.current.set(String(id), arr);
+          }
+        }
+      } catch (_) {}
       const ok = await loadAdsFromApi(id);
       if (!ok) {
         try {
           const raw = localStorage.getItem(`schoolAds:${id}`);
           const arr = raw ? JSON.parse(raw) : [];
-          if (Array.isArray(arr)) setAdsSlots(arr);
-        } catch (_) { setAdsSlots([]); }
+          if (!mounted) return;
+          if (Array.isArray(arr)) {
+            setAdsSlots(arr);
+            adsCacheRef.current.set(String(id), arr);
+            // Attempt one-time migration of local ads to backend for persistence
+            (async () => {
+              try {
+                const payload = (arr || []).filter(a => typeof a?.src === 'string' && a.src.startsWith('data:')).map(a => ({
+                  school: id,
+                  text: a.text || '',
+                  link: a.link || '',
+                  type: (a.type || 'image').toLowerCase(),
+                  media_data_url: a.src
+                }));
+                if (payload.length > 0) {
+                  await api.put(`/api/ads/bulk/`, { ads: payload });
+                  if (String(currentSchoolIdRef.current) === String(id)) {
+                    await loadAdsFromApi(id);
+                  }
+                }
+              } catch (_) {}
+            })();
+          } else {
+            setAdsSlots([]);
+          }
+        } catch (_) { if (mounted) setAdsSlots([]); }
       }
     })();
+    return () => { mounted = false; };
   }, [id]);
 
   const userRole = String(user?.profile?.role || user?.role || '').toLowerCase();
@@ -840,36 +1047,86 @@ const SchoolDashboard = () => {
     try {
       const file = e.target.files?.[0];
       if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result;
-        setAdMediaDataUrl(typeof result === 'string' ? result : '');
-      };
-      reader.readAsDataURL(file);
+      setAdMediaFile(file);
+      try {
+        const previewUrl = URL.createObjectURL(file);
+        setAdMediaDataUrl(previewUrl || '');
+      } catch (_) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result;
+          setAdMediaDataUrl(typeof result === 'string' ? result : '');
+        };
+        reader.readAsDataURL(file);
+      }
     } catch (_) {}
   };
-  const saveAds = () => {
+  const saveAds = async () => {
     try {
-      const nextAd = { text: adText, link: adLink, type: adMediaType, src: adMediaDataUrl };
-      const next = [nextAd, ...adsSlots].filter(a => a.src);
-      setAdsSlots(next);
-      localStorage.setItem(`schoolAds:${id}`, JSON.stringify(next));
-      (async () => {
-        try {
-          await api.post(`/api/schools/${id}/ads/`, {
-            school: id,
-            text: nextAd.text || '',
-            link: nextAd.link || '',
-            type: nextAd.type || 'image',
-            media_data_url: nextAd.src || '',
-          });
-          await loadAdsFromApi(id);
-        } catch (_) {}
-      })();
+      if (adMediaFile && String(adMediaType).toLowerCase() === 'video') {
+        const fieldNames = ['media', 'file', 'video', 'image', 'upload'];
+        const endpoints = [`/api/schools/${id}/ads/`, `/api/ads/`];
+        let uploaded = false;
+        for (const ep of endpoints) {
+          for (const field of fieldNames) {
+            try {
+              const form = new FormData();
+              form.append('school', id);
+              form.append('text', adText || '');
+              form.append('link', adLink || '');
+              form.append('type', 'video');
+              form.append(field, adMediaFile);
+              await api.post(ep, form, { headers: { 'Content-Type': 'multipart/form-data' } });
+              uploaded = true;
+              break;
+            } catch (_) { /* try next */ }
+          }
+          if (uploaded) break;
+        }
+        if (uploaded) {
+          if (String(currentSchoolIdRef.current) === String(id)) {
+            await loadAdsFromApi(id);
+          }
+        } else {
+          try {
+            await api.post(`/api/schools/${id}/ads/`, {
+              school: id,
+              text: adText || '',
+              link: adLink || '',
+              type: 'video',
+              media_data_url: adMediaDataUrl || '',
+            });
+            if (String(currentSchoolIdRef.current) === String(id)) {
+              await loadAdsFromApi(id);
+            }
+          } catch (_) {}
+        }
+      } else {
+        const nextAd = { text: adText, link: adLink, type: adMediaType, src: adMediaDataUrl };
+        const next = [nextAd, ...adsSlots].filter(a => a.src);
+        setAdsSlots(next);
+        try { localStorage.setItem(`schoolAds:${id}`, JSON.stringify(next)); } catch (_) {}
+        adsCacheRef.current.set(String(id), next);
+        (async () => {
+          try {
+            await api.post(`/api/schools/${id}/ads/`, {
+              school: id,
+              text: nextAd.text || '',
+              link: nextAd.link || '',
+              type: nextAd.type || 'image',
+              media_data_url: nextAd.src || '',
+            });
+            if (String(currentSchoolIdRef.current) === String(id)) {
+              await loadAdsFromApi(id);
+            }
+          } catch (_) {}
+        })();
+      }
       setAdText('');
       setAdLink('');
       setAdMediaType('image');
       setAdMediaDataUrl('');
+      setAdMediaFile(null);
       setAdsOpen(false);
     } catch (_) {}
   };
@@ -884,13 +1141,37 @@ const SchoolDashboard = () => {
           const next = adsSlots.filter((_, i) => i !== idx);
           setAdsSlots(next);
           localStorage.setItem(`schoolAds:${id}`, JSON.stringify(next));
+          adsCacheRef.current.set(String(id), next);
         }
       } else {
         const next = adsSlots.filter((_, i) => i !== idx);
         setAdsSlots(next);
         localStorage.setItem(`schoolAds:${id}`, JSON.stringify(next));
+        adsCacheRef.current.set(String(id), next);
       }
     } catch (_) {}
+  };
+
+  const manualResyncAds = async () => {
+    try {
+      const raw = localStorage.getItem(`schoolAds:${id}`);
+      const arr = raw ? JSON.parse(raw) : [];
+      const payload = (arr || []).filter(a => typeof a?.src === 'string' && a.src.startsWith('data:')).map(a => ({
+        school: id,
+        text: a.text || '',
+        link: a.link || '',
+        type: (a.type || 'image').toLowerCase(),
+        media_data_url: a.src
+      }));
+      if (payload.length > 0) {
+        await api.put(`/api/ads/bulk/`, { ads: payload });
+      }
+      await loadAdsFromApi(id);
+    } catch (_) {
+      try {
+        await loadAdsFromApi(id);
+      } catch (__) {}
+    }
   };
   // Dashboard content to show when no specific section is selected
   const renderDashboardContent = () => {
@@ -945,7 +1226,8 @@ const SchoolDashboard = () => {
                 {schoolData?.address || 'Welcome to your school management dashboard'}
               </Typography>
             </Box>
-            <Stack direction="row" alignItems="center" sx={{ overflowX: 'auto', maxWidth: { xs: '50%', md: '60%' }, m: 0, p: 0, gap: '20px' }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1, maxWidth: { xs: '50%', md: '60%' } }}>
+            <Stack key={`ads-${id}`} direction="row" alignItems="center" sx={{ overflowX: 'auto', m: 0, p: 0, gap: '20px' }}>
               {(() => {
                 const all = Array.isArray(adsSlots) ? adsSlots : [];
             const seen = new Set();
@@ -971,11 +1253,13 @@ const SchoolDashboard = () => {
                 />
               )}
             </Stack>
+            <Button variant="outlined" size="small" onClick={manualResyncAds}>ম্যানুয়াল রি-সিঙ্ক</Button>
+            </Box>
           </Box>
         </Paper>
 
         <Grid container spacing={3} sx={{ mb: 4 }}>
-          <Grid item xs={12} sm={6} md={3}>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
             <StatCard
               title="ছাত্র-ছাত্রী" 
               value={stats?.students_count || 0} 
@@ -984,7 +1268,7 @@ const SchoolDashboard = () => {
               onClick={() => navigate(`/school/${id}/student`)}
             />
           </Grid>
-          <Grid item xs={12} sm={6} md={3}>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
             <StatCard 
               title="শিক্ষক" 
               value={stats?.teachers_count || 0} 
@@ -993,7 +1277,7 @@ const SchoolDashboard = () => {
               onClick={() => navigate(`/school/${id}/teacher`)}
             />
           </Grid>
-          <Grid item xs={12} sm={6} md={3}>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
             <StatCard 
               title="অভিভাবক" 
               value={stats?.parents_count || 0} 
@@ -1002,7 +1286,7 @@ const SchoolDashboard = () => {
               onClick={() => navigate(`/school/${id}/parent`)}
             />
           </Grid>
-          <Grid item xs={12} sm={6} md={3}>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
             <StatCard
               title="শ্রেণি" 
               value={stats?.classes_count || 0} 
@@ -1011,7 +1295,7 @@ const SchoolDashboard = () => {
               onClick={() => navigate(`/school/${id}/classes`)}
             />
           </Grid>
-          <Grid item xs={12} sm={6} md={3}>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
             <StatCard
               title="বিষয়/সাবজেক্ট" 
               value={stats?.subjects_count || 0} 
@@ -1021,7 +1305,7 @@ const SchoolDashboard = () => {
             />
           </Grid>
         </Grid>
-        <Grid item xs={12}>
+        <Grid size={12}>
           <Card>
             <CardHeader title="রেজাল্ট সামারি (পাস-ফেল)" />
             <CardContent>
@@ -1105,7 +1389,7 @@ const SchoolDashboard = () => {
         </Grid>
 
         <Grid container spacing={3}>
-          <Grid item xs={12} md={6}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <Card sx={{ height: '100%' }}>
               <CardHeader title="শ্রেণি বণ্টন" />
               <CardContent sx={{ height: 300 }}>
@@ -1113,7 +1397,7 @@ const SchoolDashboard = () => {
               </CardContent>
             </Card>
           </Grid>
-          <Grid item xs={12} md={6}>
+          <Grid size={{ xs: 12, md: 6 }}>
             <Card sx={{ height: '100%' }}>
               <CardHeader title="হাজিরা সংক্ষিপ্তসার" />
               <CardContent>
@@ -1157,7 +1441,7 @@ const SchoolDashboard = () => {
               </CardContent>
             </Card>
           </Grid>
-          <Grid item xs={12}>
+          <Grid size={12}>
             <Card>
               <CardHeader 
                 title="ফি সংগ্রহের অবস্থা"
@@ -1228,9 +1512,9 @@ const SchoolDashboard = () => {
         onClick={() => { if (ad.link) window.open(ad.link, '_blank'); }}
       >
         {ad.type === 'video' ? (
-          <Box component="video" src={ad.src} autoPlay muted playsInline onEnded={() => setIdx((i) => (i + 1) % items.length)} sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          <Box component="video" src={(typeof ad.src === 'string' && ad.src.startsWith('data:')) ? ad.src : getMediaUrl(ad.src)} autoPlay muted playsInline onEnded={() => setIdx((i) => (i + 1) % items.length)} sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         ) : (
-          <Box component="img" src={ad.src} alt={ad.text || ''} sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          <Box component="img" src={(typeof ad.src === 'string' && ad.src.startsWith('data:')) ? ad.src : getMediaUrl(ad.src)} alt={ad.text || ''} sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         )}
         <Box sx={{ position: 'absolute', left: 0, right: 0, bottom: 0, bgcolor: 'rgba(0,0,0,0.35)', color: '#fff', px: 0, py: 0, fontSize: 12 }}>
           <Typography variant="caption" noWrap>{ad.text || ''}</Typography>
@@ -1340,9 +1624,9 @@ const SchoolDashboard = () => {
                 onClick={() => { if (ad.link) window.open(ad.link, '_blank'); }}
               >
                 {ad.type === 'video' ? (
-                  <Box component="video" src={ad.src} autoPlay muted loop sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <Box component="video" src={(typeof ad.src === 'string' && ad.src.startsWith('data:')) ? ad.src : getMediaUrl(ad.src)} autoPlay muted loop sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 ) : (
-                  <Box component="img" src={ad.src} alt={ad.text || ''} sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <Box component="img" src={(typeof ad.src === 'string' && ad.src.startsWith('data:')) ? ad.src : getMediaUrl(ad.src)} alt={ad.text || ''} sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 )}
                 <Box sx={{ position: 'absolute', left: 0, right: 0, bottom: 0, bgcolor: 'rgba(0,0,0,0.35)', color: '#fff', px: 1, py: 0.5, fontSize: 12 }}>
                   <Typography variant="caption" noWrap>{ad.text || ''}</Typography>

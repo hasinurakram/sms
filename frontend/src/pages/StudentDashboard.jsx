@@ -57,6 +57,10 @@ const StudentProfile = ({ student, schoolInfo }) => {
       <Typography variant="h6" gutterBottom>ছাত্র/ছাত্রী প্রোফাইল</Typography>
       <Grid container spacing={2}>
         <Grid item xs={12} sm={6}>
+          <Typography variant="body2" color="text.secondary">ইউজার আইডি</Typography>
+          <Typography variant="body1">{user.id ?? 'N/A'}</Typography>
+        </Grid>
+        <Grid item xs={12} sm={6}>
           <Typography variant="body2" color="text.secondary">নাম</Typography>
           <Typography variant="body1">{`${user.first_name || ''} ${user.last_name || ''}`.trim() || user.username}</Typography>
         </Grid>
@@ -540,6 +544,15 @@ class StudentDashboard extends React.Component {
             } catch (_) {}
           }
 
+          try {
+            const schoolIdNum = Number(id);
+            assignments = (assignments || []).filter(a => {
+              const st = a.fee_structure || a.fee || {};
+              const sid = st.school?.id ?? st.school_id ?? st.school ?? null;
+              return sid ? String(sid) === String(schoolIdNum) : true;
+            });
+          } catch (_) {}
+
           let structList = this.state.feeStructures;
           if (!structList || structList.length === 0) {
             try {
@@ -598,12 +611,17 @@ class StudentDashboard extends React.Component {
             try {
               const filteredStructs = structList.filter(st => {
                 const stCls = st.classroom?.id ?? st.classroom ?? st.class?.id ?? st.class_id ?? st.class ?? null;
-                return stCls && String(stCls) === String(clsIdForFees);
+                const stSchool = st.school?.id ?? st.school_id ?? st.school ?? null;
+                const schoolMatch = stSchool ? String(stSchool) === String(id) : true;
+                return schoolMatch && stCls && String(stCls) === String(clsIdForFees);
               });
-              // If school-wide structures didn't include class IDs, treat whole list as for this class
-              const candidates = filteredStructs.length > 0 ? filteredStructs : structList;
-              if (candidates.length > 0) {
-                assignments = candidates.map(st => ({
+              // Only use structures that match this classroom; do not fallback to school-wide list
+              const candidatesBySchool = filteredStructs.filter(st => {
+                const stSchool = st.school?.id ?? st.school_id ?? st.school ?? null;
+                return stSchool ? String(stSchool) === String(id) : true;
+              });
+              if (candidatesBySchool.length > 0) {
+                assignments = candidatesBySchool.map(st => ({
                   id: st.id || st._id || `struct-${String(st.id || st._id || Math.random())}`,
                   fee_structure: st,
                   amount: st.amount ?? st.default_amount ?? 0,
@@ -751,13 +769,9 @@ class StudentDashboard extends React.Component {
             }
           } catch (_) {}
 
-          // Enrich labels: if exam label is generic and there's only one exam-like row, default to বার্ষিক
+          // Remove non-tuition items entirely per requirement
           try {
-            const isExamLike = (nm) => typeof nm === 'string' && (nm === 'পরীক্ষার ফি' || nm === 'পরীক্ষার ফি(পরীক্ষা)' || /^পরীক্ষার ফি\(/.test(nm));
-            const examRows = rows.filter(r => isExamLike(r.name));
-            if (examRows.length === 1) {
-              rows = rows.map(r => isExamLike(r.name) ? { ...r, name: 'পরীক্ষার ফি(বার্ষিক)' } : r);
-            }
+            rows = rows.filter(r => String(r.type || '').toLowerCase() === 'tuition');
           } catch (_) {}
 
           // Deduplicate monthly fees for the same month (common issue with multiple structures or generation bugs)
@@ -778,10 +792,25 @@ class StudentDashboard extends React.Component {
              rows = uniqueRows;
           } catch (_) {}
 
+          // Keep only months up to current month
+          try {
+            const currentMonthNo = new Date().getMonth() + 1;
+            const monthsBn = ['জানুয়ারী','ফেব্রুয়ারী','মার্চ','এপ্রিল','মে','জুন','জুলাই','আগষ্ট','সেপ্টেম্বর','অক্টোবর','নভেম্বর','ডিসেম্বর'];
+            const monthFromLabel = (nm) => {
+              const rx = /মাসিক বেতন\((.+)\)/; const mm = String(nm || '').match(rx); if (!mm) return null;
+              const idx = monthsBn.indexOf(mm[1]); return idx >= 0 ? (idx + 1) : null;
+            };
+            rows = rows.filter(r => {
+              const mno = monthFromLabel(r.name);
+              if (mno == null) return true;
+              return mno <= currentMonthNo;
+            });
+          } catch (_) {}
+
           let totals = rows.reduce((acc, r) => ({
-            amount: acc.amount + r.amount,
-            paid: acc.paid + r.paid,
-            due: acc.due + r.due
+            amount: acc.amount + Number(r.amount || 0),
+            paid: acc.paid + Number(r.paid || 0),
+            due: acc.due + Number(r.due || 0)
           }), { amount: 0, paid: 0, due: 0 });
 
           try {

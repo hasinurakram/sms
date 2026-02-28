@@ -1,4 +1,5 @@
 import React from 'react';
+import { useParams } from 'react-router-dom';
 import { 
   Box, 
   Typography, 
@@ -18,6 +19,7 @@ import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 
 const FeeCollectionChart = ({ feeData, feeDuesSummary, feeDuesByClass }) => {
+  const { id } = useParams();
   // Format data for display
   const formattedData = feeData?.map(item => ({
     date: new Date(item.date).toLocaleDateString('bn-BD', { month: 'short', day: 'numeric', year: 'numeric' }),
@@ -26,6 +28,49 @@ const FeeCollectionChart = ({ feeData, feeDuesSummary, feeDuesByClass }) => {
 
   // Calculate total amount
   const totalAmount = formattedData.reduce((sum, item) => sum + item.amount, 0);
+
+  let summary = feeDuesSummary || {};
+  let byClass = Array.isArray(feeDuesByClass) ? feeDuesByClass : [];
+  try {
+    const sumT = Array.isArray(byClass) ? byClass.reduce((s, c) => s + (Number(c.tuition_due || 0) || 0), 0) : undefined;
+    const sumE = Array.isArray(byClass) ? byClass.reduce((s, c) => s + (Number(c.exam_due || 0) || 0), 0) : undefined;
+    const looksUnadjusted = (sumT !== undefined && sumE !== undefined) &&
+      (Math.round(Number(summary?.tuition_due_total || 0)) === Math.round(sumT)) &&
+      (Math.round(Number(summary?.exam_due_total || 0)) === Math.round(sumE));
+    if (looksUnadjusted) {
+      const persistentRaw = localStorage.getItem(`adminDuesAdjustment:${String(id || '')}`);
+      const persistentAdj = Number(persistentRaw || 0) || 0;
+      const onceRaw = localStorage.getItem(`adminDuesAdjustmentOnce:${String(id || '')}`);
+      const onceAdj = Number(onceRaw || 0) || 0;
+      const totalAdj = Math.max(0, persistentAdj) + Math.max(0, onceAdj);
+      if (totalAdj > 0 && summary) {
+        const tTotal = Number(summary.tuition_due_total || 0);
+        const eTotal = Number(summary.exam_due_total || 0);
+        const reduceTuition = Math.min(totalAdj, tTotal);
+        const reduceExam = Math.max(0, totalAdj - reduceTuition);
+        summary = {
+          tuition_due_total: Math.max(0, tTotal - reduceTuition),
+          exam_due_total: Math.max(0, eTotal - reduceExam),
+          total_due: Math.max(0, (tTotal + eTotal) - (reduceTuition + reduceExam))
+        };
+        if (Array.isArray(byClass) && byClass.length > 0) {
+          const tuitionSum = byClass.reduce((sum, c) => sum + (Number(c.tuition_due || 0) || 0), 0);
+          const examSum = byClass.reduce((sum, c) => sum + (Number(c.exam_due || 0) || 0), 0);
+          if ((tuitionSum > 0 && reduceTuition > 0) || (examSum > 0 && reduceExam > 0)) {
+            byClass = byClass.map((c) => {
+              const t = Number(c.tuition_due || 0) || 0;
+              const e = Number(c.exam_due || 0) || 0;
+              const tReduce = tuitionSum > 0 ? (reduceTuition * t) / tuitionSum : 0;
+              const eReduce = examSum > 0 ? (reduceExam * e) / examSum : 0;
+              const tAdj = Math.max(0, t - tReduce);
+              const eAdj = Math.max(0, e - eReduce);
+              return { ...c, tuition_due: tAdj, exam_due: eAdj, total_due: Math.max(0, tAdj + eAdj) };
+            });
+          }
+        }
+      }
+    }
+  } catch (_) {}
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -176,19 +221,19 @@ const FeeCollectionChart = ({ feeData, feeDuesSummary, feeDuesByClass }) => {
           <Box textAlign="center">
             <Typography variant="body1" sx={{ opacity: 0.9, mb: 0.5 }}>মোট বকেয়া</Typography>
             <Typography variant="h3" sx={{ fontWeight: 700 }}>
-              ৳{Number(feeDuesSummary?.total_due || 0).toLocaleString()}
+              ৳{Math.round(Number(summary?.total_due || 0)).toLocaleString('bn-BD')}
             </Typography>
           </Box>
           <Box textAlign="center">
             <Typography variant="body1" sx={{ opacity: 0.9, mb: 0.5 }}>বেতন বকেয়া</Typography>
             <Typography variant="h4" sx={{ fontWeight: 600 }}>
-              ৳{Number(feeDuesSummary?.tuition_due_total || 0).toLocaleString()}
+              ৳{Math.round(Number(summary?.tuition_due_total || 0)).toLocaleString('bn-BD')}
             </Typography>
           </Box>
           <Box textAlign="center">
             <Typography variant="body1" sx={{ opacity: 0.9, mb: 0.5 }}>পরীক্ষার ফি বকেয়া</Typography>
             <Typography variant="h4" sx={{ fontWeight: 600 }}>
-              ৳{Number(feeDuesSummary?.exam_due_total || 0).toLocaleString()}
+              ৳{Math.round(Number(summary?.exam_due_total || 0)).toLocaleString('bn-BD')}
             </Typography>
           </Box>
         </Stack>
@@ -207,10 +252,10 @@ const FeeCollectionChart = ({ feeData, feeDuesSummary, feeDuesByClass }) => {
       >
         {Array.isArray(feeDuesByClass) && feeDuesByClass.length > 0 ? (
           <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
-            {feeDuesByClass.map((row, i) => (
+            {byClass.map((row, i) => (
               <Chip
                 key={i}
-                label={`${row.class_name} মোট বকেয়া: ৳${Number(row.total_due || (row.tuition_due||0)+(row.exam_due||0)).toLocaleString()}`}
+                label={`${row.class_name} মোট বকেয়া: ৳${Math.round(Number(row.total_due || (row.tuition_due||0)+(row.exam_due||0))).toLocaleString('bn-BD')}`}
                 sx={{ bgcolor: '#f9fafb' }}
               />
             ))}
@@ -238,13 +283,13 @@ const FeeCollectionChart = ({ feeData, feeDuesSummary, feeDuesByClass }) => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {feeDuesByClass.map((row, i) => (
+                {byClass.map((row, i) => (
                   <TableRow key={i} hover>
                     <TableCell>{row.class_name}</TableCell>
-                    <TableCell align="right">৳{Number(row.tuition_due || 0).toLocaleString()}</TableCell>
-                    <TableCell align="right">৳{Number(row.exam_due || 0).toLocaleString()}</TableCell>
+                    <TableCell align="right">৳{Math.round(Number(row.tuition_due || 0)).toLocaleString('bn-BD')}</TableCell>
+                    <TableCell align="right">৳{Math.round(Number(row.exam_due || 0)).toLocaleString('bn-BD')}</TableCell>
                     <TableCell align="right">
-                      <Chip label={`৳${Number(row.total_due || (row.tuition_due||0)+(row.exam_due||0)).toLocaleString()}`} size="small" />
+                      <Chip label={`৳${Math.round(Number(row.total_due || (row.tuition_due||0)+(row.exam_due||0))).toLocaleString('bn-BD')}`} size="small" />
                     </TableCell>
                   </TableRow>
                 ))}

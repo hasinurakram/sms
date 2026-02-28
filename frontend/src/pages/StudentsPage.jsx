@@ -59,6 +59,7 @@ import { CardSkeleton } from '../components/LoadingSkeleton';
 import { useToast } from '../components/Toast';
 import PhotoUpload from '../components/PhotoUpload';
 import { scopedGet } from '../utils/schoolApi';
+import { useAuth } from '../context/AuthContext';
 
 export default function StudentsPage() {
   const { id } = useParams();
@@ -71,7 +72,10 @@ export default function StudentsPage() {
     refreshStudents,
     refreshClassrooms,
     refreshSections,
-    refreshAll
+    refreshAll,
+    refreshSubjects,
+    setStudents,
+    fetchStudentsScoped
   } = useAcademics();
   
   const [q, setQ] = useState('');
@@ -84,13 +88,20 @@ export default function StudentsPage() {
   const [classSummary, setClassSummary] = useState([]);
   const [selectedClass, setSelectedClass] = useState(null);
   const [selectedSection, setSelectedSection] = useState(null);
+  const [selectedGroup, setSelectedGroup] = useState('');
   const [studentDetailOpen, setStudentDetailOpen] = useState(false);
   const [studentDetail, setStudentDetail] = useState(null);
   const [studentAttendance, setStudentAttendance] = useState([]);
   const [studentResults, setStudentResults] = useState([]);
+  const [sliceStudents, setSliceStudents] = useState(null);
+  const [sliceLoading, setSliceLoading] = useState(false);
   const [detailTab, setDetailTab] = useState(0);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const { user: authUser } = useAuth();
+  const currentRole = String(authUser?.profile?.role || authUser?.role || '').toLowerCase();
+  const canAdminEdit = !!(authUser?.is_superuser || authUser?.is_staff || currentRole === 'admin' || currentRole === 'superadmin');
+  const denyMsg = 'আপনি  এই কাজটি করার জন্য অনুমোদিত ব্যাক্তি নন, দয়া করে এডমিন অথবা প্রধান শিক্ষকের সাথে যোগাযোগ করুন, ধন্যবাদ।';
   const [editFormData, setEditFormData] = useState({
     first_name: '',
     last_name: '',
@@ -99,6 +110,7 @@ export default function StudentsPage() {
     phone_number: '',
     classroom_id: '',
     section_id: '',
+    group: '',
     roll_number: '',
     blood_group: '',
     guardian_id: '',
@@ -110,8 +122,14 @@ export default function StudentsPage() {
   const [promoteToClassId, setPromoteToClassId] = useState('');
   const [promoteSectionMode, setPromoteSectionMode] = useState('preserve'); // 'preserve' | 'single'
   const [promoteSingleSectionName, setPromoteSingleSectionName] = useState('ক');
+  const [promoteExamType, setPromoteExamType] = useState('annual');
+  const [promoteYear, setPromoteYear] = useState(new Date().getFullYear());
   const [promoting, setPromoting] = useState(false);
+  const [promotePreview, setPromotePreview] = useState({ total: 0, eligible: 0, missing: 0, examLabel: '' });
+  const [promoteExamId, setPromoteExamId] = useState(null);
   const location = useLocation();
+  const [editFormSectionsList, setEditFormSectionsList] = useState([]);
+  const [editFormSectionsLoading, setEditFormSectionsLoading] = useState(false);
   useEffect(() => {
     try {
       const path = String(location.pathname || '');
@@ -120,6 +138,148 @@ export default function StudentsPage() {
       }
     } catch (_) {}
   }, [location.pathname]);
+
+  useEffect(() => {
+    const normalizeExamType = (t, name = '') => {
+      const s = String(t || '').toLowerCase();
+      const n = String(name || '').toLowerCase();
+      if (s) return s;
+      if (/বার্ষিক|annual/.test(n)) return 'annual';
+      if (/ফাইনাল|final/.test(n)) return 'final';
+      if (/অর্ধ.?বার্ষিক|half/.test(n)) return 'half_yearly';
+      if (/টার্মিনাল|terminal|term/.test(n)) return 'terminal';
+      if (/মডেল|model/.test(n)) return 'model';
+      if (/প্রথম.?টার্ম|first.?term/.test(n)) return 'first_term';
+      if (/পরীক্ষা|test/.test(n)) return 'test';
+      return 'all';
+    };
+    const extractYear = (ex) => {
+      try {
+        const nameStr = String(ex?.name || '').replace(/[০-৯]/g, d => '০১২৩৪৫৬৭৮৯'.indexOf(d));
+        const m = nameStr.match(/(20\d{2})/);
+        if (m) return parseInt(m[1], 10);
+        const dt = ex?.exam_date || ex?.date || ex?.created_at;
+        if (dt) {
+          const d = new Date(dt);
+          if (!Number.isNaN(d.getTime())) return d.getFullYear();
+        }
+      } catch (_) {}
+      return null;
+    };
+    (async () => {
+      if (!id || !promoteFromClassId) return;
+      try {
+        const res = await scopedGet('/api/results/examinations/', id, { classroom: promoteFromClassId, page_size: 2000 }, { timeout: 30000 });
+        const arr = Array.isArray(res.data) ? res.data : (res.data?.results || []);
+        const list = (arr || []).filter(e => {
+          const et = normalizeExamType(e.exam_type, e.name);
+          return promoteExamType === 'all' ? true : (et === promoteExamType);
+        });
+        let bestYear = null;
+        let bestTime = -1;
+        for (const ex of list) {
+          const y = extractYear(ex);
+          const dt = ex?.exam_date || ex?.date || ex?.created_at;
+          const t = dt ? new Date(dt).getTime() : 0;
+          if (y != null) {
+            if (bestYear == null || Number(y) > Number(bestYear) || t > bestTime) {
+              bestYear = Number(y);
+              bestTime = t;
+            }
+          } else if (t > bestTime) {
+            bestTime = t;
+            bestYear = new Date(t).getFullYear();
+          }
+        }
+        if (bestYear != null && Number.isFinite(bestYear)) {
+          setPromoteYear(bestYear);
+        }
+      } catch (_) {}
+    })();
+  }, [id, promoteFromClassId, promoteExamType]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        if (!id || !promoteFromClassId || !promoteExamType || !promoteYear) {
+          setPromotePreview({ total: 0, eligible: 0, missing: 0, examLabel: '' });
+          return;
+        }
+        const classList = await fetchStudentsScoped(id, { classroom: promoteFromClassId });
+        const total = Array.isArray(classList) ? classList.length : 0;
+        let examsResp = await scopedGet('/api/results/examinations/', id, { classroom: promoteFromClassId, page_size: 2000, year: promoteYear }, { timeout: 30000 });
+        let examsArr = Array.isArray(examsResp.data) ? examsResp.data : (examsResp.data?.results || []);
+        const normalizeExamType = (t, name = '') => {
+          const s = String(t || '').toLowerCase();
+          const n = String(name || '').toLowerCase();
+          if (s) return s;
+          if (/বার্ষিক|annual/.test(n)) return 'annual';
+          if (/ফাইনাল|final/.test(n)) return 'final';
+          if (/অর্ধ.?বার্ষিক|half/.test(n)) return 'half_yearly';
+          if (/টার্মিনাল|terminal|term/.test(n)) return 'terminal';
+          if (/মডেল|model/.test(n)) return 'model';
+          if (/পরীক্ষা|test/.test(n)) return 'test';
+          return 'all';
+        };
+        const filteredExams = (Array.isArray(examsArr) ? examsArr : []).filter(e => {
+          const et = normalizeExamType(e.exam_type, e.name);
+          return promoteExamType === 'all' ? true : (et === promoteExamType);
+        });
+        let ex = null;
+        if ((filteredExams || []).length > 0) {
+          const counts = await Promise.allSettled(
+            filteredExams.map(e => scopedGet('/api/results/overall/', id, { examination: e.id, year: promoteYear, page_size: 2000 }, { timeout: 20000 }))
+          );
+          let bestIdx = -1;
+          let bestCount = -1;
+          filteredExams.forEach((e, idx) => {
+            const res = counts[idx];
+            if (res.status === 'fulfilled') {
+              const data = res.value?.data;
+              const arr = Array.isArray(data) ? data : (data?.results || []);
+              const c = Array.isArray(arr) ? arr.length : 0;
+              if (c > bestCount) { bestCount = c; bestIdx = idx; }
+            }
+          });
+          if (bestIdx !== -1) ex = filteredExams[bestIdx];
+          if (!ex) {
+            const preferred = filteredExams.filter(e => e && e.pass_marks != null);
+            const sorted = (preferred.length ? preferred : filteredExams).slice().sort((a, b) => {
+              const ad = a.exam_date ? new Date(a.exam_date).getTime() : 0;
+              const bd = b.exam_date ? new Date(b.exam_date).getTime() : 0;
+              if (bd !== ad) return bd - ad;
+              return (b.id || 0) - (a.id || 0);
+            });
+            ex = sorted[0];
+          }
+        }
+        if (!ex) {
+          setPromotePreview({ total, eligible: 0, missing: total, examLabel: '' });
+          setPromoteExamId(null);
+          return;
+        }
+        const exId = typeof ex.id === 'number' ? ex.id : parseInt(String(ex.id || 0), 10);
+        const exLabel = `${ex.name || ''}`.trim();
+        const resResp = await scopedGet('/api/results/overall/', id, { examination: exId, year: promoteYear, page_size: 5000 }, { timeout: 30000 });
+        const arr = Array.isArray(resResp.data) ? resResp.data : (resResp.data?.results || []);
+        const bySid = new Map();
+        for (const r of arr || []) {
+          const sid = typeof r.student === 'object' ? (r.student?.id ?? r.student?.student_id) : r.student;
+          if (!sid) continue;
+          const grade = r.grade || '';
+          const isPassed = (r.is_passed != null) ? Boolean(r.is_passed) : (String(grade).toUpperCase() !== 'F');
+          if (isPassed) bySid.set(String(sid), true);
+        }
+        const eligible = Array.from(new Set(classList.map(s => String(s.id)))).filter(sid => bySid.has(String(sid))).length;
+        const missing = Math.max(0, total - eligible);
+        setPromotePreview({ total, eligible, missing, examLabel: exLabel });
+        setPromoteExamId(exId);
+      } catch (_) {
+        setPromotePreview({ total: 0, eligible: 0, missing: 0, examLabel: '' });
+        setPromoteExamId(null);
+      }
+    })();
+  }, [id, promoteFromClassId, promoteExamType, promoteYear, fetchStudentsScoped]);
 
   const banglaNumberMap = {
     'প্লে': -3,
@@ -234,8 +394,9 @@ export default function StudentsPage() {
   useEffect(() => {
     if (contextStudents && contextClassrooms) {
       const classIdToCount = contextStudents.reduce((acc, s) => {
-        const cid = s.classroom?.id;
-        if (cid) acc[cid] = (acc[cid] || 0) + 1;
+        const cidRaw = s.classroom?.id ?? s.classroom;
+        const cid = cidRaw != null ? Number(cidRaw) : null;
+        if (Number.isFinite(cid)) acc[cid] = (acc[cid] || 0) + 1;
         return acc;
       }, {});
 
@@ -290,6 +451,46 @@ export default function StudentsPage() {
       setInitialLoad(false);
     }
   }, [contextStudents, contextClassrooms]);
+  
+  useEffect(() => {
+    try {
+      if (!id || !selectedClass) {
+        setSliceStudents(null);
+        setSliceLoading(false);
+        return;
+      }
+      const clsObj = (contextClassrooms || []).find(c => Number(c.id) === Number(selectedClass));
+      const name = String(clsObj?.name || '').toLowerCase();
+      const req = /ষষ্ঠ|six|\b6\b|সপ্তম|seven|\b7\b|অষ্টম|eight|\b8\b|নবম|nine|\b9\b|দশম|ten|\b10\b/.test(name);
+      if (req && !selectedSection) {
+        setSliceStudents(null);
+        setSliceLoading(false);
+        return;
+      }
+      setSliceLoading(true);
+      const filters = selectedSection ? { classroom: selectedClass, section: selectedSection } : { classroom: selectedClass };
+      fetchStudentsScoped(id, filters)
+        .then(list => {
+          setSliceStudents(Array.isArray(list) ? list : []);
+          try {
+            const count = Array.isArray(list) ? list.length : 0;
+            if (count > 0) {
+              const clsName = clsObj?.name || '';
+              const secName = selectedSection ? ((contextSections || []).find(s => String(s.id) === String(selectedSection))?.name || '') : '';
+              const scope = secName ? `${clsName} - ${secName}` : clsName;
+              if (scope) toast.success(`Loaded ${count} students (${scope})`);
+            }
+          } catch (_) {}
+        })
+        .catch(() => {
+          setSliceStudents([]);
+        })
+        .finally(() => setSliceLoading(false));
+    } catch (_) {
+      setSliceStudents(null);
+      setSliceLoading(false);
+    }
+  }, [id, selectedClass, selectedSection, contextClassrooms, fetchStudentsScoped]);
   
   // Add Student Dialog
   const [addDialogOpen, setAddDialogOpen] = useState(false);
@@ -348,8 +549,7 @@ export default function StudentsPage() {
       .then(res => {
         if (cancelled) return;
         const data = Array.isArray(res.data) ? res.data : (res.data?.results || []);
-        const onlyBengali = data.filter(s => ['ক','খ','গ'].includes(s.name));
-        setAddFormSections(onlyBengali);
+        setAddFormSections(data);
       })
       .catch(() => {
         if (cancelled) return;
@@ -360,6 +560,29 @@ export default function StudentsPage() {
       });
     return () => { cancelled = true; };
   }, [id, newStudent.classroom_id]);
+  
+  useEffect(() => {
+    const cls = editFormData.classroom_id ? Number(editFormData.classroom_id) : null;
+    if (!id || !cls) return;
+    try {
+      const clsObj = (contextClassrooms || []).find(c => Number(c.id) === cls);
+      const name = String(clsObj?.name || '').toLowerCase();
+      const requires = /ষষ্ঠ|six|\b6\b|সপ্তম|seven|\b7\b|অষ্টম|eight|\b8\b|নবম|nine|\b9\b|দশম|ten|\b10\b/.test(name);
+      if (!requires) { setEditFormSectionsList([]); return; }
+      (async () => {
+        try {
+          setEditFormSectionsLoading(true);
+          const res = await scopedGet('/api/academics/sections/', id, { classroom: cls }, { timeout: 15000 });
+          const data = Array.isArray(res.data) ? res.data : (res.data?.results || []);
+          setEditFormSectionsList(data);
+        } catch {
+          setEditFormSectionsList([]);
+        } finally {
+          setEditFormSectionsLoading(false);
+        }
+      })();
+    } catch (_) {}
+  }, [id, editFormData.classroom_id, contextSections, contextClassrooms, refreshSections]);
 
   const loadStudents = async (showToast = true) => {
     if (!id) return;
@@ -368,22 +591,76 @@ export default function StudentsPage() {
       setLoading(true);
       setError(null);
       
-      // Force refresh all data from API
-      console.log('Refreshing all student data...');
-      await refreshAll(id);
-      
-      // The class summary will be updated by the useEffect that watches contextStudents and contextClassrooms
-      
+      console.log('Refreshing academic shell (classes/sections/subjects)...');
+      await Promise.allSettled([
+        refreshClassrooms(id),
+        refreshSections(id),
+        refreshSubjects(id)
+      ]);
+      console.log('Academic shell refreshed. Loading students list...');
+      // Try context-native refresh first for robustness
+      let list = [];
+      try {
+        const refreshed = await refreshStudents(id);
+        if (Array.isArray(refreshed) && refreshed.length) {
+          list = refreshed;
+        }
+      } catch (_) { /* ignore and fall back */ }
+      if (!Array.isArray(list) || list.length === 0) {
+        list = await fetchStudentsScoped(id, {});
+      }
+      if (!Array.isArray(list) || list.length === 0) {
+        try {
+          const endpoints = [
+            `/api/academics/students/?school=${id}`,
+            `/api/academics/students/?classroom__school=${id}`,
+            `/api/academics/students/`,
+            `/api/students/?school=${id}`,
+            `/api/students/`
+          ];
+          const seen = new Set();
+          const agg = [];
+          for (const ep of endpoints) {
+            try {
+              const r = await api.get(ep, { timeout: 30000 });
+              const data = r.data;
+              const arr = Array.isArray(data) ? data : (data?.results || data?.data || []);
+              for (const s of (arr || [])) {
+                const sid = String(s.id ?? s.student_id ?? '');
+                if (!sid || seen.has(sid)) continue;
+                seen.add(sid);
+                agg.push(s);
+              }
+            } catch (_) {}
+          }
+          if (agg.length) {
+            const sorted = [...agg].sort((a, b) => {
+              const rA = String(a?.roll_number ?? '').trim();
+              const rB = String(b?.roll_number ?? '').trim();
+              const emptyA = !rA;
+              const emptyB = !rB;
+              if (emptyA && !emptyB) return 1;
+              if (!emptyA && emptyB) return -1;
+              if (emptyA && emptyB) return 0;
+              const ar = parseInt(rA.replace(/\D/g, ''), 10);
+              const br = parseInt(rB.replace(/\D/g, ''), 10);
+              const aNum = Number.isNaN(ar) ? null : ar;
+              const bNum = Number.isNaN(br) ? null : br;
+              if (aNum !== null && bNum !== null && aNum !== bNum) return aNum - bNum;
+              return rA.localeCompare(rB, undefined, { numeric: true, sensitivity: 'base' });
+            });
+            list = sorted;
+          }
+        } catch (_) {}
+      }
+      setStudents(Array.isArray(list) ? list : []);
       if (showToast) {
-        const studentCount = contextStudents?.length || 0;
-        const classCount = contextClassrooms?.length || 0;
-        if (studentCount > 0 || classCount > 0) {
-          toast.success(`Loaded ${studentCount} students from ${classCount} classes`);
+        const studentCount = list.length;
+        if (studentCount > 0) {
+          toast.success(`Loaded ${studentCount} students (school-wide)`);
         }
       }
-      
-      // Log student IDs for debugging
-      console.log('Current student IDs:', contextStudents?.map(s => s.id) || []);
+      console.log('Current student IDs:', list.map(s => s.id));
     } catch (err) {
       console.error('Students API Error:', err);
       setError('Failed to load students. Please try again.');
@@ -403,17 +680,26 @@ export default function StudentsPage() {
   // Helper: count students for a given section in the selected class
   const getStudentCountForSection = (sectionId) => {
     try {
+      const clsId = Number(selectedClass);
+      if (!Number.isFinite(clsId)) return 0;
       if (sectionId === 'UNASSIGNED') {
-        return (contextStudents || []).filter(s => (s.classroom?.id === selectedClass) && !(s.section?.id ?? s.section)).length;
+        return (contextStudents || []).filter(s => {
+          const sc = s.classroom?.id ?? s.classroom;
+          return Number(sc) === clsId && !(s.section?.id ?? s.section);
+        }).length;
       }
       const sid = Number(sectionId);
-      return (contextStudents || []).filter(s => (s.classroom?.id === selectedClass) && ((s.section?.id ?? s.section) === sid)).length;
+      return (contextStudents || []).filter(s => {
+        const sc = s.classroom?.id ?? s.classroom;
+        return Number(sc) === clsId && Number((s.section?.id ?? s.section)) === sid;
+      }).length;
     } catch (_) { return 0; }
   };
   
   const handleClassSelect = (classId) => {
     setSelectedClass(classId);
     setSelectedSection(null);
+    setSelectedGroup('');
     setQ(''); // Reset search when changing class
     // We don't need to filter students here as the filtered variable handles this
   };
@@ -425,6 +711,7 @@ export default function StudentsPage() {
   };
   
   const handleEditStudent = async (student) => {
+    if (!canAdminEdit) { toast.error(denyMsg); return; }
     // Verify student still exists before opening edit dialog
     try {
       const response = await api.get(`/api/academics/students/${student.id}/`);
@@ -446,6 +733,7 @@ export default function StudentsPage() {
   };
   
   const handleDeleteStudent = (student) => {
+    if (!canAdminEdit) { toast.error(denyMsg); return; }
     setSelectedStudent(student);
     setDeleteDialogOpen(true);
   };
@@ -461,6 +749,7 @@ export default function StudentsPage() {
         phone_number: selectedStudent.user?.phone_number || '',
         classroom_id: selectedStudent.classroom?.id || '',
         section_id: selectedStudent.section?.id || '',
+        group: selectedStudent.group || '',
         roll_number: selectedStudent.roll_number || '',
         blood_group: selectedStudent.blood_group || '',
         guardian_id: selectedStudent.guardian?.id || '',
@@ -478,6 +767,7 @@ export default function StudentsPage() {
   const [editPasswordConfirm, setEditPasswordConfirm] = useState('');
 
   const handleUpdateStudent = async () => {
+    if (!canAdminEdit) { toast.error(denyMsg); return; }
     if (!selectedStudent?.id) {
       toast.error('No student selected');
       return;
@@ -485,6 +775,42 @@ export default function StudentsPage() {
     
     try {
       setLoading(true);
+      const allowedSectionNames = new Set(['ক','খ','গ']);
+      let sectionIdForUpdate = editFormData.section_id || '';
+      try {
+        if (sectionIdForUpdate) {
+          const secObj = (contextSections || []).find(s => String(s.id) === String(sectionIdForUpdate));
+          if (secObj && !allowedSectionNames.has(String(secObj.name || ''))) {
+            sectionIdForUpdate = '';
+            toast.warning('সেকশন কেবল ক/খ/গ হতে পারে; সেকশন ফাঁকা রাখা হচ্ছে');
+          }
+        }
+      } catch (_) {}
+      // If class requires sections and none selected, try to auto-assign by group/name
+      try {
+        const clsIdNum = editFormData.classroom_id ? Number(editFormData.classroom_id) : null;
+        if (clsIdNum && !sectionIdForUpdate) {
+          const clsObj2 = (contextClassrooms || []).find(c => Number(c.id) === clsIdNum);
+          const name2 = String(clsObj2?.name || '').toLowerCase();
+          const requiresSec = /ষষ্ঠ|six|\b6\b|সপ্তম|seven|\b7\b|অষ্টম|eight|\b8\b|নবম|nine|\b9\b|দশম|ten|\b10\b/.test(name2);
+          if (requiresSec) {
+            const secList = (contextSections || []).filter(s => Number(s.classroom?.id ?? s.classroom) === clsIdNum);
+            // If student has group and matching-named section exists, use it
+            const stuGroup = String(selectedStudent?.group || '').toLowerCase();
+            const grpToSec = stuGroup === 'science' ? 'বিজ্ঞান' : (stuGroup === 'arts' ? 'মানবিক' : (stuGroup === 'commerce' ? 'ব্যবসায়' : ''));
+            if (grpToSec) {
+              const match = secList.find(s => String(s.name || '').includes(grpToSec));
+              if (match) {
+                sectionIdForUpdate = match.id;
+              }
+            }
+            // If still empty and exactly one section exists, use that
+            if (!sectionIdForUpdate && secList.length === 1) {
+              sectionIdForUpdate = secList[0].id;
+            }
+          }
+        }
+      } catch (_) {}
       let guardianIdToUse = editFormData.guardian_id || '';
       const typedGuardianName = String(editFormData.guardian_name || '').trim();
       if (!guardianIdToUse && typedGuardianName.length > 1) {
@@ -520,7 +846,8 @@ export default function StudentsPage() {
       // Send null for empty values instead of empty strings
       const studentData = {
         classroom_id: editFormData.classroom_id || null,
-        section_id: editFormData.section_id || null,
+        section_id: sectionIdForUpdate || null,
+        group: editFormData.group || '',
         roll_number: editFormData.roll_number || '',
         blood_group: editFormData.blood_group || '',
         guardian_id: guardianIdToUse || null,
@@ -585,6 +912,7 @@ export default function StudentsPage() {
 
   // Handle student deletion
   const confirmDeleteStudent = async () => {
+    if (!canAdminEdit) { toast.error(denyMsg); return; }
     if (!selectedStudent?.id) {
       toast.error('No student selected');
       return;
@@ -657,7 +985,7 @@ export default function StudentsPage() {
   };
 
   useEffect(() => {
-    loadStudents();
+    loadStudents(false);
     loadFormData();
   }, [id]);
 
@@ -759,30 +1087,12 @@ export default function StudentsPage() {
     }
   };
 
-  // Ensure default Bengali sections (ক, খ, গ) exist when class changes
+  // Do not auto-create sections; rely on existing sections for each class
   useEffect(() => {
     const ensureDefaultSections = async (classId) => {
       if (!classId) return;
       try {
-        // Only create default sections for classes that require sections (6–10)
-        const clsObj = (contextClassrooms || []).find(c => Number(c.id) === Number(classId));
-        const name = String(clsObj?.name || '').toLowerCase();
-        const requires = /ষষ্ঠ|six|\b6\b|সপ্তম|seven|\b7\b|অষ্টম|eight|\b8\b|নবম|nine|\b9\b|দশম|ten|\b10\b/.test(name);
-        if (!requires) return;
-        const existing = contextSections.filter(section => (section.classroom?.id ?? section.classroom) === Number(classId));
-        const names = ['ক', 'খ', 'গ'];
-        const existingNames = new Set(existing.map(s => s.name));
-        const toCreate = names.filter(nm => !existingNames.has(nm));
-        for (const nm of toCreate) {
-          try {
-            await api.post('/api/academics/sections/', { classroom_id: classId, name: nm });
-          } catch (_) {
-            // Ignore if already exists or permission issues
-          }
-        }
-        if (toCreate.length > 0) {
-          refreshSections();
-        }
+        return;
       } catch (_) {}
     };
     ensureDefaultSections(newStudent.classroom_id);
@@ -806,7 +1116,7 @@ export default function StudentsPage() {
         if (requires && !newStudent.section_id) {
           errors.section_id = 'Section is required';
           setNewStudentErrors(errors);
-          toast.warning('সেকশন নির্বাচন করুন (ক/খ/গ)');
+          toast.warning('সেকশন নির্বাচন করুন');
           return;
         }
       } catch (_) { /* ignore */ }
@@ -878,6 +1188,7 @@ export default function StudentsPage() {
       form.append('phone_number', newStudent.phone_number || '');
       if (newStudent.classroom_id) form.append('classroom_id', newStudent.classroom_id);
       if (newStudent.section_id) form.append('section_id', newStudent.section_id);
+      if (newStudent.group) form.append('group', newStudent.group);
       const guardianToLink = newStudent.guardian_id || createdGuardianId;
       if (guardianToLink) form.append('guardian_id', guardianToLink);
       if (typedGuardianName) form.append('guardian_name', typedGuardianName);
@@ -1067,18 +1378,38 @@ export default function StudentsPage() {
   }, [parents, eligibleGuardianIdsForEdit]);
 
   // ইউজার ফ্রেন্ডলি name ফিল্টার
-  const filtered = (contextStudents || []).filter(s => {
+  const normalizeGroup = (val) => {
+    const s = String(val || '').trim().toLowerCase();
+    if (!s) return '';
+    if (s === 'science') return 'science';
+    if (s === 'arts') return 'arts';
+    if (s === 'commerce') return 'commerce';
+    if (s.includes('বিজ্ঞান') || s.includes('science') || s.startsWith('sci')) return 'science';
+    if (s.includes('মানবিক') || s.includes('arts')) return 'arts';
+    if (s.includes('ব্যবসা') || s.includes('বাণিজ্য') || s.includes('commerce')) return 'commerce';
+    return s;
+  };
+  const activeFast = Boolean(selectedClass && ((requiresSectionForSelectedClass && selectedSection) || (!requiresSectionForSelectedClass)));
+  const baseStudents = activeFast && Array.isArray(sliceStudents) ? sliceStudents : (contextStudents || []);
+  const filtered = baseStudents.filter(s => {
     // First filter by selected class if any
-    if (selectedClass && s.classroom?.id !== selectedClass) {
-      return false;
+    if (selectedClass) {
+      const sc = s.classroom?.id ?? s.classroom;
+      if (Number(sc) !== Number(selectedClass)) return false;
+    }
+    // Optional: filter by group when selected
+    if (selectedGroup) {
+      const g = normalizeGroup(s.group);
+      if (g !== String(selectedGroup).toLowerCase()) return false;
     }
     // Next, filter by selected section if any
-    if (selectedSection) {
+    if (!selectedGroup && selectedSection) {
       if (selectedSection === 'UNASSIGNED') {
         const sid = s.section?.id ?? s.section;
         if (sid) return false;
       } else {
-        if ((s.section?.id ?? s.section) !== selectedSection) return false;
+        const sidVal = s.section?.id ?? s.section;
+        if (Number(sidVal) !== Number(selectedSection)) return false;
       }
     }
     // Then filter by search term
@@ -1300,14 +1631,13 @@ export default function StudentsPage() {
 
       {selectedClass && (
         <>
-          {/* If section not selected yet, show section selection grid */}
-          {requiresSectionForSelectedClass && !selectedSection && (
+          {requiresSectionForSelectedClass && !selectedSection && !selectedGroup && (
             <Box sx={{ mb: 2 }}>
               <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 1 }}>
                 সেকশন নির্বাচন করুন
               </Typography>
               <Grid container spacing={2}>
-                {(contextSections || []).filter(sec => (sec.classroom?.id ?? sec.classroom) === selectedClass && ['ক','খ','গ'].includes(sec.name))
+                {(contextSections || []).filter(sec => (sec.classroom?.id ?? sec.classroom) === selectedClass)
                   .map(sec => (
                     <Grid size={{ xs: 12, sm: 6, md: 4 }} key={sec.id}>
                       <Paper
@@ -1417,9 +1747,24 @@ export default function StudentsPage() {
               </Grid>
             </Box>
           )}
+          {requiresSectionForSelectedClass && (
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 2 }}>
+              <TextField
+                select
+                label="গ্রুপ"
+                value={selectedGroup}
+                onChange={e => setSelectedGroup(e.target.value)}
+                sx={{ minWidth: 220 }}
+              >
+                <MenuItem value="">সব গ্রুপ</MenuItem>
+                <MenuItem value="science">বিজ্ঞান</MenuItem>
+                <MenuItem value="arts">মানবিক</MenuItem>
+                <MenuItem value="commerce">ব্যবসায় শিক্ষা</MenuItem>
+              </TextField>
+            </Stack>
+          )}
         
-          {/* Show search and list: for 6–10 require a section; for 1–5 show directly */}
-          {((requiresSectionForSelectedClass && selectedSection) || (!requiresSectionForSelectedClass)) && (
+          {((requiresSectionForSelectedClass && (selectedSection || selectedGroup)) || (!requiresSectionForSelectedClass)) && (
           <TextField
             placeholder="Search by name or username"
             value={q}
@@ -1435,8 +1780,41 @@ export default function StudentsPage() {
             }}
           />
         )}
-          {((requiresSectionForSelectedClass && selectedSection) || (!requiresSectionForSelectedClass)) && loading && <CardSkeleton count={6} />}
-          {((requiresSectionForSelectedClass && selectedSection) || (!requiresSectionForSelectedClass)) && !loading && (contextStudents || []).length === 0 && (
+          {selectedClass && (
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems="center" sx={{ mb: 2 }}>
+              {selectedSection && selectedSection !== 'UNASSIGNED' && (
+                <Chip label={`সেকশন: ${(() => {
+                  const sec = (contextSections || []).find(s => String(s.id) === String(selectedSection));
+                  return sec?.name || selectedSection;
+                })()}`} color="primary" />
+              )}
+              {selectedSection === 'UNASSIGNED' && (
+                <Chip label="সেকশন: নেই" color="warning" />
+              )}
+              {!!selectedGroup && (
+                <Chip label={`গ্রুপ: ${selectedGroup === 'science' ? 'বিজ্ঞান' : selectedGroup === 'arts' ? 'মানবিক' : 'ব্যবসায় শিক্ষা'}`} color="success" />
+              )}
+              <Typography variant="body2" sx={{ opacity: 0.8 }}>
+                {(() => {
+                  const clsId = Number(selectedClass);
+                  const totalInClass = (contextStudents || []).filter(s => Number(s.classroom?.id ?? s.classroom) === clsId).length;
+                  const shown = filtered.length;
+                  return `মোট ${toBn(totalInClass)} | প্রদর্শিত ${toBn(shown)}`;
+                })()}
+              </Typography>
+              {(selectedSection || selectedGroup || q) && (
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => { setSelectedSection(null); setSelectedGroup(''); setQ(''); }}
+                >
+                  সব দেখুন
+                </Button>
+              )}
+            </Stack>
+          )}
+          {((requiresSectionForSelectedClass && (selectedSection || selectedGroup)) || (!requiresSectionForSelectedClass)) && (activeFast ? sliceLoading : loading) && <CardSkeleton count={6} />}
+          {((requiresSectionForSelectedClass && (selectedSection || selectedGroup)) || (!requiresSectionForSelectedClass)) && !(activeFast ? sliceLoading : loading) && (baseStudents || []).length === 0 && (
           <EmptyState
             icon={SchoolIcon}
             title="No students in this class"
@@ -1445,13 +1823,13 @@ export default function StudentsPage() {
             onAction={() => setAddDialogOpen(true)}
           />
         )}
-          {((requiresSectionForSelectedClass && selectedSection) || (!requiresSectionForSelectedClass)) && !loading && (contextStudents || []).length > 0 && filtered.length === 0 && (
+          {((requiresSectionForSelectedClass && (selectedSection || selectedGroup)) || (!requiresSectionForSelectedClass)) && !(activeFast ? sliceLoading : loading) && (baseStudents || []).length > 0 && filtered.length === 0 && (
           <EmptyState
             title="No matching students"
             message={`No students found matching "${q}". Try a different search term.`}
           />
         )}
-          {((requiresSectionForSelectedClass && selectedSection) || (!requiresSectionForSelectedClass)) && !loading && filtered.length > 0 && (
+          {((requiresSectionForSelectedClass && (selectedSection || selectedGroup)) || (!requiresSectionForSelectedClass)) && !(activeFast ? sliceLoading : loading) && filtered.length > 0 && (
           <Grid container spacing={3}>
             {filtered.map(s => (
               <Grid size={{ xs: 12, sm: 6, md: 6, lg: 4 }} key={s.id}>
@@ -1492,6 +1870,32 @@ export default function StudentsPage() {
               onChange={(_, v) => setPromoteToClassId(v ? v.id : '')}
               renderInput={(params) => <TextField {...params} label="যে শ্রেণিতে প্রমোশন দেবেন" />}
             />
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+              <TextField
+                select
+                label="পরীক্ষার ধরন"
+                value={promoteExamType}
+                onChange={(e) => setPromoteExamType(e.target.value)}
+                sx={{ minWidth: 160 }}
+              >
+                <MenuItem value="annual">বার্ষিক</MenuItem>
+                <MenuItem value="final">ফাইনাল</MenuItem>
+                <MenuItem value="half_yearly">অর্ধবার্ষিক</MenuItem>
+                <MenuItem value="terminal">টার্মিনাল</MenuItem>
+                <MenuItem value="test">বিশেষ মূল্যায়ন</MenuItem>
+              </TextField>
+              <TextField
+                select
+                label="সাল"
+                value={promoteYear}
+                onChange={(e) => setPromoteYear(parseInt(e.target.value, 10))}
+                sx={{ minWidth: 140 }}
+              >
+                {Array.from({ length: 6 }, (_, i) => String(new Date().getFullYear() - i)).map(y => (
+                  <MenuItem key={y} value={parseInt(y, 10)}>{y}</MenuItem>
+                ))}
+              </TextField>
+            </Stack>
             <Stack direction="row" spacing={1}>
               <Button 
                 variant={promoteSectionMode === 'preserve' ? 'contained' : 'outlined'}
@@ -1517,6 +1921,11 @@ export default function StudentsPage() {
             <Alert severity="info">
               পছন্দকৃত শ্রেণির সব শিক্ষার্থী নতুন শ্রেণিতে স্থানান্তর হবে। প্রয়োজন হলে নতুন শাখা অটো-ক্রিয়েট হবে।
             </Alert>
+            <Alert severity="warning">
+              {promotePreview.examLabel
+                ? `পরীক্ষা: ${promotePreview.examLabel} — মোট: ${promotePreview.total}, পাশ: ${promotePreview.eligible}, ডেটা নেই/নাপাস: ${promotePreview.missing}`
+                : `নির্বাচিত ক্লাস/পরীক্ষার ধরন/সালের জন্য কোনো পরীক্ষার ডেটা পাওয়া যায়নি`}
+            </Alert>
           </Stack>
         </DialogContent>
         <DialogActions>
@@ -1530,12 +1939,24 @@ export default function StudentsPage() {
               }
               try {
                 setPromoting(true);
+                let promoteExpectedRoll = new Map();
+                const fromClassStudents = await fetchStudentsScoped(id, { classroom: promoteFromClassId });
+                const sectionMap = {};
+                for (const s of fromClassStudents || []) {
+                  const sid = typeof s?.section === 'object' ? (s.section?.id ?? s.section?.section_id ?? null) : (s?.section_id ?? null);
+                  if (sid != null) sectionMap[String(s.id ?? s.student_id)] = parseInt(String(sid), 10);
+                }
                 const payload = {
                   school: id,
                   from_class_id: promoteFromClassId,
                   to_class_id: promoteToClassId,
                   section_mode: promoteSectionMode,
-                  single_section_name: promoteSingleSectionName
+                  single_section_name: promoteSingleSectionName,
+                  exam_type: promoteExamType,
+                  year: promoteYear,
+                  retain_sections: promoteSectionMode === 'preserve',
+                  section_map: sectionMap,
+                  examination: promoteExamId || undefined
                 };
                 const res = await api.post('/api/academics/students/promote_class/', payload);
                 const d = res.data || {};
@@ -1547,11 +1968,204 @@ export default function StudentsPage() {
                   const total = d.total_candidates ?? (moved + skipped);
                   toast.success(`বার্ষিক ফলাফলের ভিত্তিতে ${moved} জন প্রমোশন হয়েছে (মোট ${total}, নাপাস/ডেটা নেই: ${skipped})`);
                 }
+                try {
+                  const bySection = new Map();
+                  const getSecId = (s) => {
+                    const sec = s?.section;
+                    if (typeof sec === 'object') return sec?.id ?? sec?.section_id ?? null;
+                    return s?.section_id ?? null;
+                  };
+                  for (const s of fromClassStudents || []) {
+                    const sid = String(s.id ?? s.student_id);
+                    if (!sid) continue;
+                    const secId = getSecId(s) ?? 'none';
+                    if (!bySection.has(secId)) bySection.set(secId, []);
+                    bySection.get(secId).push(s);
+                  }
+                  const ovResp = promoteExamId ? await scopedGet('/api/results/overall/', id, { examination: promoteExamId, year: promoteYear, page_size: 5000 }, { timeout: 30000 }) : null;
+                  const ovData = ovResp ? (Array.isArray(ovResp.data) ? ovResp.data : (ovResp.data?.results || [])) : [];
+                  const totalsMap = new Map();
+                  for (const o of ovData || []) {
+                    const sid = typeof o.student === 'object' ? o.student?.id : o.student;
+                    const tot = o.total_marks_obtained != null ? parseFloat(o.total_marks_obtained) : null;
+                    if (sid && tot != null) totalsMap.set(String(sid), tot);
+                  }
+                  const rsResp = promoteExamId ? await scopedGet('/api/results/results/', id, { examination: promoteExamId, year: promoteYear, page_size: 5000 }, { timeout: 30000 }) : null;
+                  const rsArr = rsResp ? (Array.isArray(rsResp.data) ? rsResp.data : (rsResp.data?.results || [])) : [];
+                  const hasFailMap = new Map();
+                  const hasAnyMap = new Map();
+                  const sumBySid = new Map();
+                  const resultTotal = (res) => {
+                    if (!res) return 0;
+                    const t = typeof res.total === 'number' ? res.total : undefined;
+                    const to = typeof res.total_obtained === 'number' ? res.total_obtained : (typeof res.totalObtained === 'number' ? res.totalObtained : undefined);
+                    if (typeof t === 'number') return t;
+                    if (typeof to === 'number') return to;
+                    const cq = parseFloat(res.written_marks ?? res.cq ?? 0);
+                    const mcq = parseFloat(res.mcq_marks ?? res.mcq ?? 0);
+                    const pr = parseFloat(res.practical_marks ?? res.practical ?? 0);
+                    const sum = (Number.isFinite(cq) ? cq : 0) + (Number.isFinite(mcq) ? mcq : 0) + (Number.isFinite(pr) ? pr : 0);
+                    return Number.isFinite(sum) ? sum : 0;
+                  };
+                  for (const r of rsArr || []) {
+                    const sid = typeof r.student === 'object' ? r.student?.id : r.student;
+                    if (!sid) continue;
+                    hasAnyMap.set(String(sid), true);
+                    const grade = String(r.grade || '').toUpperCase();
+                    const passed = r.is_passed != null ? Boolean(r.is_passed) : (grade !== 'F');
+                    if (!passed) hasFailMap.set(String(sid), true);
+                    const cur = sumBySid.get(String(sid)) || 0;
+                    sumBySid.set(String(sid), cur + resultTotal(r));
+                  }
+                  if (totalsMap.size === 0 && sumBySid.size > 0) {
+                    for (const [k, v] of sumBySid.entries()) totalsMap.set(k, v);
+                  }
+                  const toAsciiDigits = (s) => {
+                    return String(s || '').replace(/[০-৯]/g, d => String('০১২৩৪৫৬৭৮৯'.indexOf(d))).replace(/[٠-٩]/g, d => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
+                  };
+                  const rollNumOf = (s) => {
+                    const rollStr = String(s.roll_number || '');
+                    const ascii = toAsciiDigits(rollStr);
+                    const n = parseInt(ascii.replace(/\D/g, ''), 10);
+                    return Number.isNaN(n) ? 999999 : n;
+                  };
+                  const newRollMap = new Map();
+                  for (const [secId, list] of bySection.entries()) {
+                    const arr = list.map(s => {
+                      const sidStr = String(s.id);
+                      const any = hasAnyMap.get(sidStr) === true;
+                      const fail = hasFailMap.get(sidStr) === true;
+                      const rankCode = !any ? 2 : (fail ? 1 : 0);
+                      const total = totalsMap.get(sidStr) || 0;
+                      return { s, total, rollNum: rollNumOf(s), rankCode };
+                    });
+                    arr.sort((a, b) => {
+                      if (a.rankCode !== b.rankCode) return a.rankCode - b.rankCode;
+                      if (b.total !== a.total) return b.total - a.total;
+                      return a.rollNum - b.rollNum;
+                    });
+                    let rk = 1;
+                    for (const it of arr) newRollMap.set(String(it.s.id), rk++);
+                  }
+                  promoteExpectedRoll = newRollMap;
+                  // Resolve target section by matching source section name in target class
+                  const srcSectionsResp = await scopedGet('/api/academics/sections/', id, { classroom: promoteFromClassId, page_size: 2000 }, { timeout: 15000 });
+                  const tgtSectionsResp = await scopedGet('/api/academics/sections/', id, { classroom: promoteToClassId, page_size: 2000 }, { timeout: 15000 });
+                  const srcList = Array.isArray(srcSectionsResp.data) ? srcSectionsResp.data : (srcSectionsResp.data?.results || []);
+                  const tgtList = Array.isArray(tgtSectionsResp.data) ? tgtSectionsResp.data : (tgtSectionsResp.data?.results || []);
+                  const srcById = new Map(srcList.map(s => [String(s.id), s]));
+                  const tgtByName = new Map(tgtList.map(s => [String(s.name || '').trim(), s]));
+                  const neededNames = Array.from(new Set(
+                    (fromClassStudents || [])
+                      .map(s => sectionMap[String(s.id ?? s.student_id)])
+                      .filter(v => v != null)
+                      .map(v => {
+                        const src = srcById.get(String(v));
+                        return String(src?.name || '').trim();
+                      })
+                      .filter(n => n.length > 0)
+                  ));
+                  const missingNames = neededNames.filter(n => !tgtByName.has(n));
+                  if (missingNames.length > 0) {
+                    const createAttempts = missingNames.map(n => {
+                      const fd = new FormData();
+                      fd.append('school_id', String(id));
+                      fd.append('classroom_id', String(promoteToClassId));
+                      fd.append('name', String(n));
+                      return api.post('/api/academics/sections/', fd);
+                    });
+                    const created = await Promise.allSettled(createAttempts);
+                    const okCreated = created.filter(r => r.status === 'fulfilled').length;
+                    if (okCreated > 0) {
+                      try {
+                        const refreshTgt = await scopedGet('/api/academics/sections/', id, { classroom: promoteToClassId, page_size: 2000 }, { timeout: 15000 });
+                        const newTgtList = Array.isArray(refreshTgt.data) ? refreshTgt.data : (refreshTgt.data?.results || []);
+                        tgtByName.clear();
+                        for (const s of newTgtList) tgtByName.set(String(s.name || '').trim(), s);
+                      } catch (_) {}
+                    }
+                  }
+                  const resolveTargetSectionId = (sidStr) => {
+                    const src = srcById.get(String(sidStr));
+                    if (!src) return null;
+                    const name = String(src.name || '').trim();
+                    const tgt = tgtByName.get(name);
+                    return tgt ? (tgt.id ?? tgt.section_id ?? null) : null;
+                  };
+                  const updateStudentPromotion = async (sidStr, keepSecSrc, newRoll) => {
+                    const keepSecTarget = keepSecSrc != null ? resolveTargetSectionId(keepSecSrc) : null;
+                    const fd = new FormData();
+                    fd.append('school_id', String(id));
+                    fd.append('classroom_id', String(promoteToClassId));
+                    if (keepSecTarget != null) fd.append('section_id', String(keepSecTarget));
+                    if (newRoll != null) fd.append('roll_number', String(newRoll));
+                    try {
+                      const sObj = (fromClassStudents || []).find(st => String(st.id ?? st.student_id) === String(sidStr)) || {};
+                      const uObj = sObj.user || {};
+                      const minimalFirst = String(uObj.first_name || '').trim();
+                      if (minimalFirst) fd.append('first_name', minimalFirst);
+                    } catch (_) {}
+                    const attempts = [
+                      { m: 'patch', url: `/api/academics/students/${sidStr}/`, data: fd, headers: { 'Content-Type': 'multipart/form-data' } },
+                      { m: 'patch', url: `/api/students/${sidStr}/`, data: fd, headers: { 'Content-Type': 'multipart/form-data' } },
+                      { m: 'put', url: `/api/academics/students/${sidStr}/`, data: { school_id: id, classroom_id: promoteToClassId, section_id: keepSecTarget ?? undefined, roll_number: newRoll ?? undefined }, headers: { 'Content-Type': 'application/json' } },
+                      { m: 'put', url: `/api/students/${sidStr}/`, data: { school_id: id, classroom_id: promoteToClassId, section_id: keepSecTarget ?? undefined, roll_number: newRoll ?? undefined }, headers: { 'Content-Type': 'application/json' } },
+                    ];
+                    for (const att of attempts) {
+                      try {
+                        const r = await api[att.m](att.url, att.data, att.headers ? { headers: att.headers } : undefined);
+                        if (r && (r.status === 200 || r.status === 204)) return true;
+                      } catch (_) { /* try next */ }
+                    }
+                    return false;
+                  };
+                  const patches = [];
+                  for (const s of fromClassStudents || []) {
+                    const sidStr = String(s.id ?? s.student_id);
+                    if (!sidStr) continue;
+                    const keepSecSrc = sectionMap[sidStr];
+                    const newRoll = newRollMap.get(sidStr);
+                    patches.push(updateStudentPromotion(sidStr, keepSecSrc, newRoll));
+                  }
+                  const results = await Promise.allSettled(patches);
+                  const ok = results.filter(r => r.status === 'fulfilled' && r.value === true).length;
+                  const fail = results.length - ok;
+                  toast.success(`ফোর্স প্রমোশন সম্পন্ন — আপডেটেড: ${ok}, ব্যর্থ: ${fail}`);
+                } catch (_) {}
                 setPromoteDialogOpen(false);
                 // reload lists
-                await refreshStudents();
-                await refreshSections();
-                await refreshClassrooms();
+                await refreshStudents(id);
+                await refreshSections(id);
+                await refreshClassrooms(id);
+                try {
+                  const tgtStudents = await fetchStudentsScoped(id, { classroom: promoteToClassId });
+                  const mismatches = [];
+                  for (const s of tgtStudents || []) {
+                    const sidStr = String(s.id ?? s.student_id);
+                    const expected = promoteExpectedRoll.get(sidStr);
+                    const current = parseInt(String(s.roll_number || '').replace(/\D/g, ''), 10);
+                    if (expected != null && expected !== current) {
+                      const fd = new FormData();
+                      fd.append('school_id', String(id));
+                      fd.append('roll_number', String(expected));
+                      try {
+                        await api.patch(`/api/academics/students/${sidStr}/`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+                      } catch {
+                        try {
+                          await api.put(`/api/academics/students/${sidStr}/`, { school_id: id, roll_number: expected }, { headers: { 'Content-Type': 'application/json' } });
+                        } catch {
+                          mismatches.push(sidStr);
+                        }
+                      }
+                    }
+                  }
+                  if (mismatches.length) {
+                    toast.warning(`কিছু রোল আপডেট হয়নি: ${mismatches.length} জন—পুনরায় চেষ্টা করুন`);
+                  } else {
+                    toast.success('নতুন রোল সংরক্ষণ সম্পন্ন');
+                  }
+                  await refreshStudents(id);
+                } catch (_) {}
               } catch (e) {
                 console.error('Class promotion error', e);
                 toast.error('প্রমোশন ব্যর্থ হয়েছে');
@@ -1726,7 +2340,7 @@ export default function StudentsPage() {
                     if (!newStudent.classroom_id) return false;
                     const classIdNum = Number(newStudent.classroom_id);
                     const secClassId = s.classroom?.id ?? s.classroom;
-                    return secClassId === classIdNum && ['ক','খ','গ'].includes(s.name);
+                    return secClassId === classIdNum;
                   });
                   const sectionOptions = (addFormSections.length > 0 ? addFormSections : fallbackOptions);
                   const hasCurrent = sectionOptions.some(s => String(s.id) === String(newStudent.section_id));
@@ -1740,7 +2354,7 @@ export default function StudentsPage() {
                   newStudentErrors.section_id
                   || (!newStudent.classroom_id ? 'আগে শ্রেণি নির্বাচন করুন'
                     : (!requiresSection ? 'এই শ্রেণিতে সেকশন নেই'
-                      : (addFormSectionsLoading ? 'সেকশন লোড হচ্ছে...' : 'ক/খ/গ সেকশন নির্বাচন করুন')))
+                      : (addFormSectionsLoading ? 'সেকশন লোড হচ্ছে...' : 'সেকশন নির্বাচন করুন')))
                 }
               >
                 {(requiresSection
@@ -1749,12 +2363,26 @@ export default function StudentsPage() {
                       if (!newStudent.classroom_id) return false;
                       const classIdNum = Number(newStudent.classroom_id);
                       const secClassId = s.classroom?.id ?? s.classroom; // support object or id
-                      return secClassId === classIdNum && ['ক','খ','গ'].includes(s.name);
+                      return secClassId === classIdNum;
                     }))
                   : [])
                   .map(s => (
                     <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>
                   ))}
+              </TextField>
+            </Grid>
+            <Grid size={{ xs: 12, sm: 4 }}>
+              <TextField
+                select
+                label="গ্রুপ (ঐচ্ছিক)"
+                value={newStudent.group || ''}
+                onChange={(e) => setNewStudent({...newStudent, group: e.target.value})}
+                fullWidth
+              >
+                <MenuItem value="">কোনো গ্রুপ নেই</MenuItem>
+                <MenuItem value="science">বিজ্ঞান</MenuItem>
+                <MenuItem value="arts">মানবিক</MenuItem>
+                <MenuItem value="commerce">ব্যবসায় শিক্ষা</MenuItem>
               </TextField>
             </Grid>
             
@@ -1976,19 +2604,39 @@ export default function StudentsPage() {
                     onChange={(e) => setEditFormData({...editFormData, section_id: e.target.value})}
                     fullWidth
                     disabled={!editFormData.classroom_id}
-                    helperText={editFormData.classroom_id ? '' : 'Select a class first'}
+                    helperText={
+                      !editFormData.classroom_id
+                        ? 'Select a class first'
+                        : (editFormSectionsLoading
+                          ? 'Sections loading...'
+                          : (editFormSectionsList.length === 0 ? 'এই শ্রেণির জন্য কোনো সেকশন নেই' : ''))
+                    }
                   >
                     <MenuItem value="">No Section</MenuItem>
-                    {contextSections
-                      .filter(s => {
+                    {(editFormSectionsList.length > 0 ? editFormSectionsList :
+                      contextSections.filter(s => {
                         if (!editFormData.classroom_id) return true;
                         const classIdNum = Number(editFormData.classroom_id);
                         const secClassId = s.classroom?.id ?? s.classroom;
                         return secClassId === classIdNum;
-                      })
+                      }))
                       .map(s => (
                         <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>
                       ))}
+                  </TextField>
+                </Grid>
+                <Grid size={{ xs: 12, sm: 4 }}>
+                  <TextField
+                    select
+                    label="গ্রুপ"
+                    value={editFormData.group}
+                    onChange={(e) => setEditFormData({...editFormData, group: e.target.value})}
+                    fullWidth
+                  >
+                    <MenuItem value="">কোনো গ্রুপ নেই</MenuItem>
+                    <MenuItem value="science">বিজ্ঞান</MenuItem>
+                    <MenuItem value="arts">মানবিক</MenuItem>
+                    <MenuItem value="commerce">ব্যবসায় শিক্ষা</MenuItem>
                   </TextField>
                 </Grid>
                 

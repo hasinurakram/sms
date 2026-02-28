@@ -41,7 +41,31 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (username, password) => {
     try {
-      await authLogin(username, password);
+      let uname = username;
+      try {
+        const digits = String(username || '').replace(/\D/g, '');
+        const isNumericId = !!digits && /^\d+$/.test(digits);
+        if (isNumericId) {
+          // Try resolve student by ID first
+          try {
+            const s = await api.get(`/api/academics/students/${digits}/`);
+            const u = s.data?.user;
+            if (u?.username) uname = u.username;
+          } catch (_) {
+            // Fallback: search within current school
+            const schoolId = localStorage.getItem('currentSchoolId');
+            if (schoolId) {
+              try {
+                const r = await api.get(`/api/academics/students/?school=${schoolId}`);
+                const arr = Array.isArray(r.data) ? r.data : (r.data?.results || []);
+                const found = (arr || []).find(it => String(it.id) === digits || String(it.roll_number) === digits);
+                if (found?.user?.username) uname = found.user.username;
+              } catch (_) {}
+            }
+          }
+        }
+      } catch (_) {}
+      await authLogin(uname, password);
       await fetchUser();
       return { success: true };
     } catch (error) {

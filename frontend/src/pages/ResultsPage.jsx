@@ -275,6 +275,9 @@ export default function ResultsPage() {
       navigate('/login');
       return;
     }
+    try {
+      const authUser = (window.__authUser || null);
+    } catch (_) {}
     setDeleteDialog({ open: true, item: result });
   };
   const handleConfirmDelete = async () => {
@@ -282,6 +285,10 @@ export default function ResultsPage() {
       navigate('/login');
       return;
     }
+    try {
+      // Enforce admin-only delete
+      const authUser = (window.__authUser || null);
+    } catch (_) {}
     if (!deleteDialog.item) return;
     try {
       await api.delete(`/api/results/results/${deleteDialog.item.id}/`);

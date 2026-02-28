@@ -26,8 +26,11 @@ const LoginPage = () => {
       const params = new URLSearchParams(location.search || '');
       const next = params.get('next');
       const lastSchoolId = localStorage.getItem('currentSchoolId');
+      const lastPath = sessionStorage.getItem('lastPath');
       if (next) {
         navigate(next, { replace: true });
+      } else if (lastPath) {
+        navigate(lastPath, { replace: true });
       } else if (lastSchoolId) {
         navigate(`/school/${lastSchoolId}`, { replace: true });
       } else {
@@ -45,8 +48,10 @@ const LoginPage = () => {
       const require = (params.get('require') || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
       if (isAuthenticated()) {
         const lastSchoolId = localStorage.getItem('currentSchoolId');
+        const lastPath = sessionStorage.getItem('lastPath');
         const goHome = () => {
-          if (lastSchoolId) navigate(`/school/${lastSchoolId}`, { replace: true });
+          if (lastPath) navigate(lastPath, { replace: true });
+          else if (lastSchoolId) navigate(`/school/${lastSchoolId}`, { replace: true });
           else navigate('/', { replace: true });
         };
         if (require.length > 0 && (!role || !require.includes(role))) {

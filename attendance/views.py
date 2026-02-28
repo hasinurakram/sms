@@ -5,15 +5,19 @@ from .models import AttendanceRecord
 from .serializers import AttendanceRecordSerializer, AttendanceSummarySerializer, MonthlyAttendanceSerializer
 from users.permissions import RolePermission
 from academics.models import StudentProfile
-from datetime import datetime
+from datetime import datetime, timedelta
 from collections import defaultdict
+try:
+    from django_filters.rest_framework import DjangoFilterBackend
+except Exception:
+    DjangoFilterBackend = None
 
 class AttendanceRecordViewSet(viewsets.ModelViewSet):
     queryset = AttendanceRecord.objects.select_related('student__user','student__classroom','student__section','school').all()
     serializer_class = AttendanceRecordSerializer
     permission_classes = [RolePermission]
-    filter_backends = []
-    filterset_fields = ['school','student','date']
+    filter_backends = [DjangoFilterBackend] if DjangoFilterBackend else []
+    filterset_fields = ['school','student','date','taken_by_user']
     
     @action(detail=False, methods=['post'])
     def bulk_save(self, request):
@@ -42,12 +46,22 @@ class AttendanceRecordViewSet(viewsets.ModelViewSet):
                     saved_records.append(existing)
                 else:
                     # Create new record - use _id suffix for foreign keys
+                    # Capture the user who is taking attendance
+                    actor = getattr(request, 'user', None)
+                    actor_name = None
+                    try:
+                        if actor and hasattr(actor, 'id'):
+                            actor_name = (f"{getattr(actor, 'first_name', '')} {getattr(actor, 'last_name', '')}".strip() or getattr(actor, 'username', '') or '')
+                    except Exception:
+                        actor_name = None
                     record = AttendanceRecord.objects.create(
                         school_id=record_data['school'],
                         student_id=record_data['student'],
                         date=record_data['date'],
                         present=record_data['present'],
-                        note=record_data.get('note', '')
+                        note=record_data.get('note', ''),
+                        taken_by_user=actor if getattr(actor, 'id', None) else None,
+                        taken_by_name=actor_name or ''
                     )
                     saved_records.append(record)
             except Exception as e:
@@ -163,33 +177,52 @@ class AttendanceRecordViewSet(viewsets.ModelViewSet):
         
         # Create attendance map
         attendance_map = defaultdict(lambda: {'present': 0, 'absent': 0})
+        # Also map per-day status for quick lookup
+        per_day_map = defaultdict(dict)  # student_id -> { 'YYYY-MM-DD': 'present'|'absent' }
         for record in attendance_records:
             student_id = record.student_id
+            day_str = record.date.strftime('%Y-%m-%d')
             if record.present:
                 attendance_map[student_id]['present'] += 1
+                per_day_map[student_id][day_str] = 'present'
             else:
                 attendance_map[student_id]['absent'] += 1
+                per_day_map[student_id][day_str] = 'absent'
         
-        # Calculate total working days (you might want to exclude weekends/holidays)
+        # Calculate total days in month (include weekends; adjust if holiday logic is added later)
         total_days = (end_date - start_date).days
         
         # Format response
         reports = []
         for student in students:
-            present = attendance_map[student.id]['present']
-            absent = attendance_map[student.id]['absent']
-            total_marked = present + absent
-            percentage = (present / total_marked * 100) if total_marked > 0 else 0
+            present_marked = attendance_map[student.id]['present']
+            # Build attendance_details covering all days in month
+            details = []
+            present_full = 0
+            for i in range(total_days):
+                day = (start_date + timedelta(days=i))
+                day_str = day.strftime('%Y-%m-%d')
+                status = per_day_map[student.id].get(day_str, 'absent')
+                if status == 'present':
+                    present_full += 1
+                details.append({
+                    'date': day_str,
+                    'status': status
+                })
+            absent_full = total_days - present_full
+            percentage_full = (present_full / total_days * 100) if total_days > 0 else 0
             
             reports.append({
                 'student_id': student.id,
                 'student_name': f"{student.user.first_name} {student.user.last_name}".strip() or student.user.username,
                 'classroom': student.classroom.name if student.classroom else 'N/A',
                 'section': student.section.name if student.section else 'N/A',
-                'total_days': total_marked,
-                'present_days': present,
-                'absent_days': absent,
-                'attendance_percentage': round(percentage, 2)
+                'roll_number': student.roll_number or '',
+                'total_days': total_days,
+                'present_days': present_full,
+                'absent_days': absent_full,
+                'attendance_percentage': round(percentage_full, 2),
+                'attendance_details': details
             })
         
         serializer = MonthlyAttendanceSerializer(reports, many=True)

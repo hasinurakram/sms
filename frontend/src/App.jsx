@@ -73,6 +73,23 @@ const StartupRedirect = () => {
   return null;
 };
 
+const PathTracker = () => {
+  const location = useLocation();
+  useEffect(() => {
+    try {
+      const path = location.pathname + (location.search || '');
+      if (!/^\/login(\/|$)/.test(location.pathname)) {
+        sessionStorage.setItem('lastPath', path);
+        const m = location.pathname.match(/^\/school\/([^/]+)/);
+        if (m && m[1]) {
+          localStorage.setItem('currentSchoolId', m[1]);
+        }
+      }
+    } catch (_) {}
+  }, [location.pathname, location.search]);
+  return null;
+};
+
 function App() {
   return (
     <Router>
@@ -83,6 +100,7 @@ function App() {
               <AcademicsProvider>
             <Suspense fallback={<div>Loading...</div>}>
               <StartupRedirect />
+              <PathTracker />
               <Routes>
           {/* হোমপেজে WelcomePage */}
           <Route path="/" element={<WelcomePage />} />

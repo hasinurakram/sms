@@ -63,6 +63,10 @@ const StudentProfile = ({ student }) => {
       <Typography variant="h6" gutterBottom>Student Profile</Typography>
       <Grid container spacing={2}>
         <Grid item xs={12} sm={6}>
+          <Typography variant="body2" color="text.secondary">User ID</Typography>
+          <Typography variant="body1">{user.id ?? 'N/A'}</Typography>
+        </Grid>
+        <Grid item xs={12} sm={6}>
           <Typography variant="body2" color="text.secondary">Name</Typography>
           <Typography variant="body1">
             {`${user.first_name || ''} ${user.last_name || ''}`.trim() || user.username}

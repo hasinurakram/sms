@@ -53,63 +53,130 @@ export const AcademicsProvider = ({ children }) => {
   // Fetch students
   const refreshStudents = useCallback(async (schoolId = currentSchoolId) => {
     if (!schoolId) return;
-    
     let attempts = 0;
     const maxAttempts = 3;
-    
     while (attempts < maxAttempts) {
       try {
-        const response = await scopedGet('/api/academics/students/', schoolId, {}, { timeout: 60000 });
-        const data = Array.isArray(response.data) ? response.data : response.data.results || [];
-        console.log(`Fetched ${data.length} students. Sorting...`);
-        
+        const pageSize = 500;
+        const maxPages = 50;
+        const all = [];
+        const seenIds = new Set();
+        let page = 1;
+        let repeatedStreak = 0;
+        for (; page <= maxPages; page++) {
+          const res = await scopedGet('/api/academics/students/', schoolId, { page, page_size: pageSize }, { timeout: 60000 });
+          const data = res.data;
+          const arr = Array.isArray(data) ? data : (data?.results || []);
+          if (!arr.length) break;
+          let newAdded = 0;
+          for (const s of arr) {
+            const sid = String(s.id ?? s.student_id ?? '');
+            if (!sid) continue;
+            if (!seenIds.has(sid)) {
+              seenIds.add(sid);
+              all.push(s);
+              newAdded++;
+            }
+          }
+          if (newAdded === 0) {
+            repeatedStreak += 1;
+          } else {
+            repeatedStreak = 0;
+          }
+          const hasNext = Boolean((data?.next || '').length);
+          if (hasNext) continue;
+          if (typeof data?.count === 'number') {
+            if (page * pageSize >= data.count) break;
+          } else {
+            if (arr.length < pageSize) break;
+            if (repeatedStreak >= 2) break;
+          }
+        }
+        const dataAll = all;
+        console.log(`Fetched ${dataAll.length} students across pages. Sorting...`);
         let sorted = [];
         try {
-          sorted = [...data].sort((a, b) => {
+          sorted = [...dataAll].sort((a, b) => {
             const rA = String(a?.roll_number ?? '').trim();
             const rB = String(b?.roll_number ?? '').trim();
-    
             const emptyA = !rA;
             const emptyB = !rB;
-    
             if (emptyA && !emptyB) return 1;
             if (!emptyA && emptyB) return -1;
             if (emptyA && emptyB) return 0;
-    
-            // Try numeric sort for non-empty values
             const ar = parseInt(rA.replace(/\D/g, ''), 10);
             const br = parseInt(rB.replace(/\D/g, ''), 10);
-            
             const aNum = Number.isNaN(ar) ? null : ar;
             const bNum = Number.isNaN(br) ? null : br;
-            
-            // If both have extractable numbers, compare them first
-            if (aNum !== null && bNum !== null && aNum !== bNum) {
-                return aNum - bNum;
-            }
-            
-            // Fallback to string comparison
+            if (aNum !== null && bNum !== null && aNum !== bNum) return aNum - bNum;
             return rA.localeCompare(rB, undefined, { numeric: true, sensitivity: 'base' });
           });
         } catch (sortErr) {
           console.error('Sorting failed, using unsorted data:', sortErr);
-          sorted = data;
+          sorted = dataAll;
         }
-        
         setStudents(sorted);
         return sorted;
       } catch (error) {
         attempts++;
         console.error(`Error fetching students (attempt ${attempts}/${maxAttempts}):`, error);
-        
-        if (attempts >= maxAttempts) {
-          throw error;
-        }
-        
-        // Wait before retrying (1s, 2s, etc.)
+        if (attempts >= maxAttempts) throw error;
         await new Promise(resolve => setTimeout(resolve, attempts * 1000));
       }
     }
+  }, [currentSchoolId]);
+
+  const fetchStudentsScoped = useCallback(async (schoolId = currentSchoolId, filters = {}) => {
+    if (!schoolId) return [];
+    let all = [];
+    try {
+      const pageSize = 500;
+      const maxPages = 30;
+      const seenIds = new Set();
+      for (let page = 1; page <= maxPages; page++) {
+        const params = { page, page_size: pageSize, ...filters };
+        const res = await scopedGet('/api/academics/students/', schoolId, params, { timeout: 60000 });
+        const data = res.data;
+        const arr = Array.isArray(data) ? data : (data?.results || []);
+        if (!arr.length) break;
+        for (const s of arr) {
+          const sid = String(s.id ?? s.student_id ?? '');
+          if (!sid || seenIds.has(sid)) continue;
+          seenIds.add(sid);
+          all.push(s);
+        }
+        const hasNext = Boolean((data?.next || '').length);
+        if (hasNext) continue;
+        if (typeof data?.count === 'number') {
+          if (page * pageSize >= data.count) break;
+        } else {
+          if (arr.length < pageSize) break;
+        }
+      }
+    } catch (error) {
+        return [];
+    }
+      let sorted = [];
+      try {
+        sorted = [...all].sort((a, b) => {
+          const rA = String(a?.roll_number ?? '').trim();
+          const rB = String(b?.roll_number ?? '').trim();
+          const emptyA = !rA;
+          const emptyB = !rB;
+          if (emptyA && !emptyB) return 1;
+          if (!emptyA && emptyB) return -1;
+          if (emptyA && emptyB) return 0;
+          const ar = parseInt(rA.replace(/\D/g, ''), 10);
+          const br = parseInt(rB.replace(/\D/g, ''), 10);
+          const aNum = Number.isNaN(ar) ? null : ar;
+          const bNum = Number.isNaN(br) ? null : br;
+          if (aNum !== null && bNum !== null && aNum !== bNum) return aNum - bNum;
+          return rA.localeCompare(rB, undefined, { numeric: true, sensitivity: 'base' });
+        });
+      } catch (_) {
+        sorted = all;
+      }
+      return sorted;
   }, [currentSchoolId]);
 
   // Fetch subjects
@@ -177,6 +244,7 @@ export const AcademicsProvider = ({ children }) => {
     refreshSubjects,
     refreshAll,
     clearData,
+    fetchStudentsScoped,
     
     // Setters (for external updates)
     setClassrooms,

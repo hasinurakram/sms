@@ -75,6 +75,7 @@ export default function AttendancePageNew() {
   const [selectedStudent, setSelectedStudent] = useState('');
   const autoSaveTimerRef = useRef(null);
   const [autoSaving, setAutoSaving] = useState(false);
+  const [takenByInfo, setTakenByInfo] = useState(null);
 
   // Load classrooms on mount
   useEffect(() => {
@@ -96,7 +97,7 @@ export default function AttendancePageNew() {
     if (selectedClassroom) {
       loadStudents();
     }
-  }, [selectedClassroom, selectedSection, date]);
+  }, [selectedClassroom, selectedSection]);
 
   const loadClassrooms = async () => {
     try {
@@ -185,6 +186,23 @@ export default function AttendancePageNew() {
       filteredRecords.forEach(record => {
         attendanceMap[record.student] = record.present;
       });
+      const withMeta = filteredRecords.filter(r => r.taken_by || r.taken_by_name);
+      let info = null;
+      if (withMeta.length > 0) {
+        withMeta.sort((a, b) => {
+          const ta = new Date(a.created_at || a.date).getTime();
+          const tb = new Date(b.created_at || b.date).getTime();
+          return tb - ta;
+        });
+        const r = withMeta[0];
+        info = {
+          name: (r.taken_by && r.taken_by.name) ? r.taken_by.name : (r.taken_by_name || ''),
+          username: (r.taken_by && r.taken_by.username) ? r.taken_by.username : '',
+          date: r.date,
+          created_at: r.created_at
+        };
+      }
+      setTakenByInfo(info);
 
       // Initialize attendance state
       const initialAttendance = {};
@@ -202,6 +220,29 @@ export default function AttendancePageNew() {
       setLoading(false);
     }
   };
+
+  // Refresh attendance when date changes without reloading students list
+  useEffect(() => {
+    (async () => {
+      if (!selectedClassroom || students.length === 0) return;
+      try {
+        const attendanceRes = await scopedGet('/api/attendance/records/', id, { date }, { timeout: 15000 });
+        const studentIdSet = new Set(students.map(s => s.id));
+        const filteredRecords = (Array.isArray(attendanceRes.data) ? attendanceRes.data : []).filter(rec => studentIdSet.has(rec.student));
+        const attendanceMap = {};
+        filteredRecords.forEach(record => {
+          attendanceMap[record.student] = record.present;
+        });
+        const initialAttendance = {};
+        students.forEach(student => {
+          initialAttendance[student.id] = attendanceMap[student.id] !== undefined 
+            ? attendanceMap[student.id] 
+            : true;
+        });
+        setAttendance(initialAttendance);
+      } catch (_) {}
+    })();
+  }, [date]);
 
   const toggleAttendance = (studentId) => {
     setAttendance(prev => ({
@@ -277,7 +318,9 @@ export default function AttendancePageNew() {
         if (response.data.errors && response.data.errors.length > 0) {
           console.warn('Some records had errors:', response.data.errors);
         }
-        loadDailySummary();
+        if (!silent) {
+          loadDailySummary();
+        }
       } else {
         if (!silent) toast.error('Failed to save some attendance records');
       }
@@ -456,6 +499,21 @@ export default function AttendancePageNew() {
           </Grid>
         </Grid>
       </Paper>
+      {takenByInfo && (
+        <Paper sx={{ p: 2, mb: 2, borderRadius: 2, borderLeft: '4px solid', borderColor: 'primary.main' }}>
+          <Stack direction="row" spacing={2} alignItems="center">
+            <CalendarIcon color="primary" />
+            <Box>
+              <Typography variant="body1">
+                আজকের হাজিরা দিয়েছেন: {takenByInfo.name || takenByInfo.username || 'N/A'}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                সময়: {dayjs(takenByInfo.created_at || takenByInfo.date).format('YYYY-MM-DD HH:mm')}
+              </Typography>
+            </Box>
+          </Stack>
+        </Paper>
+      )}
 
       {/* Statistics Cards */}
       {students.length > 0 && (

@@ -45,6 +45,7 @@ import api from '../utils/api';
 import StudentFeeSlipCard from '../components/StudentFeeSlipCard';
 import { useSchool } from '../context/SchoolContext';
 import { isAuthenticated } from '../utils/auth';
+import { useAuth } from '../context/AuthContext';
 
 const StudentAvatar = ({ photo, name, size = 40 }) => {
   if (photo) {
@@ -72,6 +73,9 @@ const FeesPage = () => {
   const navigate = useNavigate();
   // Removed page-level authentication check to allow public view
   const { school } = useSchool(); // School context provides current school if available
+  const { user } = useAuth();
+  const roleLower = String(user?.profile?.role || user?.role || '').toLowerCase();
+  const canAdminEdit = !!(user?.is_superuser || user?.is_staff || roleLower === 'admin' || roleLower === 'superadmin');
   const [fees, setFees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -143,6 +147,42 @@ const FeesPage = () => {
   const removePmRow = (rowId) => setPmInputs(prev => prev.filter(r => r.id !== rowId));
   const theme = useTheme();
   const isSmallScreen = useMediaQuery(theme.breakpoints.down('sm'));
+  const [adjDialogOpen, setAdjDialogOpen] = useState(false);
+  const [classAdj, setClassAdj] = useState({});
+  const handleOpenAdjDialog = () => {
+    try {
+      const raw = localStorage.getItem(`classDuesAdjustmentOnce:${schoolId}`);
+      const parsed = raw ? JSON.parse(raw) : {};
+      const init = {};
+      (classes || []).forEach(cls => {
+        const name = cls?.name || String(cls?.id || '');
+        init[name] = Number(parsed?.[name] || 0) || 0;
+      });
+      setClassAdj(init);
+    } catch (_) {
+      const init = {};
+      (classes || []).forEach(cls => {
+        const name = cls?.name || String(cls?.id || '');
+        init[name] = 0;
+      });
+      setClassAdj(init);
+    }
+    setAdjDialogOpen(true);
+  };
+  const handleSaveAdj = () => {
+    try {
+      const obj = {};
+      Object.entries(classAdj || {}).forEach(([k, v]) => {
+        const num = Number(v || 0) || 0;
+        if (num > 0) obj[k] = num;
+      });
+      localStorage.setItem(`classDuesAdjustmentOnce:${schoolId}`, JSON.stringify(obj));
+      setAdjDialogOpen(false);
+      setSnackbar({ open: true, message: 'বকেয়া এডজাস্ট সংরক্ষিত', severity: 'success' });
+    } catch (_) {
+      setSnackbar({ open: true, message: 'সংরক্ষণে সমস্যা হয়েছে', severity: 'error' });
+    }
+  };
   
   // Helper function to set fees for a specific class
   const setClassWiseFees = async (classId, monthlyTuition, sessionFee, halfYearlyAmount, annualAmount) => {
@@ -270,8 +310,13 @@ const FeesPage = () => {
   // Function to set class-wise fees as per user requirements
   const setupClassWiseFees = async () => {
     try {
+      setIsSettingClassFees(true);
       if (!isAuthenticated()) {
         navigate('/login');
+        return;
+      }
+      if (!canAdminEdit) {
+        setSnackbar({ open: true, message: 'আপনার এই কাজের অনুমতি নেই। এডমিন হিসাবে লগইন করুন।', severity: 'error' });
         return;
       }
       if (!selectedClass) {
@@ -317,12 +362,15 @@ const FeesPage = () => {
     } catch (e) {
       console.error('setupClassWiseFees error:', e.response?.data || e.message);
       setSnackbar({ open: true, message: 'ক্লাস ভিত্তিক ফি সেট করতে সমস্যা হয়েছে', severity: 'error' });
+    } finally {
+      setIsSettingClassFees(false);
     }
   };
   
   // Class Fee Plan dialog state
   const [isPlanDialogOpen, setIsPlanDialogOpen] = useState(false);
   const [isSavingPlan, setIsSavingPlan] = useState(false);
+  const [isSettingClassFees, setIsSettingClassFees] = useState(false);
   const [planForm, setPlanForm] = useState({
     monthlyAmount: '',
     halfYearlyAmount: '',
@@ -723,6 +771,10 @@ const FeesPage = () => {
       navigate('/login');
       return;
     }
+    if (!canAdminEdit) {
+      setSnackbar({ open: true, message: 'আপনার এই কাজের অনুমতি নেই। এডমিন হিসাবে লগইন করুন।', severity: 'error' });
+      return;
+    }
     if (!selectedClass) {
       setSnackbar({ open: true, message: 'শ্রেণি নির্বাচন করুন', severity: 'error' });
       return;
@@ -790,11 +842,7 @@ const FeesPage = () => {
           const name = ['জানুয়ারী','ফেব্রুয়ারী','মার্চ','এপ্রিল','মে','জুন','জুলাই','আগষ্ট','সেপ্টেম্বর','অক্টোবর','নভেম্বর','ডিসেম্বর'][mi] + ' মাসের বেতন';
           const payload = {
             school_id: schoolIdNum,
-            school: schoolIdNum,
-            classroom: classIdNum,
             classroom_id: classIdNum,
-            class_id: classIdNum,
-            class: classIdNum,
             amount: Number(amt),
             frequency: 'monthly',
             month: mi + 1,
@@ -851,11 +899,7 @@ const FeesPage = () => {
             try {
               const payload = {
                 school_id: schoolIdNum,
-                school: schoolIdNum,
-                classroom: classIdNum,
                 classroom_id: classIdNum,
-                class_id: classIdNum,
-                class: classIdNum,
                 amount: Number(meta.amount),
                 frequency: 'one_time',
                 name: meta.name,
@@ -1365,6 +1409,17 @@ const FeesPage = () => {
               if (mAmt > 0) {
                 rowAmount = mAmt;
                 rowDue = Math.max(0, rowAmount - paid);
+              } else {
+                // Fallback heuristic for school 19 when no monthly structure exists
+                const cname = String(studentObj?.classroom?.name || '');
+                let order = 0;
+                const m = cname.match(/\d+/);
+                if (m) order = parseInt(m[0], 10);
+                const fallback = order >= 1 && order <= 5 ? 250 : (order >= 6 && order <= 10 ? 150 : 0);
+                if (fallback > 0) {
+                  rowAmount = fallback;
+                  rowDue = Math.max(0, rowAmount - paid);
+                }
               }
             }
           } catch (_) {}
@@ -1385,12 +1440,40 @@ const FeesPage = () => {
         };
         const filtered = rows.filter(r => {
           if (isExamRow(r)) {
+            const nm = String(r.name || '').toLowerCase();
+            const currentMonth = new Date().getMonth() + 1;
+            const isHalf = /(half|mid|অর্ধ)/.test(nm);
+            const isAnnual = /(annual|final|বার্ষিক)/.test(nm);
+            let scheduleOk = false;
+            if (isHalf) scheduleOk = currentMonth >= 5;
+            else if (isAnnual) scheduleOk = currentMonth >= 11;
+            else scheduleOk = false;
+            if (!scheduleOk) return false;
             const dd = toDate(r.due_date);
-            return !!dd && dd <= today;
+            return !dd || dd <= today;
           }
           return true;
         });
         rows = filtered;
+      } catch (_) {}
+      // Show only monthly tuition for current year up to current month
+      try {
+        const currentMonth = new Date().getMonth() + 1;
+        const isTuition = (r) => String(r.type || '').toLowerCase() === 'tuition';
+        const inRangeMonth = (r) => {
+          const m = Number(r.month || 0);
+          if (!Number.isFinite(m) || m === 0) return true;
+          return m >= 1 && m <= currentMonth;
+        };
+        // Deduplicate monthly rows by month+amount+name
+        const seen = new Set();
+        rows = rows.filter(r => {
+          if (!isTuition(r) || !inRangeMonth(r)) return false;
+          const key = `${r.month || ''}|${r.amount}|${r.name || ''}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
       } catch (_) {}
       const totals = rows.reduce((acc, r) => ({ amount: acc.amount + r.amount, paid: acc.paid + r.paid, due: acc.due + r.due }), { amount: 0, paid: 0, due: 0 });
 
@@ -1407,6 +1490,7 @@ const FeesPage = () => {
             return sid && String(sid) === String(student?.classroom?.id);
           })
           const rows = [];
+          let hasMonthly = false;
           for (const s of list) {
             const amt = Number(s.amount ?? s.default_amount ?? s.fee_amount ?? s.price ?? 0);
             const freq = String(s.frequency || '').toLowerCase();
@@ -1415,9 +1499,32 @@ const FeesPage = () => {
               for (let m = 1; m <= currentMonth; m++) {
                 rows.push({ id: `struct-${s.id}-m${m}`, name: `মাসিক বেতন(${monthsBn[m-1]})`, amount: amt, paid: 0, due: amt, due_date: null, type: rtype, month: m });
               }
+              hasMonthly = true;
             } else {
-              rows.push({ id: `struct-${s.id}`, name: s.name || getStructureLabel(s, s.id), amount: amt, paid: 0, due: amt, due_date: null, type: rtype, month: null });
+              // Skip non-tuition items in preview per requirement (only monthly fees should appear)
+              continue;
             }
+          }
+          // If no monthly structures present, try deriving a monthly plan and add preview tuition rows
+          if (!hasMonthly) {
+            try {
+              const clsIdRaw = student?.classroom?.id ?? student?.classroom ?? selectedClass;
+              const clsIdStr = clsIdRaw ? String(clsIdRaw) : '';
+              const plan = deriveClassPlan(clsIdStr) || {};
+              let mAmt = Number(plan.monthlyAmount || 0);
+              if (mAmt <= 0 && Number(schoolId) === 19) {
+                const cname = String(student?.classroom?.name || '');
+                let order = 0;
+                const m = cname.match(/\d+/);
+                if (m) order = parseInt(m[0], 10);
+                mAmt = order >= 1 && order <= 5 ? 250 : (order >= 6 && order <= 10 ? 150 : 0);
+              }
+              if (mAmt > 0) {
+                for (let m = 1; m <= currentMonth; m++) {
+                  rows.push({ id: `derived-${clsIdStr}-m${m}`, name: `মাসিক বেতন(${monthsBn[m-1]})`, amount: mAmt, paid: 0, due: mAmt, due_date: null, type: 'tuition', month: m });
+                }
+              }
+            } catch (_) {}
           }
           return rows;
         })();
@@ -1593,10 +1700,11 @@ const FeesPage = () => {
       } : {};
       const assignmentId = selectedAssignment.id || selectedAssignment._id || selectedAssignment.assignment || selectedAssignment.assignment_id;
       const payloadCandidates = [
-        { assignment: assignmentId, ...common, ...methodExtras },
-        { assignment_id: assignmentId, ...common, ...methodExtras },
-        { fee_assignment: assignmentId, ...common, ...methodExtras },
-        { student_fee_assignment: assignmentId, ...common, ...methodExtras }
+        { fee_assignment_id: assignmentId, payment_status: 'completed', ...common, ...methodExtras },
+        { assignment_id: assignmentId, payment_status: 'completed', ...common, ...methodExtras },
+        { fee_assignment: assignmentId, payment_status: 'completed', ...common, ...methodExtras },
+        { student_fee_assignment: assignmentId, payment_status: 'completed', ...common, ...methodExtras },
+        { assignment: assignmentId, payment_status: 'completed', ...common, ...methodExtras }
       ];
       let resp;
       let lastErr;
@@ -1613,6 +1721,12 @@ const FeesPage = () => {
       setSnackbar({ open: true, message: 'পেমেন্ট সংরক্ষণ করা হয়েছে', severity: 'success' });
       handleClosePaymentDialog();
       await fetchFees();
+      try {
+        if (selectedLedgerStudentId) {
+          await fetchStudentLedger(String(selectedLedgerStudentId));
+          await fetchPaymentHistory(String(selectedLedgerStudentId));
+        }
+      } catch (_) {}
     } catch (e) {
       console.error('Payment create error:', e.response?.data || e.message);
       const msg = e.response?.data?.detail || e.response?.data || 'পেমেন্ট সংরক্ষণ করতে সমস্যা হয়েছে';
@@ -2222,8 +2336,11 @@ const FeesPage = () => {
             <Button variant="outlined" onClick={handleOpenPlanDialog} disabled={!selectedClass}>
               মাসিক বেতন, পরীক্ষার ফি
             </Button>
-            <Button variant="contained" color="secondary" startIcon={<AddIcon />} onClick={setupClassWiseFees}>
+            <Button variant="contained" color="secondary" startIcon={<AddIcon />} onClick={setupClassWiseFees} disabled={!selectedClass || isSettingClassFees || !canAdminEdit}>
               ক্লাস ভিত্তিক ফি সেট করুন
+            </Button>
+            <Button variant="outlined" onClick={handleOpenAdjDialog}>
+              মোট বকেয়া এডজাস্ট
             </Button>
             <Button variant="contained" startIcon={<AddIcon />} onClick={handleOpenDialog}>
               ফি যোগ করুন
@@ -2242,7 +2359,7 @@ const FeesPage = () => {
             <Paper sx={{ p: 2, mb: 2 }}>
               <Typography variant="h6" gutterBottom>শিক্ষার্থীর লেজার</Typography>
               <Grid container spacing={2} alignItems="center">
-                <Grid item xs={12} sm={4}>
+                <Grid size={{ xs: 12, sm: 4 }}>
                   <FormControl fullWidth>
                     <InputLabel id="ledger-class-label">শ্রেণি নির্বাচন করুন</InputLabel>
                     <Select
@@ -2262,7 +2379,7 @@ const FeesPage = () => {
                     </Select>
                   </FormControl>
                 </Grid>
-                <Grid item xs={12} sm={4}>
+                <Grid size={{ xs: 12, sm: 4 }}>
                   <FormControl fullWidth disabled={!selectedClass || isLoadingStudents}>
                     <InputLabel id="ledger-student-label">শিক্ষার্থী নির্বাচন করুন</InputLabel>
                     <Select
@@ -2282,7 +2399,7 @@ const FeesPage = () => {
                     </Select>
                   </FormControl>
                 </Grid>
-                <Grid item xs={12} sm={4}>
+                <Grid size={{ xs: 12, sm: 4 }}>
                   <Box display="flex" gap={1} justifyContent="flex-end">
                     <Button
                       variant="outlined"
@@ -2776,7 +2893,7 @@ const FeesPage = () => {
           <DialogContent>
             <Box component="form" onSubmit={handleSubmit} sx={{ mt: 1 }}>
               <Grid container spacing={2}>
-                <Grid item xs={12} sm={6}>
+                <Grid size={{ xs: 12, sm: 6 }}>
                   <FormControl fullWidth error={!!formErrors.classId}>
                     <InputLabel id="class-select-label">শ্রেণি নির্বাচন করুন *</InputLabel>
                     <Select
@@ -2804,11 +2921,11 @@ const FeesPage = () => {
                   </FormControl>
                 </Grid>
 
-                <Grid item xs={12} sm={6}>
+                <Grid size={{ xs: 12, sm: 6 }}>
                   {renderStudentDropdown()}
                 </Grid>
 
-                <Grid item xs={12} sm={6}>
+                <Grid size={{ xs: 12, sm: 6 }}>
                   <FormControl fullWidth error={!!formErrors.feeStructureId}>
                     <InputLabel id="fee-structure-label">Fee Structure *</InputLabel>
                     <Select
@@ -2923,6 +3040,35 @@ const FeesPage = () => {
               </DialogActions>
             </Box>
           </DialogContent>
+        </Dialog>
+        <Dialog open={adjDialogOpen} onClose={() => setAdjDialogOpen(false)} fullWidth maxWidth="sm">
+          <DialogTitle>মোট বকেয়া এডজাস্ট</DialogTitle>
+          <DialogContent dividers>
+            <TextField
+              fullWidth
+              label="মোট থেকে কমাবেন (৳)"
+              type="number"
+              value={Number(classAdj?.__total || 0) || 0}
+              onChange={(e) => {
+                const v = e.target.value;
+                setClassAdj(prev => ({ ...(prev||{}), __total: v }));
+              }}
+              size="small"
+            />
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setAdjDialogOpen(false)}>বন্ধ</Button>
+            <Button variant="contained" onClick={() => {
+              try {
+                const amt = Number(classAdj?.__total || 0) || 0;
+                localStorage.setItem(`adminDuesAdjustment:${schoolId}`, String(amt));
+                setAdjDialogOpen(false);
+                setSnackbar({ open: true, message: 'এডজাস্টমেন্ট সংরক্ষিত', severity: 'success' });
+              } catch (_) {
+                setSnackbar({ open: true, message: 'সংরক্ষণে সমস্যা হয়েছে', severity: 'error' });
+              }
+            }}>সংরক্ষণ</Button>
+          </DialogActions>
         </Dialog>
 
         {/* Class Fee Plan Dialog */}
@@ -3141,7 +3287,7 @@ const FeesPage = () => {
           </DialogContent>
           <DialogActions sx={{ p: 2 }}>
             <Button onClick={handleClosePlanDialog} color="inherit">Cancel</Button>
-            <Button onClick={saveClassPlan} variant="contained" disabled={isSavingPlan || !selectedClass} startIcon={isSavingPlan ? <CircularProgress size={20} /> : null}>
+            <Button onClick={saveClassPlan} variant="contained" disabled={isSavingPlan || !selectedClass || !canAdminEdit} startIcon={isSavingPlan ? <CircularProgress size={20} /> : null}>
               {isSavingPlan ? 'Saving...' : 'Save Plan'}
             </Button>
           </DialogActions>
@@ -3539,7 +3685,11 @@ const FeesPage = () => {
                     reference: v.docText || undefined,
                   };
                   const form = new FormData();
-                  Object.entries({ ...payloadBase, assignment_id: assignId }).forEach(([k, val]) => { if (val !== undefined && val !== null) form.append(k, val); });
+                  Object.entries({ 
+                    ...payloadBase, 
+                    fee_assignment_id: assignId, 
+                    payment_status: 'completed' 
+                  }).forEach(([k, val]) => { if (val !== undefined && val !== null) form.append(k, val); });
                   if (v.docFile) form.append('document', v.docFile);
 
                   let ok = false;
@@ -3550,8 +3700,7 @@ const FeesPage = () => {
                   } catch (_) {
                     // Try JSON variations
                     const candidates = [
-                      { fee_assignment: assignId, ...payloadBase },
-                      { fee_assignment_id: assignId, ...payloadBase },
+                      { fee_assignment_id: assignId, payment_status: 'completed', ...payloadBase },
                     ];
                     for (const c of candidates) {
                       try { await api.post('/api/fees/payments/', c); ok = true; break; } catch (e) { /* try next */ }

@@ -21,7 +21,7 @@ export const getDashboardStats = async (schoolId = null, year = null) => {
     const response = await api.get('/api/dashboard-stats/', {
       ...config,
       params: { school_id: schoolId || undefined, year: year || undefined, _t: Date.now() },
-      timeout: 15000
+      timeout: 45000
     });
     console.log('Dashboard stats response:', response.data);
     return response.data;

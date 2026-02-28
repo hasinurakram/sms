@@ -17,7 +17,6 @@ export function saveTokens(access, refresh = null) {
 export function clearTokens() {
   localStorage.removeItem('accessToken');
   localStorage.removeItem('refreshToken');
-  localStorage.removeItem('currentSchoolId');
   delete api.defaults.headers.common['Authorization'];
 }
 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { isAuthenticated } from '../utils/auth';
+import { useAuth } from '../context/AuthContext';
 import {
   Card,
   CardContent,
@@ -117,6 +118,10 @@ export default function ProfileCard({
   const role = (localProfile?.role ?? profile?.role) || 'User';
   const displayRole = (role?.toLowerCase?.() === 'parent') ? 'অভিভাবক' : role;
   const roleLower = role?.toLowerCase?.();
+  const { user: authUser } = useAuth();
+  const actorRoleLower = String(authUser?.profile?.role || authUser?.role || '').toLowerCase();
+  const canAdminEdit = !!(authUser?.is_superuser || authUser?.is_staff || actorRoleLower === 'admin' || actorRoleLower === 'superadmin');
+  const denyMsg = 'আপনি  এই কাজটি করার জন্য অনুমোদিত ব্যাক্তি নন, দয়া করে এডমিন অথবা প্রধান শিক্ষকের সাথে যোগাযোগ করুন, ধন্যবাদ।';
 
   
 
@@ -144,6 +149,7 @@ export default function ProfileCard({
   })();
 
   const handleEdit = () => {
+    if (!canAdminEdit) { toast.error(denyMsg); return; }
     setFormData({
       first_name: user?.first_name || '',
       last_name: user?.last_name || '',
@@ -589,6 +595,7 @@ export default function ProfileCard({
       navigate('/login');
       return;
     }
+    if (!canAdminEdit) { toast.error(denyMsg); return; }
     setDeleting(true);
     try {
       // Determine primary endpoint to delete profile entity first
@@ -818,6 +825,10 @@ export default function ProfileCard({
                   navigate('/login');
                   return;
                 }
+                if (!canAdminEdit) {
+                  try { toast.error(denyMsg); } catch (_) {}
+                  return;
+                }
                 setDeleteDialogOpen(true); 
               }} sx={{ flex: 1, minWidth: '80px', borderRadius: 2 }}>
                 Delete
@@ -849,6 +860,10 @@ export default function ProfileCard({
                 <Grid size={{ xs: 12 }}>
                   <Typography variant="caption" color="text.secondary">Username</Typography>
                   <Typography variant="body1">@{user?.username}</Typography>
+                </Grid>
+                <Grid size={{ xs: 12 }}>
+                  <Typography variant="caption" color="text.secondary">User ID</Typography>
+                  <Typography variant="body1">{user?.id ?? localProfile?.id ?? 'N/A'}</Typography>
                 </Grid>
                 {showRole && (
                   <Grid size={{ xs: 12 }}>
