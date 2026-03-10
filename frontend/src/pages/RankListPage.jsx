@@ -127,11 +127,23 @@ const RankListPage = () => {
                 const rResp = await scopedGet('/api/results/results/', schoolId, primaryParams, { timeout: 30000 });
                 let rData = Array.isArray(rResp.data) ? rResp.data : (rResp.data?.results || []);
                 let arr = Array.isArray(rData) ? rData : [];
+                if (selectedSection) {
+                  const sIdStr = String(selectedSection);
+                  arr = arr.filter(it => {
+                    const secId = it?.section?.id ?? it?.section ?? it?.student?.section?.id ?? null;
+                    return String(secId || '') === sIdStr;
+                  });
+                }
                 // Fallback: without section filter if empty
                 if (!arr.length && selectedSection) {
                   const rRespNoSec = await scopedGet('/api/results/results/', schoolId, { examination: picked.id, classroom: selectedClass, page_size: 3000 }, { timeout: 30000 });
                   rData = Array.isArray(rRespNoSec.data) ? rRespNoSec.data : (rRespNoSec.data?.results || []);
                   arr = Array.isArray(rData) ? rData : [];
+                  const sIdStr2 = String(selectedSection);
+                  arr = arr.filter(it => {
+                    const secId = it?.section?.id ?? it?.section ?? it?.student?.section?.id ?? null;
+                    return String(secId || '') === sIdStr2;
+                  });
                 }
                 const byStu = new Map();
                 for (const r of arr) {
@@ -176,10 +188,59 @@ const RankListPage = () => {
             page_size: 1000
           }
         })
-          .then(res => {
+          .then(async res => {
             const data = Array.isArray(res.data) ? res.data : (res.data?.results || res.data?.data || []);
             const list = Array.isArray(data) ? data : [];
             if (!list.length) {
+              try {
+                const paramsBase = { exam_type: selectedExamType, classroom: selectedClass, section: selectedSection, year: selectedYear, page_size: 1000 };
+                const attempts = [
+                  paramsBase,
+                  { ...paramsBase, section: undefined },
+                  { ...paramsBase, classroom: undefined, section: undefined }
+                ];
+                let byStuLocal = new Map();
+                for (const params of attempts) {
+                  let page = 1;
+                  const collected = [];
+                  while (true) {
+                    const rLocal = await scopedGet('/api/results/results/', schoolId, { ...params, page }, { timeout: 30000 });
+                    const arrLocal = Array.isArray(rLocal.data) ? rLocal.data : (rLocal.data?.results || rLocal.data?.data || []);
+                    if (arrLocal && arrLocal.length) collected.push(...arrLocal);
+                    const hasNext = Boolean((rLocal.data?.next || '').length);
+                    if (!hasNext) break;
+                    page += 1;
+                    if (page > 20) break;
+                  }
+                  byStuLocal = new Map();
+                  const sIdStr = String(selectedSection || '');
+                  for (const r of (collected || [])) {
+                    const sid = r?.student?.id ?? r?.student_id ?? r?.student;
+                    if (!sid) continue;
+                    // Strictly keep selected section
+                    const secId = r?.section?.id ?? r?.section ?? r?.student?.section?.id ?? null;
+                    if (selectedSection && String(secId || '') !== sIdStr) continue;
+                    const key = String(sid);
+                    if (!byStuLocal.has(key)) byStuLocal.set(key, []);
+                    byStuLocal.get(key).push(r);
+                  }
+                  if (byStuLocal.size > 0) break;
+                }
+                if (byStuLocal.size > 0) {
+                  const rows = Array.from(byStuLocal.entries()).map(([sid, items]) => {
+                    const stu = items[0]?.student || { id: sid };
+                    const total = items.reduce((sum, it) => sum + (parseFloat(it.total_obtained) || 0), 0);
+                    return { student: stu, total_marks_obtained: Math.round(total) };
+                  }).sort((a, b) => (b.total_marks_obtained || 0) - (a.total_marks_obtained || 0))
+                    .map((row, idx) => ({ ...row, _new_roll: idx + 1, rank: idx + 1 }));
+                  setRankings(rows);
+                  setResultsByStudent(byStuLocal);
+                  setErrorMessage('');
+                  return;
+                }
+              } catch (_) {
+                // fall through to error
+              }
               setErrorMessage(`দুঃখিত ${selectedYear} সালের রেজাল্ট অত্র বিদ্যালয়ে এখনও ইনপুট দেওয়া হয়নি, দয়া করে এ্যাডমিন অথবা অত্র বিদ্যালয়ের প্রধান শিক্ষকের সাথে যোগাযোগ করুন। ধন্যবাদ।`);
               setRankings([]);
               return;
@@ -440,12 +501,20 @@ const RankListPage = () => {
       const r1 = map.get('bangla_1st');
       const r2 = map.get('bangla_2nd');
       if (r1 || r2) r = { total: resultTotal(r1) + resultTotal(r2) };
+      if (!r) {
+        const rc = map.get('bangla_combined');
+        if (rc) r = rc;
+      }
       return r;
     }
     if (item?.canonical === 'english_combined') {
       const r1 = map.get('english_1st');
       const r2 = map.get('english_2nd');
       if (r1 || r2) r = { total: resultTotal(r1) + resultTotal(r2) };
+      if (!r) {
+        const rc = map.get('english_combined');
+        if (rc) r = rc;
+      }
       return r;
     }
     if (item?.id) r = map.get(`id:${String(item.id)}`);
@@ -557,8 +626,51 @@ const RankListPage = () => {
     return arr;
   }, [rankings, sortBy, resultsByStudent, displaySubjects]);
 
+  const computeFailedCount = (sid) => {
+    try {
+      const map = getStudentResultsMap(sid);
+      let count = 0;
+      for (const item of displaySubjects) {
+        const r = resolveResult(sid, item, map);
+        const val = r ? resultTotal(r) : null;
+        const fail = r ? (
+          (r?.grade === 'F') ||
+          (r?.is_passed === false) ||
+          (typeof val === 'number' && val < passMarks)
+        ) : false;
+        if (fail) count += 1;
+      }
+      return count;
+    } catch (_) {
+      return 0;
+    }
+  };
+
   const handlePrint = () => {
-    window.print();
+    try {
+      const style = document.createElement('style');
+      style.id = 'ranklist-print-style';
+      style.innerHTML = `
+        @media print {
+          @page { size: A4 landscape; margin: 10mm; }
+          body * { visibility: hidden !important; }
+          .rank-print, .rank-print * { visibility: visible !important; }
+          .rank-print { position: static !important; left: auto !important; top: auto !important; width: 100% !important; }
+          .no-print { display: none !important; }
+          .rank-print table { font-size: 10pt; border-collapse: collapse; width: 100%; }
+          .rank-print th, .rank-print td { padding: 2px 4px; }
+          .rank-print thead th { position: sticky; top: 0; background: #f0f0f0; }
+        }
+      `;
+      document.head.appendChild(style);
+      window.print();
+      setTimeout(() => {
+        const node = document.getElementById('ranklist-print-style');
+        if (node) document.head.removeChild(node);
+      }, 300);
+    } catch (_) {
+      window.print();
+    }
   };
 
   const downloadPDF = async () => {
@@ -760,13 +872,8 @@ const RankListPage = () => {
                 <TableCell>Name</TableCell>
                 <TableCell>Class</TableCell>
                 <TableCell>Section</TableCell>
-                <TableCell>Group</TableCell>
                 <TableCell>Total Marks</TableCell>
-                <TableCell>Result Status</TableCell>
                 <TableCell>Failed Subjects</TableCell>
-                <TableCell>AVG. GPA</TableCell>
-                <TableCell>AVG. Grade</TableCell>
-                <TableCell>Remarks</TableCell>
                 <TableCell>New Roll</TableCell>
                 {displaySubjects.map(item => <TableCell key={item.canonical} align="center">{item.label}</TableCell>)}
               </TableRow>
@@ -778,29 +885,8 @@ const RankListPage = () => {
                   <TableCell>{`${row.student?.user?.first_name || ''} ${row.student?.user?.last_name || ''}`.trim() || row.student?.user?.username || 'N/A'}</TableCell>
                   <TableCell>{row.student?.classroom?.name || classrooms.find(c => String(c.id) === String(selectedClass))?.name || 'N/A'}</TableCell>
                   <TableCell>{row.student?.section?.name ?? 'N/A'}</TableCell>
-                  <TableCell>{row.student?.group ?? 'N/A'}</TableCell>
                   <TableCell>{getStudentDisplayedTotal(row?.student?.id ?? row?.student_id ?? row?.student) ?? row.total_marks_obtained ?? 'N/A'}</TableCell>
-                  <TableCell>
-                    <Chip
-                      label={row.is_passed ? 'Passed' : 'Failed'}
-                      color={row.is_passed ? 'success' : 'error'}
-                      size="small"
-                    />
-                  </TableCell>
-                  <TableCell>{row.failed_subjects_count ?? 0}</TableCell>
-                  <TableCell>{row.cgpa ?? 'N/A'}</TableCell>
-                  <TableCell>
-                    {row.grade ? <Chip
-                      label={row.grade}
-                      size="small"
-                      sx={{
-                        backgroundColor: getGradeStyle(row.grade).bg,
-                        color: getGradeStyle(row.grade).fg,
-                        fontWeight: 'bold'
-                      }}
-                    /> : 'N/A'}
-                  </TableCell>
-                  <TableCell></TableCell>
+                  <TableCell>{computeFailedCount(row?.student?.id ?? row?.student_id ?? row?.student)}</TableCell>
                   <TableCell>{row._new_roll ?? 'N/A'}</TableCell>
                   {displaySubjects.map(item => {
                     const sid = row?.student?.id ?? row?.student_id ?? row?.student;
@@ -824,6 +910,7 @@ const RankListPage = () => {
       </Box>
       <Box
         ref={printRef}
+        className="rank-print"
         sx={{
           position: 'absolute',
           left: '-9999px',
@@ -840,7 +927,7 @@ const RankListPage = () => {
           }
         }}
       >
-        <Typography variant="h5" align="center" gutterBottom sx={{ fontWeight: 'bold', mb: 2 }}>
+        <Typography variant="h6" align="center" gutterBottom sx={{ fontWeight: 'bold', mb: 1 }}>
           Class: {getClassName()} &nbsp;&nbsp; Section: {getSectionName()}
         </Typography>
         <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid #ddd' }}>
@@ -850,18 +937,22 @@ const RankListPage = () => {
                 <TableCell sx={{ fontWeight: 'bold', border: '1px solid #ddd' }}>Current Roll</TableCell>
                 <TableCell sx={{ fontWeight: 'bold', border: '1px solid #ddd' }}>Name</TableCell>
                 <TableCell sx={{ fontWeight: 'bold', border: '1px solid #ddd' }}>Total Marks</TableCell>
-                <TableCell sx={{ fontWeight: 'bold', border: '1px solid #ddd' }}>Failed Subjects</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', border: '1px solid #ddd' }}>Failed</TableCell>
                 <TableCell sx={{ fontWeight: 'bold', border: '1px solid #ddd' }}>New Roll</TableCell>
-                {displaySubjects.map(item => <TableCell key={item.canonical} sx={{ fontWeight: 'bold', border: '1px solid #ddd' }} align="center">{item.label}</TableCell>)}
+                {displaySubjects.map(item => (
+                  <TableCell key={item.canonical} sx={{ fontWeight: 'bold', border: '1px solid #ddd' }} align="center">
+                    {item.label}
+                  </TableCell>
+                ))}
               </TableRow>
             </TableHead>
             <TableBody>
               {displayedRows.map((row, index) => (
-                <TableRow key={index}>
+                <TableRow key={`row-${index}`}>
                   <TableCell sx={{ border: '1px solid #ddd' }}>{row.student?.roll_number ?? 'N/A'}</TableCell>
                   <TableCell sx={{ border: '1px solid #ddd' }}>{`${row.student?.user?.first_name || ''} ${row.student?.user?.last_name || ''}`.trim() || row.student?.user?.username || 'N/A'}</TableCell>
                   <TableCell sx={{ border: '1px solid #ddd' }}>{getStudentDisplayedTotal(row?.student?.id ?? row?.student_id ?? row?.student) ?? row.total_marks_obtained ?? 'N/A'}</TableCell>
-                  <TableCell sx={{ border: '1px solid #ddd' }}>{row.failed_subjects_count ?? 0}</TableCell>
+                  <TableCell sx={{ border: '1px solid #ddd' }}>{computeFailedCount(row?.student?.id ?? row?.student_id ?? row?.student)}</TableCell>
                   <TableCell sx={{ border: '1px solid #ddd' }}>{row._new_roll ?? 'N/A'}</TableCell>
                   {displaySubjects.map(item => {
                     const sid = row?.student?.id ?? row?.student_id ?? row?.student;
@@ -873,7 +964,11 @@ const RankListPage = () => {
                       (r?.is_passed === false) ||
                       (typeof val === 'number' && val < passMarks)
                     ) : false;
-                    return <TableCell key={item.canonical} sx={{ border: '1px solid #ddd', color: fail ? '#d32f2f' : 'inherit', fontWeight: fail ? 700 : 400 }} align="center">{val != null ? `${val}` : '—'}</TableCell>;
+                    return (
+                      <TableCell key={`cell-${item.canonical}-${index}`} sx={{ border: '1px solid #ddd', color: fail ? '#d32f2f' : 'inherit', fontWeight: fail ? 700 : 400 }} align="center">
+                        {val != null ? `${val}` : '—'}
+                      </TableCell>
+                    );
                   })}
                 </TableRow>
               ))}

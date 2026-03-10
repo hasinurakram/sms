@@ -29,48 +29,8 @@ const FeeCollectionChart = ({ feeData, feeDuesSummary, feeDuesByClass }) => {
   // Calculate total amount
   const totalAmount = formattedData.reduce((sum, item) => sum + item.amount, 0);
 
-  let summary = feeDuesSummary || {};
-  let byClass = Array.isArray(feeDuesByClass) ? feeDuesByClass : [];
-  try {
-    const sumT = Array.isArray(byClass) ? byClass.reduce((s, c) => s + (Number(c.tuition_due || 0) || 0), 0) : undefined;
-    const sumE = Array.isArray(byClass) ? byClass.reduce((s, c) => s + (Number(c.exam_due || 0) || 0), 0) : undefined;
-    const looksUnadjusted = (sumT !== undefined && sumE !== undefined) &&
-      (Math.round(Number(summary?.tuition_due_total || 0)) === Math.round(sumT)) &&
-      (Math.round(Number(summary?.exam_due_total || 0)) === Math.round(sumE));
-    if (looksUnadjusted) {
-      const persistentRaw = localStorage.getItem(`adminDuesAdjustment:${String(id || '')}`);
-      const persistentAdj = Number(persistentRaw || 0) || 0;
-      const onceRaw = localStorage.getItem(`adminDuesAdjustmentOnce:${String(id || '')}`);
-      const onceAdj = Number(onceRaw || 0) || 0;
-      const totalAdj = Math.max(0, persistentAdj) + Math.max(0, onceAdj);
-      if (totalAdj > 0 && summary) {
-        const tTotal = Number(summary.tuition_due_total || 0);
-        const eTotal = Number(summary.exam_due_total || 0);
-        const reduceTuition = Math.min(totalAdj, tTotal);
-        const reduceExam = Math.max(0, totalAdj - reduceTuition);
-        summary = {
-          tuition_due_total: Math.max(0, tTotal - reduceTuition),
-          exam_due_total: Math.max(0, eTotal - reduceExam),
-          total_due: Math.max(0, (tTotal + eTotal) - (reduceTuition + reduceExam))
-        };
-        if (Array.isArray(byClass) && byClass.length > 0) {
-          const tuitionSum = byClass.reduce((sum, c) => sum + (Number(c.tuition_due || 0) || 0), 0);
-          const examSum = byClass.reduce((sum, c) => sum + (Number(c.exam_due || 0) || 0), 0);
-          if ((tuitionSum > 0 && reduceTuition > 0) || (examSum > 0 && reduceExam > 0)) {
-            byClass = byClass.map((c) => {
-              const t = Number(c.tuition_due || 0) || 0;
-              const e = Number(c.exam_due || 0) || 0;
-              const tReduce = tuitionSum > 0 ? (reduceTuition * t) / tuitionSum : 0;
-              const eReduce = examSum > 0 ? (reduceExam * e) / examSum : 0;
-              const tAdj = Math.max(0, t - tReduce);
-              const eAdj = Math.max(0, e - eReduce);
-              return { ...c, tuition_due: tAdj, exam_due: eAdj, total_due: Math.max(0, tAdj + eAdj) };
-            });
-          }
-        }
-      }
-    }
-  } catch (_) {}
+  const summary = feeDuesSummary || {};
+  const byClass = Array.isArray(feeDuesByClass) ? feeDuesByClass : [];
 
   return (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -221,19 +181,19 @@ const FeeCollectionChart = ({ feeData, feeDuesSummary, feeDuesByClass }) => {
           <Box textAlign="center">
             <Typography variant="body1" sx={{ opacity: 0.9, mb: 0.5 }}>মোট বকেয়া</Typography>
             <Typography variant="h3" sx={{ fontWeight: 700 }}>
-              ৳{Math.round(Number(summary?.total_due || 0)).toLocaleString('bn-BD')}
+              ৳{Math.floor(Number(summary?.total_due || 0)).toLocaleString('bn-BD')}
             </Typography>
           </Box>
           <Box textAlign="center">
             <Typography variant="body1" sx={{ opacity: 0.9, mb: 0.5 }}>বেতন বকেয়া</Typography>
             <Typography variant="h4" sx={{ fontWeight: 600 }}>
-              ৳{Math.round(Number(summary?.tuition_due_total || 0)).toLocaleString('bn-BD')}
+              ৳{Math.floor(Number(summary?.tuition_due_total || 0)).toLocaleString('bn-BD')}
             </Typography>
           </Box>
           <Box textAlign="center">
             <Typography variant="body1" sx={{ opacity: 0.9, mb: 0.5 }}>পরীক্ষার ফি বকেয়া</Typography>
             <Typography variant="h4" sx={{ fontWeight: 600 }}>
-              ৳{Math.round(Number(summary?.exam_due_total || 0)).toLocaleString('bn-BD')}
+              ৳{Math.floor(Number(summary?.exam_due_total || 0)).toLocaleString('bn-BD')}
             </Typography>
           </Box>
         </Stack>

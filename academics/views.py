@@ -320,18 +320,103 @@ class StudentProfileViewSet(viewsets.ModelViewSet):
         school_id = self.request.query_params.get('school')
         classroom_id = self.request.query_params.get('classroom')
         section_id = self.request.query_params.get('section')
+        year = self.request.query_params.get('year')
+        
         if school_id:
             queryset = queryset.filter(school_id=school_id)
-        if classroom_id:
-            queryset = queryset.filter(classroom_id=classroom_id)
-        if section_id:
-            queryset = queryset.filter(section_id=section_id)
             
-        # Sort by roll number (numeric), with empty/nulls at the end
-        # Moved sorting to frontend to avoid DB-specific regex issues (e.g. SQLite vs Postgres)
+        if year:
+            # If year is provided, filter by StudentYearRecord
+            from academics.models import StudentYearRecord
+            year_records = StudentYearRecord.objects.filter(academic_year=str(year))
+            if classroom_id:
+                year_records = year_records.filter(classroom_id=classroom_id)
+            if section_id:
+                year_records = year_records.filter(section_id=section_id)
+            
+            # Map student IDs and their historical data
+            student_ids = year_records.values_list('student_id', flat=True)
+            queryset = queryset.filter(id__in=student_ids)
+            
+            # Note: The serializer will still use current data. 
+            # For certificates, we handle overrides in the frontend or a separate action.
+        else:
+            if classroom_id:
+                queryset = queryset.filter(classroom_id=classroom_id)
+            if section_id:
+                queryset = queryset.filter(section_id=section_id)
+            
         queryset = queryset.order_by('roll_number')
-        
         return queryset
+
+    @action(detail=False, methods=['get'])
+    def history(self, request):
+        """Fetch student details for a specific academic year from StudentYearRecord"""
+        school_id = request.query_params.get('school')
+        year = request.query_params.get('year')
+        classroom_id = request.query_params.get('classroom')
+        section_id = request.query_params.get('section')
+        roll_number = request.query_params.get('roll_number')
+        search = request.query_params.get('search')
+        
+        if not school_id or not year:
+            return Response({"detail": "school and year are required"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        from academics.models import StudentYearRecord
+        qs = StudentYearRecord.objects.select_related(
+            'student', 'student__user', 'student__guardian', 
+            'classroom', 'section'
+        ).filter(school_id=school_id, academic_year=str(year))
+        
+        if classroom_id:
+            qs = qs.filter(classroom_id=classroom_id)
+        if section_id:
+            qs = qs.filter(section_id=section_id)
+        if roll_number:
+             # Normalize roll number (ASCII digits)
+             def to_ascii_digits(s):
+                 digit_map = {'০':'0','১':'1','২':'2','৩':'3','৪':'4','৫':'5','৬':'6','৭':'7','৮':'8','৯':'9'}
+                 return "".join(digit_map.get(c, c) for c in str(s))
+             ascii_roll = to_ascii_digits(roll_number)
+             from django.db.models import Q
+             qs = qs.filter(Q(roll_number=roll_number) | Q(roll_number=ascii_roll))
+        if search:
+            from django.db.models import Q
+            qs = qs.filter(
+                Q(student__user__first_name__icontains=search) | 
+                Q(student__user__last_name__icontains=search) |
+                Q(student__user__username__icontains=search)
+            )
+            
+        data = []
+        for rec in qs:
+            sp = rec.student
+            user = sp.user
+            data.append({
+                'id': sp.id,
+                'user': {
+                    'id': user.id,
+                    'username': user.username,
+                    'first_name': user.first_name,
+                    'last_name': user.last_name,
+                    'photo_url': user.photo.url if user.photo else None,
+                    'date_of_birth': user.date_of_birth,
+                    'gender': user.gender,
+                    'address': user.address
+                },
+                'classroom': {'id': rec.classroom.id, 'name': rec.classroom.name} if rec.classroom else None,
+                'section': {'id': rec.section.id, 'name': rec.section.name} if rec.section else None,
+                'roll_number': rec.roll_number,
+                'guardian_name': sp.guardian_name,
+                'guardian': {
+                    'id': sp.guardian.id,
+                    'username': sp.guardian.username,
+                    'first_name': sp.guardian.first_name,
+                    'last_name': sp.guardian.last_name
+                } if sp.guardian else None
+            })
+            
+        return Response(data)
     
     def _validate_section(self, data):
         """Ensure section belongs to classroom"""
@@ -780,8 +865,8 @@ class StudentProfileViewSet(viewsets.ModelViewSet):
             "skipped_not_passed": skipped_not_passed
         }, status=status.HTTP_200_OK)
 
-    @action(detail=False, methods=['get'])
-    def year_report(self, request):
+    @action(detail=False, methods=['post', 'get'])
+    def revert_promotion(self, request):
         """
         Revert promotion using StudentYearRecord snapshots.
         Params:
@@ -853,35 +938,39 @@ class StudentProfileViewSet(viewsets.ModelViewSet):
         if not school_id or not year:
             return Response({"detail": "school and year are required"}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            from academics.models import StudentYearRecord, StudentProfile
-            qs = StudentYearRecord.objects.select_related('student', 'classroom', 'section').filter(school_id=school_id, academic_year=str(year))
+            from academics.models import StudentYearRecord
+            qs = StudentYearRecord.objects.select_related('student', 'student__user', 'classroom', 'section', 'promoted_to_classroom').filter(school_id=school_id, academic_year=str(year))
             if classroom_id:
                 qs = qs.filter(classroom_id=classroom_id)
             if section_id:
                 qs = qs.filter(section_id=section_id)
+            
             total = qs.count()
             promoted = qs.filter(status='promoted').count()
             retained = qs.filter(status='retained').count()
             not_passed = qs.filter(status='not_passed').count()
-            cgpas = list(qs.exclude(result_cgpa__isnull=True).values_list('result_cgpa', flat=True))
-            percentages = list(qs.exclude(percentage__isnull=True).values_list('percentage', flat=True))
-            avg_cgpa = (sum(float(x) for x in cgpas) / len(cgpas)) if cgpas else None
-            avg_percentage = (sum(float(x) for x in percentages) / len(percentages)) if percentages else None
+            
+            cgpas = [float(x) for x in qs.exclude(result_cgpa__isnull=True).values_list('result_cgpa', flat=True)]
+            percentages = [float(x) for x in qs.exclude(percentage__isnull=True).values_list('percentage', flat=True)]
+            
+            avg_cgpa = round(sum(cgpas) / len(cgpas), 2) if cgpas else None
+            avg_percentage = round(sum(percentages) / len(percentages), 2) if percentages else None
+            
             buckets = {'0-1': 0, '1-2': 0, '2-3': 0, '3-4': 0, '4-5': 0}
-            for x in cgpas:
-                v = float(x)
+            for v in cgpas:
                 if v < 1: buckets['0-1'] += 1
                 elif v < 2: buckets['1-2'] += 1
                 elif v < 3: buckets['2-3'] += 1
                 elif v < 4: buckets['3-4'] += 1
                 else: buckets['4-5'] += 1
+            
             records = []
             for r in qs:
                 s = r.student
                 records.append({
                     'id': r.id,
-                    'student_id': s.id,
-                    'student_name': f"{getattr(s.user, 'first_name', '')} {getattr(s.user, 'last_name', '')}".strip() or getattr(s.user, 'username', ''),
+                    'student_id': s.id if s else None,
+                    'student_name': f"{getattr(s.user, 'first_name', '')} {getattr(s.user, 'last_name', '')}".strip() or getattr(s.user, 'username', '') if s else "Unknown",
                     'classroom': getattr(r.classroom, 'name', None),
                     'section': getattr(r.section, 'name', None),
                     'roll_number': r.roll_number,
@@ -892,6 +981,7 @@ class StudentProfileViewSet(viewsets.ModelViewSet):
                     'rank': r.rank,
                     'promoted_to_classroom': getattr(r.promoted_to_classroom, 'name', None)
                 })
+            
             data = {
                 'school': int(school_id),
                 'year': str(year),
@@ -910,7 +1000,61 @@ class StudentProfileViewSet(viewsets.ModelViewSet):
             }
             return Response(data, status=status.HTTP_200_OK)
         except Exception as e:
-            return Response({"detail": "year report failed"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({"detail": f"Year report failed: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['post'])
+    def sync_year_records(self, request):
+        """
+        Update StudentYearRecord result fields from StudentOverallResult for a given year.
+        Useful if promotion was run before results were finalized.
+        """
+        school_id = request.data.get('school')
+        year = request.data.get('year')
+        if not school_id or not year:
+            return Response({"detail": "school and year are required"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            from academics.models import StudentYearRecord
+            from results.models import StudentOverallResult, Examination
+            
+            # Find all year records for this school/year
+            records = StudentYearRecord.objects.filter(school_id=school_id, academic_year=str(year))
+            updated_count = 0
+            
+            for r in records:
+                # Find the examination used for this record, or detect one
+                exam_id = r.examination_id
+                if not exam_id:
+                    # Try to find an annual/final exam for this student's class in that year
+                    exam = Examination.objects.filter(
+                        school_id=school_id, 
+                        classroom=r.classroom,
+                        exam_date__year=int(year)
+                    ).filter(
+                        Q(exam_type='annual') | Q(name__icontains='final') | Q(name__icontains='বার্ষিক')
+                    ).order_by('-exam_date').first()
+                    if exam:
+                        exam_id = exam.id
+                        r.examination_id = exam.id
+                
+                if exam_id:
+                    overall = StudentOverallResult.objects.filter(examination_id=exam_id, student=r.student).first()
+                    if overall:
+                        r.result_cgpa = overall.cgpa
+                        r.result_grade = overall.grade
+                        r.percentage = overall.percentage
+                        r.rank = overall.rank
+                        # If it was 'retained' but now passed, update status
+                        if r.status == 'retained' and overall.is_passed:
+                            r.status = 'promoted'
+                        elif r.status == 'retained' and not overall.is_passed:
+                            r.status = 'not_passed'
+                        r.save()
+                        updated_count += 1
+            
+            return Response({"status": "ok", "updated_count": updated_count}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"detail": f"Sync failed: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class TeacherAssignmentViewSet(viewsets.ModelViewSet):

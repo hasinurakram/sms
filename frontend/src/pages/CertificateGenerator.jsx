@@ -494,7 +494,7 @@ const Certificate = ({ data, school, session }) => {
               position: 'absolute',
               top: '50%',
               left: '50%',
-              transform: 'translate(-50%, -50%) rotate(90deg)',
+              transform: 'translate(-50%, -50%)',
               transformOrigin: 'center center'
             }}
           />
@@ -548,23 +548,22 @@ const Certificate = ({ data, school, session }) => {
 
       {/* Certificate Content */}
       <Box className="certificate-content" sx={{ 
-        textAlign: 'left', 
+        textAlign: 'center', 
         mb: 4,
         fontSize: '1.1rem',
         lineHeight: 2.2,
         color: '#2c3e50',
         position: 'relative',
         zIndex: 1,
-        fontFamily: 'Georgia, serif',
-        textIndent: '40px',
-        textAlign: 'justify'
+        fontFamily: 'Georgia, serif'
       }}>
         <Typography variant="body1" sx={{ 
           mb: 3,
           fontSize: '1.1rem',
           lineHeight: 2.2,
           fontFamily: 'Georgia, serif',
-          color: '#2c3e50'
+          color: '#2c3e50',
+          textAlign: 'center'
         }}>
           This is to certify that <strong className="underlined">{englishStudentName || 'Student Name'}</strong>, {' '}
           son/daughter of <strong className="underlined">{englishGuardianName || 'Parent/Guardian Name'}</strong>, {' '}
@@ -728,47 +727,74 @@ export default function CertificateGenerator() {
   const handlePrintCertificate = () => {
     const certificateElement = certificateRef.current;
     if (!certificateElement) return;
+    
+    // Create a temporary hidden container for high-quality capture
+    const captureContainer = document.createElement('div');
+    captureContainer.style.position = 'absolute';
+    captureContainer.style.left = '-9999px';
+    captureContainer.style.top = '0';
+    captureContainer.style.width = '1122px'; // A4 landscape width at 96 DPI
+    document.body.appendChild(captureContainer);
+    
+    // Clone the certificate and apply print-specific styling
+    const clone = certificateElement.cloneNode(true);
+    clone.style.width = '1122px';
+    clone.style.minHeight = '793px'; // A4 landscape height at 96 DPI
+    clone.style.margin = '0';
+    clone.style.boxShadow = 'none';
+    clone.style.border = 'none';
+    clone.style.borderRadius = '0';
+    captureContainer.appendChild(clone);
+
     (async () => {
       try {
-        const rect = certificateElement.getBoundingClientRect();
-        const canvas = await html2canvas(certificateElement, {
-          scale: Math.min(3, window.devicePixelRatio || 2),
+        const canvas = await html2canvas(clone, {
+          scale: 3, // High quality
           useCORS: true,
           logging: false,
           backgroundColor: '#fff8dc',
-          foreignObjectRendering: false,
-          width: Math.ceil(rect.width),
-          height: Math.ceil(rect.height),
-          windowWidth: Math.ceil(rect.width),
-          windowHeight: Math.ceil(rect.height)
+          width: 1122,
+          height: 793
         });
-        const imgData = canvas.toDataURL('image/jpeg', 0.95);
+        
+        // Cleanup temporary container
+        document.body.removeChild(captureContainer);
+        
+        const imgData = canvas.toDataURL('image/jpeg', 1.0);
         const printWindow = window.open('', '_blank');
         if (!printWindow) return;
+        
         printWindow.document.write(`
           <!DOCTYPE html>
           <html>
             <head>
               <title>Certificate - ${student?.user?.username || 'Student'}</title>
               <style>
-                @page { size: A4; margin: 0; }
-                html, body { height: 100%; }
-                body { margin: 0; background: #ffffff; }
-                .sheet { width: 210mm; height: 297mm; display: flex; align-items: center; justify-content: center; background: #ffffff; overflow: hidden; }
-                img { width: 200mm; height: auto; max-height: 277mm; display: block; margin: 0 auto; }
+                @page { size: A4 landscape; margin: 0; }
+                html, body { margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden; }
+                body { display: flex; align-items: center; justify-content: center; background: white; }
+                img { width: 100%; height: 100%; object-fit: contain; }
               </style>
             </head>
             <body>
-              <div class="sheet">
-                <img src="${imgData}" />
-              </div>
+              <img src="${imgData}" />
+              <script>
+                window.onload = () => {
+                  setTimeout(() => {
+                    window.print();
+                    window.close();
+                  }, 500);
+                };
+              </script>
             </body>
           </html>
         `);
         printWindow.document.close();
-        printWindow.focus();
-        setTimeout(() => { printWindow.print(); printWindow.close(); }, 250);
-      } catch (_) { /* ignore */ }
+      } catch (err) {
+        console.error('Print error:', err);
+        document.body.removeChild(captureContainer);
+        toast.error('Failed to prepare print');
+      }
     })();
   };
 
@@ -893,23 +919,33 @@ export default function CertificateGenerator() {
     setCertificateGenerated(false);
 
     try {
-      // Build URL with filters
-      let url = `/api/academics/students/?school=${schoolId}`;
+      // Build URL with filters - use history endpoint if session is specified
+      let url = `/api/academics/students/history/?school=${schoolId}&year=${encodeURIComponent(session)}`;
+      
       if (rollNumber) url += `&roll_number=${encodeURIComponent(rollNumber)}`;
-      const searchTerms = [];
-      if (studentName) searchTerms.push(studentName);
-      if (guardianName) searchTerms.push(guardianName);
-      if (searchTerms.length) url += `&search=${encodeURIComponent(searchTerms.join(' '))}`;
+      if (studentName) url += `&search=${encodeURIComponent(studentName)}`;
       
       if (classFilter) url += `&classroom=${classFilter}`;
       if (sectionFilter) url += `&section=${sectionFilter}`;
 
       const res = await api.get(url);
-      let data = Array.isArray(res.data) ? res.data : res.data.results || [];
-      if (!Array.isArray(data)) data = [];
+      let candidates = Array.isArray(res.data) ? res.data : res.data.results || [];
+      if (!Array.isArray(candidates)) candidates = [];
       
-      let candidates = [...data];
-      if (rollNumber) {
+      // Fallback to current students if history is empty (optional, but might be useful)
+      if (candidates.length === 0) {
+        let currentUrl = `/api/academics/students/?school=${schoolId}`;
+        if (rollNumber) currentUrl += `&roll_number=${encodeURIComponent(rollNumber)}`;
+        if (studentName) currentUrl += `&search=${encodeURIComponent(studentName)}`;
+        if (classFilter) currentUrl += `&classroom=${classFilter}`;
+        if (sectionFilter) currentUrl += `&section=${sectionFilter}`;
+        
+        const currentRes = await api.get(currentUrl);
+        let currentData = Array.isArray(currentRes.data) ? currentRes.data : currentRes.data.results || [];
+        candidates = Array.isArray(currentData) ? currentData : [];
+      }
+      
+      if (rollNumber && candidates.length > 0) {
         const inputRollRaw = String(rollNumber || '').trim();
         const toAsciiDigits = s => String(s || '').replace(/[০-৯]/g, d => '০১২৩৪৫৬৭৮৯'.indexOf(d));
         const norm = s => toAsciiDigits(String(s || '').trim());

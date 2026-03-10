@@ -31,11 +31,14 @@ api.interceptors.request.use(
         method === 'get' &&
         (
           /^\/?api\/schools\/?(\?.*)?$/i.test(urlPath) ||
-          /^\/?api\/schools\/\d+\/?(\?.*)?$/i.test(urlPath)
+          /^\/?api\/schools\/\d+\/?(\?.*)?$/i.test(urlPath) ||
+          /^\/?api\/dashboard-stats\/?(\?.*)?$/i.test(urlPath)
         );
       const isAuthEndpoint = /^\/?api\/(token\/?|auth\/login\/?|users\/login\/?)$/i.test(urlPath);
 
-      if (token && !isPublicGet && !isAuthEndpoint) {
+      // If we have a token but this is a public endpoint, we can still try to send the token
+      // for personalization, but the response interceptor will handle retries if it's invalid.
+      if (token && !isAuthEndpoint) {
         config.headers.Authorization = `Bearer ${token}`;
       }
 
@@ -79,6 +82,23 @@ api.interceptors.response.use(
         await new Promise((res) => setTimeout(res, backoffMs));
         return api(originalRequest);
       }
+    }
+
+    // If it's a 401 on a public GET endpoint, immediately retry without Authorization
+    const urlPath = (originalRequest?.url || '').toString();
+    const isPublicGet = (originalRequest?.method || '').toLowerCase() === 'get' &&
+      (
+        /^\/?api\/schools\/?(\?.*)?$/i.test(urlPath) ||
+        /^\/?api\/schools\/\d+\/?(\?.*)?$/i.test(urlPath) ||
+        /^\/?api\/dashboard-stats\/?(\?.*)?$/i.test(urlPath)
+      );
+
+    if (error.response?.status === 401 && isPublicGet && !originalRequest._retryNoAuth) {
+      originalRequest._retryNoAuth = true;
+      if (originalRequest.headers) {
+        delete originalRequest.headers.Authorization;
+      }
+      return api(originalRequest);
     }
 
     // If error is 401 and we haven't tried to refresh yet

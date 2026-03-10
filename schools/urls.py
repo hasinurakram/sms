@@ -8,8 +8,7 @@ router.register(r'ads', AdvertisementViewSet, basename='ads')
 
 urlpatterns = [
     path('dashboard-stats/', dashboard_stats, name='dashboard-stats'),
-    path('', include(router.urls)),   # <-- এখানে router.urls include হচ্ছে
-    path('dashboard-stats/', dashboard_stats, name='dashboard-stats'),
+    path('', include(router.urls)),
     # Ads convenience endpoints
     path('schools/<int:school_id>/ads/', AdvertisementBySchool.as_view(), name='school-ads'),
     path('ads/bulk/', AdvertisementBulk.as_view(), name='ads-bulk'),

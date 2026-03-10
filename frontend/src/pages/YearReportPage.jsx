@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Box, Paper, Typography, Grid, FormControl, InputLabel, Select, MenuItem, TextField, Chip, TableContainer, Table, TableHead, TableRow, TableCell, TableBody, Stack, CircularProgress, Alert } from '@mui/material';
+import { Box, Paper, Typography, Grid, FormControl, InputLabel, Select, MenuItem, TextField, Chip, TableContainer, Table, TableHead, TableRow, TableCell, TableBody, Stack, CircularProgress, Alert, Button } from '@mui/material';
 import AssessmentIcon from '@mui/icons-material/Assessment';
+import RefreshIcon from '@mui/icons-material/Refresh';
 import { useAcademics } from '../context/AcademicsContext';
 import { scopedGet } from '../utils/schoolApi';
 import api from '../utils/api';
@@ -19,6 +20,7 @@ export default function YearReportPage() {
   const [loading, setLoading] = useState(false);
   const [summary, setSummary] = useState(null);
   const [records, setRecords] = useState([]);
+  const [syncing, setSyncing] = useState(false);
   const [trendLoading, setTrendLoading] = useState(false);
   const [trendData, setTrendData] = useState([]);
 
@@ -51,6 +53,22 @@ export default function YearReportPage() {
       setRecords([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSync = async () => {
+    setSyncing(true);
+    try {
+      await api.post('/api/academics/students/sync_year_records/', {
+        school: id,
+        year: String(selectedYear)
+      });
+      toast.success('ডাটা সিঙ্ক সম্পন্ন হয়েছে');
+      loadReport();
+    } catch (e) {
+      toast.error('সিঙ্ক ব্যর্থ হয়েছে');
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -128,9 +146,20 @@ export default function YearReportPage() {
 
   return (
     <Box sx={{ p: 2 }}>
-      <Typography variant="h5" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-        <AssessmentIcon /> বছরভিত্তিক রিপোর্ট
-      </Typography>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+        <Typography variant="h5" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <AssessmentIcon /> বছরভিত্তিক রিপোর্ট
+        </Typography>
+        <Button 
+          variant="contained" 
+          color="secondary" 
+          startIcon={syncing ? <CircularProgress size={20} color="inherit" /> : <RefreshIcon />}
+          onClick={handleSync}
+          disabled={syncing || loading}
+        >
+          {syncing ? 'সিঙ্ক হচ্ছে...' : 'ডাটা আপডেট/সিঙ্ক করুন'}
+        </Button>
+      </Stack>
       <Paper sx={{ p: 2, mb: 2 }}>
         <Grid container spacing={2}>
           <Grid item xs={12} md={4}>

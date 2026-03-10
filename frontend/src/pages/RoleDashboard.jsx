@@ -1689,6 +1689,7 @@ const RoleDashboard = ({ role: roleProp }) => {
     try {
       localStorage.setItem(`adminDuesAdjustment:${id}`, String(v || 0));
       localStorage.removeItem(`adminDuesAdjustmentOnce:${id}`);
+      localStorage.setItem(`adminDuesAdjustmentEnabled:${id}`, 'on');
     } catch (_) {}
     toast.success('Adjustment saved');
     setDuesAdjustment(0);
@@ -1698,7 +1699,11 @@ const RoleDashboard = ({ role: roleProp }) => {
     if (role === 'admin') {
       if (!adminStats) return null;
       let adj = 0;
-      const inputAdj = Number(duesAdjustment || 0) || 0;
+      const toAscii = (s) => {
+        const map = { '০':'0','১':'1','২':'2','৩':'3','৪':'4','৫':'5','৬':'6','৭':'7','৮':'8','৯':'9' };
+        return String(s || '').split('').map(ch => map[ch] ?? ch).join('');
+      };
+      const inputAdj = Number(toAscii(duesAdjustment || 0)) || 0;
       let persisted = 0;
       try {
         const persistedRaw = localStorage.getItem(`adminDuesAdjustment:${id}`);
@@ -1712,9 +1717,9 @@ const RoleDashboard = ({ role: roleProp }) => {
       let reduceTuition = Math.min(adj, tuitionTotal);
       let reduceExam = Math.max(0, adj - reduceTuition);
       const feeSummaryAdj = {
-        tuition_due_total: Math.max(0, tuitionTotal - reduceTuition),
-        exam_due_total: Math.max(0, examTotal - reduceExam),
-        total_due: Math.max(0, (tuitionTotal + examTotal) - (reduceTuition + reduceExam))
+        tuition_due_total: Math.max(0, Math.floor(tuitionTotal - reduceTuition)),
+        exam_due_total: Math.max(0, Math.floor(examTotal - reduceExam)),
+        total_due: Math.max(0, Math.floor((tuitionTotal + examTotal) - (reduceTuition + reduceExam)))
       };
       let adjustedByClass = rawByClass;
       try {

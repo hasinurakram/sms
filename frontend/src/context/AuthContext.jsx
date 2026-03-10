@@ -46,22 +46,31 @@ export const AuthProvider = ({ children }) => {
         const digits = String(username || '').replace(/\D/g, '');
         const isNumericId = !!digits && /^\d+$/.test(digits);
         if (isNumericId) {
-          // Try resolve student by ID first
-          try {
-            const s = await api.get(`/api/academics/students/${digits}/`);
-            const u = s.data?.user;
-            if (u?.username) uname = u.username;
-          } catch (_) {
-            // Fallback: search within current school
-            const schoolId = localStorage.getItem('currentSchoolId');
-            if (schoolId) {
-              try {
-                const r = await api.get(`/api/academics/students/?school=${schoolId}`);
-                const arr = Array.isArray(r.data) ? r.data : (r.data?.results || []);
-                const found = (arr || []).find(it => String(it.id) === digits || String(it.roll_number) === digits);
-                if (found?.user?.username) uname = found.user.username;
-              } catch (_) {}
-            }
+          // Try resolve student by roll number within current school first (safer than direct ID fetch which might 404)
+          const schoolId = localStorage.getItem('currentSchoolId');
+          if (schoolId) {
+            try {
+              const r = await api.get(`/api/academics/students/`, { params: { school: schoolId, roll_number: digits } });
+              const arr = Array.isArray(r.data) ? r.data : (r.data?.results || []);
+              const found = (arr || []).find(it => String(it.roll_number) === digits);
+              if (found?.user?.username) {
+                uname = found.user.username;
+              } else if (digits.length > 3) {
+                // If not found by roll, and ID is long enough, try direct ID fetch
+                try {
+                  const s = await api.get(`/api/academics/students/${digits}/`);
+                  const u = s.data?.user;
+                  if (u?.username) uname = u.username;
+                } catch (_) {}
+              }
+            } catch (_) {}
+          } else if (digits.length > 3) {
+            // No school ID, but long enough digits to be a direct ID
+            try {
+              const s = await api.get(`/api/academics/students/${digits}/`);
+              const u = s.data?.user;
+              if (u?.username) uname = u.username;
+            } catch (_) {}
           }
         }
       } catch (_) {}

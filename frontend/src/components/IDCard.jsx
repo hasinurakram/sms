@@ -25,11 +25,22 @@ export default function IDCard({ type = 'student', data, school, overridePhone, 
           <head>
             <title>ID Card - ${data?.user?.username || 'User'}</title>
             <style>
-              body { margin: 0; padding: 20px; font-family: Arial, sans-serif; }
-              .id-card-front, .id-card-back { width: 54mm !important; min-height: 86mm !important; height: auto !important; }
-              .id-card { page-break-inside: avoid; break-inside: avoid; margin: 5mm auto; }
+              body { margin: 0; padding: 20px; font-family: Arial, sans-serif; background: white !important; }
+              .id-card-front, .id-card-back { width: 54mm !important; min-height: 86mm !important; height: auto !important; position: relative !important; }
+              .id-card-front { margin-bottom: 4mm !important; }
+              .id-card { page-break-inside: avoid; break-inside: avoid; margin: 5mm auto; overflow: visible !important; border: 1px solid #eee !important; }
               .id-card-back { padding-bottom: 12mm !important; position: relative; }
-              * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+              .id-card-header { 
+                background-color: #075985 !important; 
+                background-image: none !important;
+                backdrop-filter: none !important; 
+                -webkit-backdrop-filter: none !important;
+                visibility: visible !important;
+                opacity: 1 !important;
+                display: block !important;
+              }
+              .MuiAvatar-root, .MuiAvatar-img { display: block !important; visibility: visible !important; opacity: 1 !important; }
+              * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
               @media print {
                 body { margin: 0; padding: 0; }
                 .no-print { display: none !important; }
@@ -169,7 +180,7 @@ export default function IDCard({ type = 'student', data, school, overridePhone, 
         minHeight: '360px'
       }}>
         {/* Header Section */}
-        <Box sx={{ 
+        <Box className="id-card-header" sx={{ 
           bgcolor: 'rgba(0,0,0,0.3)', 
           backdropFilter: 'blur(10px)',
           p: 1.5,

@@ -729,11 +729,22 @@ export default function ResultCardGenerator() {
         try {
           const r = await scopedGet('/api/results/results/', id, { student: student.id, page_size: 2000, year: selectedYear }, { timeout: 20000 });
           const arr = Array.isArray(r.data) ? r.data : (r.data?.results || r.data?.data || []);
-          const allowedIds = new Set(matchingExams.map(ex => ex.id));
+          const selTypeNorm = normalizeExamType(selectedExamType);
           const filtered = arr.filter(it => {
             const exObj = typeof it.examination === 'object' ? it.examination : null;
-            const exId = exObj ? exObj.id : it.examination;
-            return allowedIds.has(parseInt(exId, 10));
+            const typeOk = normalizeExamType(exObj?.exam_type, exObj?.name) === selTypeNorm;
+            const yearOk = (() => {
+              try {
+                const dy = exObj?.exam_date ? new Date(exObj.exam_date).getFullYear() : null;
+                const yn = parseInt(String(selectedYear), 10);
+                if (Number.isNaN(yn)) return true;
+                if (dy == null) {
+                  return exObj?.name ? String(exObj.name).includes(String(yn)) : true;
+                }
+                return dy === yn;
+              } catch (_) { return true; }
+            })();
+            return typeOk && yearOk;
           });
           if (filtered.length > 0) {
             fetchedResults = filtered;
@@ -758,52 +769,28 @@ export default function ResultCardGenerator() {
         setResults(merged);
       }
 
-      // Get combined overall result with rank from backend
+      // Get overall for chosen examination (classroom-নিরপেক্ষ)
       try {
-        let url = `/api/results/overall/combined_by_exam_type/?student=${student.id}&exam_type=${normalizeExamType(selectedExamType)}&classroom=${selectedClass}&school=${id}&year=${selectedYear}`;
-        if (selectedSection) {
-            url += `&section=${selectedSection}`;
-        }
-        const overallRes = await api.get(url);
-        let combined = overallRes.data;
-        // If rank is missing, try to derive it from examination-level overall list
-        if (!combined || combined.rank == null) {
-          const exId = chosenExam?.id || null;
-          if (exId) {
-            try {
-              const classOverallRes = await scopedGet('/api/results/overall/', id, { examination: exId, page_size: 500 }, { timeout: 15000 });
-              const list = Array.isArray(classOverallRes.data) ? classOverallRes.data : (classOverallRes.data?.results || []);
-              const me = (list || []).find(item => {
-                const sid = item?.student?.id ?? item?.student_id;
-                return String(sid) === String(student.id);
-              });
-              if (me && me.rank != null) {
-                combined = { ...(combined || {}), rank: me.rank };
-              }
-            } catch (_) { /* ignore fallback failure */ }
+        const exId = chosenExam?.id || null;
+        if (exId) {
+          const classOverallRes = await scopedGet('/api/results/overall/', id, { examination: exId, page_size: 500 }, { timeout: 15000 });
+          const list = Array.isArray(classOverallRes.data) ? classOverallRes.data : (classOverallRes.data?.results || []);
+          const me = (list || []).find(item => {
+            const sid = item?.student?.id ?? item?.student_id;
+            return String(sid) === String(student.id);
+          });
+          if (me) {
+            setOverallResult({
+              percentage: me.percentage,
+              rank: Number(me.rank || me.position || 0) || null,
+              is_passed: me.is_passed
+            });
+          } else {
+            setOverallResult(null);
           }
-          if (!combined || combined.rank == null) {
-            try {
-              const params = { 
-                exam_type: normalizeExamType(selectedExamType), 
-                classroom: selectedClass, 
-                school: id, 
-                page_size: 500 
-              };
-              if (selectedSection) params.section = selectedSection;
-              const rankListRes = await scopedGet('/api/results/overall/combined_rank_list_by_exam_type/', id, params, { timeout: 15000 });
-              const arr = Array.isArray(rankListRes.data) ? rankListRes.data : (rankListRes.data?.results || []);
-              const me2 = (arr || []).find(row => {
-                const sid = row?.student?.id ?? row?.student_id;
-                return String(sid) === String(student.id);
-              });
-              if (me2 && me2.rank != null) {
-                combined = { ...(combined || {}), rank: me2.rank };
-              }
-            } catch (_) { /* ignore fallback failure */ }
-          }
+        } else {
+          setOverallResult(null);
         }
-        setOverallResult(combined);
       } catch (err) {
         /* ignore errors for combined overall; fallback calculation below */
         // Fallback: Calculate on frontend without rank
@@ -966,10 +953,24 @@ export default function ResultCardGenerator() {
       const merged = dedupeAndFillResults(fetchedResults, matchingExams);
       let overall = null;
       try {
-        let url = `/api/results/overall/combined_by_exam_type/?student=${stuId}&exam_type=${normalizeExamType(selectedExamType)}&classroom=${selectedClass}&school=${id}&year=${selectedYear}`;
-        if (selectedSection) url += `&section=${selectedSection}`;
-        const overallRes = await api.get(url);
-        overall = overallRes.data;
+        const exId = chosenExam?.id || null;
+        if (exId) {
+          const classOverallRes = await scopedGet('/api/results/overall/', id, { examination: exId, page_size: 500 }, { timeout: 15000 });
+          const list = Array.isArray(classOverallRes.data) ? classOverallRes.data : (classOverallRes.data?.results || []);
+          const me = (list || []).find(item => {
+            const sid = item?.student?.id ?? item?.student_id;
+            return String(sid) === String(stuId);
+          });
+          if (me) {
+            overall = {
+              percentage: me.percentage,
+              rank: Number(me.rank || me.position || 0) || null,
+              is_passed: me.is_passed
+            };
+          } else {
+            overall = null;
+          }
+        }
       } catch (_) {
         overall = null;
       }

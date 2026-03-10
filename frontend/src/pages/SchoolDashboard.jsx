@@ -782,38 +782,7 @@ const SchoolDashboard = () => {
           } catch (e) {
             console.warn('Dashboard fallback enrichment failed:', e);
           }
-          try {
-            const adjEnabledRaw = localStorage.getItem(`adminDuesAdjustmentEnabled:${String(id)}`);
-            const adjEnabled = String(adjEnabledRaw || '').trim().toLowerCase();
-            if (adjEnabled === 'on') {
-              const adjRawFinal = localStorage.getItem(`adminDuesAdjustment:${String(id)}`);
-              const adjFinal = Number(adjRawFinal || 0) || 0;
-              if (adjFinal > 0 && enriched?.fee_dues_summary && Array.isArray(enriched?.fee_dues_by_class)) {
-                const tTotalF = Number(enriched.fee_dues_summary.tuition_due_total || 0);
-                const eTotalF = Number(enriched.fee_dues_summary.exam_due_total || 0);
-                const reduceTuitionF = Math.min(adjFinal, tTotalF);
-                const reduceExamF = Math.max(0, adjFinal - reduceTuitionF);
-                enriched.fee_dues_summary = {
-                  tuition_due_total: Math.max(0, tTotalF - reduceTuitionF),
-                  exam_due_total: Math.max(0, eTotalF - reduceExamF),
-                  total_due: Math.max(0, (tTotalF + eTotalF) - (reduceTuitionF + reduceExamF))
-                };
-                const tuitionSumF = enriched.fee_dues_by_class.reduce((sum, c) => sum + (Number(c.tuition_due || 0) || 0), 0);
-                const examSumF = enriched.fee_dues_by_class.reduce((sum, c) => sum + (Number(c.exam_due || 0) || 0), 0);
-                if ((tuitionSumF > 0 && reduceTuitionF > 0) || (examSumF > 0 && reduceExamF > 0)) {
-                  enriched.fee_dues_by_class = enriched.fee_dues_by_class.map((c) => {
-                    const t = Number(c.tuition_due || 0) || 0;
-                    const e = Number(c.exam_due || 0) || 0;
-                    const tReduce = tuitionSumF > 0 ? (reduceTuitionF * t) / tuitionSumF : 0;
-                    const eReduce = examSumF > 0 ? (reduceExamF * e) / examSumF : 0;
-                    const tAdj = Math.max(0, t - tReduce);
-                    const eAdj = Math.max(0, e - eReduce);
-                    return { ...c, tuition_due: tAdj, exam_due: eAdj, total_due: Math.max(0, tAdj + eAdj) };
-                  });
-                }
-              }
-            }
-          } catch (_) {}
+          try {} catch (_) {}
           // Optional: override dues using simple class count × rate × months (when enabled)
           try {
             const simpleFlag = String(localStorage.getItem(`dashboardSimpleDue:${String(id)}`) || '').trim().toLowerCase();
@@ -880,39 +849,81 @@ const SchoolDashboard = () => {
                 total_due: sumTuitionRounded + sumExamRounded
               };
             }
-            if (enriched?.fee_dues_summary) {
-              try {
-                const rawOnce = localStorage.getItem(`adminDuesAdjustmentOnce:${String(id)}`);
-                const adjOnce = Number(rawOnce || 0) || 0;
-                if (adjOnce > 0) {
-                  const t = Number(enriched.fee_dues_summary.tuition_due_total || 0);
-                  const e = Number(enriched.fee_dues_summary.exam_due_total || 0);
-                  const reduce = Math.min(adjOnce, t + e);
-                  const reduceTuition = Math.min(reduce, t);
-                  const reduceExam = Math.min(reduce - reduceTuition, e);
-                  enriched.fee_dues_summary = {
-                    tuition_due_total: t - reduceTuition,
-                    exam_due_total: e - reduceExam,
-                    total_due: (t - reduceTuition) + (e - reduceExam)
-                  };
+          } catch (_) {}
+          try {
+            const toAscii = (s) => {
+              const map = { '০':'0','১':'1','২':'2','৩':'3','৪':'4','৫':'5','৬':'6','৭':'7','৮':'8','৯':'9' };
+              return String(s || '').split('').map(ch => map[ch] ?? ch).join('');
+            };
+            const parseAdj = (key) => {
+              const raw = localStorage.getItem(key);
+              const ascii = toAscii(raw || '');
+              const n = Number(ascii || 0);
+              return Number.isFinite(n) ? n : 0;
+            };
+            const adjEnabledRaw = localStorage.getItem(`adminDuesAdjustmentEnabled:${String(id)}`);
+            const adjEnabled = String(adjEnabledRaw || '').trim().toLowerCase();
+            const adjPersist = parseAdj(`adminDuesAdjustment:${String(id)}`);
+            const adjOnce = parseAdj(`adminDuesAdjustmentOnce:${String(id)}`);
+            const adj = Math.max(0, (adjEnabled === 'on' ? (adjPersist + adjOnce) : adjOnce));
+            if (adjOnce > 0 && adjEnabled !== 'on') {
+              try { localStorage.removeItem(`adminDuesAdjustmentOnce:${String(id)}`); } catch (_) {}
+            }
+            if (adj > 0 && enriched?.fee_dues_summary && Array.isArray(enriched?.fee_dues_by_class)) {
+              const tuitionTotal = Number(enriched.fee_dues_summary.tuition_due_total || 0) || 0;
+              const examTotal = Number(enriched.fee_dues_summary.exam_due_total || 0) || 0;
+              const reduceTuition = Math.min(adj, tuitionTotal);
+              const reduceExam = Math.max(0, adj - reduceTuition);
+              const targetTuition = Math.max(0, tuitionTotal - reduceTuition);
+              const targetExam = Math.max(0, examTotal - reduceExam);
+              const distribute = (arr, getVal, setVal, target) => {
+                const base = arr.map((c) => {
+                  const v = Number(getVal(c) || 0) || 0;
+                  return v;
+                });
+                const sumBase = base.reduce((s, v) => s + v, 0);
+                const scaled = base.map(v => sumBase > 0 ? v * target / sumBase : 0);
+                const floors = scaled.map(v => Math.floor(v));
+                const sumFloors = floors.reduce((s, v) => s + v, 0);
+                const remainders = scaled.map((v, i) => ({ i, frac: v - floors[i] }));
+                remainders.sort((a, b) => b.frac - a.frac);
+                const need = Math.max(0, Math.round(target) - sumFloors);
+                for (let k = 0; k < need && k < remainders.length; k++) {
+                  floors[remainders[k].i] += 1;
                 }
-              } catch (_) {}
-              try {
-                const rawPersist = localStorage.getItem(`adminDuesAdjustment:${String(id)}`);
-                const adjPersist = Number(rawPersist || 0) || 0;
-                if (adjPersist > 0) {
-                  const t = Number(enriched.fee_dues_summary.tuition_due_total || 0);
-                  const e = Number(enriched.fee_dues_summary.exam_due_total || 0);
-                  const reduce = Math.min(adjPersist, t + e);
-                  const reduceTuition = Math.min(reduce, t);
-                  const reduceExam = Math.min(reduce - reduceTuition, e);
-                  enriched.fee_dues_summary = {
-                    tuition_due_total: t - reduceTuition,
-                    exam_due_total: e - reduceExam,
-                    total_due: (t - reduceTuition) + (e - reduceExam)
-                  };
+                return arr.map((c, i) => setVal(c, floors[i]));
+              };
+              let rows = enriched.fee_dues_by_class.slice();
+              rows = distribute(rows, (c) => c.tuition_due, (c, v) => ({ ...c, tuition_due: v }), targetTuition);
+              rows = distribute(rows, (c) => c.exam_due, (c, v) => ({ ...c, exam_due: v }), targetExam);
+              enriched.fee_dues_by_class = rows.map((c) => ({
+                ...c,
+                total_due: Math.max(0, (Number(c.tuition_due || 0) || 0) + (Number(c.exam_due || 0) || 0))
+              }));
+              const finalTuition = enriched.fee_dues_by_class.reduce((s, c) => s + (Number(c.tuition_due || 0) || 0), 0);
+              const finalExam = enriched.fee_dues_by_class.reduce((s, c) => s + (Number(c.exam_due || 0) || 0), 0);
+              const expectedTotal = Math.max(0, (tuitionTotal + examTotal) - adj);
+              const actualTotal = finalTuition + finalExam;
+              const delta = Math.round(expectedTotal - actualTotal);
+              if (delta !== 0 && enriched.fee_dues_by_class.length > 0) {
+                const idx = 0;
+                const row = enriched.fee_dues_by_class[idx];
+                const canAdjustTuition = delta >= 0 || (delta < 0 && (Number(row.tuition_due || 0) || 0) >= Math.abs(delta));
+                if (canAdjustTuition) {
+                  const newT = Math.max(0, (Number(row.tuition_due || 0) || 0) + delta);
+                  enriched.fee_dues_by_class[idx] = { ...row, tuition_due: newT, total_due: newT + (Number(row.exam_due || 0) || 0) };
+                } else {
+                  const newE = Math.max(0, (Number(row.exam_due || 0) || 0) + delta);
+                  enriched.fee_dues_by_class[idx] = { ...row, exam_due: newE, total_due: newE + (Number(row.tuition_due || 0) || 0) };
                 }
-              } catch (_) {}
+              }
+              const adjTuition = enriched.fee_dues_by_class.reduce((s, c) => s + (Number(c.tuition_due || 0) || 0), 0);
+              const adjExam = enriched.fee_dues_by_class.reduce((s, c) => s + (Number(c.exam_due || 0) || 0), 0);
+              enriched.fee_dues_summary = {
+                tuition_due_total: adjTuition,
+                exam_due_total: adjExam,
+                total_due: adjTuition + adjExam
+              };
             }
           } catch (_) {}
           setStats(enriched);

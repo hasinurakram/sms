@@ -662,10 +662,13 @@ export default function StudentsPage() {
       }
       console.log('Current student IDs:', list.map(s => s.id));
     } catch (err) {
+      if (err.response?.status === 401) {
+        // Interceptor handles logout
+        return;
+      }
       console.error('Students API Error:', err);
       setError('Failed to load students. Please try again.');
       toast.error('Failed to load students');
-      // Do not re-throw to prevent uncaught runtime errors
     } finally {
       setLoading(false);
     }
@@ -1081,6 +1084,10 @@ export default function StudentsPage() {
       // The AcademicsContext may still be loading on first render, which caused a false warning.
       // The UI already shows an EmptyState when there are truly no classes.
     } catch (err) {
+      if (err.response?.status === 401) {
+        // Silently handle 401 as api interceptor will redirect to login
+        return;
+      }
       console.error('Error loading form data:', err);
       console.error('Error response:', err.response?.data);
       toast.error('Failed to load form data: ' + (err.response?.data?.detail || err.message));

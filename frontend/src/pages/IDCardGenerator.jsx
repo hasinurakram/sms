@@ -228,25 +228,79 @@ function IDCardGenerator() {
     style.id = 'print-style';
     style.innerHTML = `
       @media print {
-        body * {
-          visibility: hidden;
+        body {
+          visibility: hidden !important;
+          background: none !important;
         }
-        .id-card-container, .id-card-container * {
-          visibility: visible;
+        .id-card-container, 
+        .id-card-container * {
+          visibility: visible !important;
         }
         .id-card-container {
-          position: absolute;
-          left: 0;
-          top: 0;
-          width: 100%;
-          display: flex;
-          flex-wrap: wrap;
-          justify-content: center;
-          gap: 10px;
-          padding: 20px;
+          position: absolute !important;
+          left: 0 !important;
+          top: 0 !important;
+          width: 100% !important;
+          display: block !important;
+          text-align: center !important; /* Center inline-block wrappers */
+          padding: 0 !important;
+          margin: 0 !important;
+          background: white !important;
         }
+
+        .id-card-wrapper {
+          page-break-inside: avoid !important;
+          break-inside: avoid !important;
+          display: inline-block !important;
+          margin: 5mm !important;
+          vertical-align: top !important;
+          text-align: left !important; /* Reset alignment for card contents */
+        }
+
+        .id-card {
+          page-break-inside: avoid !important;
+          break-inside: avoid !important;
+          overflow: visible !important;
+          border: 1px solid #eee !important;
+          box-shadow: none !important;
+        }
+
+        /* Fix for top half missing: Ensure header backgrounds and filters don't break print */
+        .id-card-front > div:first-of-type,
+        .id-card-header {
+          background-color: #075985 !important;
+          background-image: none !important;
+          backdrop-filter: none !important;
+          -webkit-backdrop-filter: none !important;
+          opacity: 1 !important;
+          visibility: visible !important;
+          display: block !important;
+        }
+        
+        .id-card-front {
+          margin-bottom: 4mm !important; /* Gap between front and back */
+        }
+        
+        /* Ensure avatars (logo/photo) are visible */
+        .MuiAvatar-root, 
+        .MuiAvatar-img {
+          display: block !important;
+          visibility: visible !important;
+          opacity: 1 !important;
+        }
+
         .no-print {
           display: none !important;
+        }
+        
+        * {
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+
+        @page {
+          size: A4;
+          margin: 5mm;
         }
       }
     `;
