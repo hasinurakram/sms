@@ -60,6 +60,34 @@ class AdminOrReadOnly(permissions.BasePermission):
         profile = getattr(user, 'profile', None)
         return bool(profile and getattr(profile, 'role', None) == 'admin')
 
+class IsSchoolMember(permissions.BasePermission):
+    """
+    Ensures that a user can only access resources belonging to their own school.
+    Superusers and staff are exempt.
+    """
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+            
+        # Superusers and staff can access any school
+        if getattr(request.user, 'is_superuser', False) or getattr(request.user, 'is_staff', False):
+            return True
+            
+        # Get the current school from the request (attached by TenantMiddleware)
+        current_school = getattr(request, 'current_school', None)
+        
+        # If no school is identified in the request, we can't enforce this check here
+        if not current_school:
+            return True
+
+        # Get the user's school from their profile
+        profile = getattr(request.user, 'profile', None)
+        if not profile or not profile.school:
+            return False
+            
+        # Compare schools
+        return profile.school == current_school
+
 class SubjectResultWritePermission(permissions.BasePermission):
     message = 'এই সাবজেক্টে রেজাল্ট ইনপুট দেবার জন্য আপনি অনুমোদিত নন। দয়া করে আপনার প্রতিষ্ঠানের প্রধান শিক্ষক অথবা এ্যাডমিনের সাথে যোগাযোগ করুন।'
     def has_permission(self, request, view):

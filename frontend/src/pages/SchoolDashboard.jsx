@@ -201,6 +201,33 @@ const SchoolDashboard = () => {
   // Check if we're on the main dashboard page with no sub-route
   const isMainDashboard = location.pathname === `/school/${id}` || location.pathname === `/school/${id}/`;
   const { user, logout } = useAuth();
+  
+  // Get role and permissions
+  const role = ((user && (user.profile?.role || user.role)) || '').trim().toLowerCase();
+  const isSuperUser = !!(user?.is_superuser || user?.user?.is_superuser || user?.profile?.is_superuser || user?.is_staff || role === 'admin' || role === 'super_admin' || role === 'superadmin');
+  const isTeacher = role === 'teacher';
+
+  // Filter menu items based on user role
+  const filteredMenuItems = menuItems.filter(item => {
+    // Admin and Superuser see everything
+    if (isSuperUser) return true;
+
+    // Allowed for everyone (Teacher, Student, Parent, Committee)
+    // ড্যাশবোর্ড, শ্রেণি, শিক্ষক, ছাত্র-ছাত্রী, বিষয়, সফটওয়ার এসিসটেন্ট, প্রোফাইল
+    const commonKeys = ['', 'classes', 'teacher', 'student', 'subjects', 'assistant', 'profile'];
+    if (commonKeys.includes(item.key)) return true;
+
+    // Allowed for Teachers
+    // হাজিরা, রেজাল্ট সংশ্লিষ্ট পেজগুলো (results, class-results, result-card, rank-list, examinations)
+    if (isTeacher) {
+      const teacherKeys = ['attendance', 'results', 'class-results', 'result-card', 'rank-list', 'examinations'];
+      if (teacherKeys.includes(item.key)) return true;
+    }
+
+    // Default: hide everything else
+    return false;
+  });
+
   const currentSchoolIdRef = React.useRef(id);
   useEffect(() => { currentSchoolIdRef.current = id; }, [id]);
   const adsCacheRef = React.useRef(new Map());
@@ -1052,8 +1079,6 @@ const SchoolDashboard = () => {
     return () => { mounted = false; };
   }, [id]);
 
-  const userRole = String(user?.profile?.role || user?.role || '').toLowerCase();
-  const isSuperUser = !!(user?.is_superuser || user?.profile?.is_superuser || user?.is_staff || userRole === 'superadmin' || userRole === 'admin');
   const handleAdsFile = async (e) => {
     try {
       const file = e.target.files?.[0];
@@ -1653,7 +1678,7 @@ const SchoolDashboard = () => {
         </Box>
         <Divider />
         <List sx={{ px: 1 }}>
-          {menuItems.map((item, i) => (
+          {filteredMenuItems.map((item, i) => (
             <React.Fragment key={i}>
               <ListItem disablePadding>
                 <ListItemButton
@@ -1710,7 +1735,7 @@ const SchoolDashboard = () => {
         </Toolbar>
         <Divider />
         <List sx={{ px: 1 }}>
-          {menuItems.map((item, i) => (
+          {filteredMenuItems.map((item, i) => (
             <React.Fragment key={i}>
               <ListItem disablePadding>
                 <ListItemButton

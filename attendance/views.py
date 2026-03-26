@@ -3,7 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from .models import AttendanceRecord
 from .serializers import AttendanceRecordSerializer, AttendanceSummarySerializer, MonthlyAttendanceSerializer
-from users.permissions import RolePermission
+from users.permissions import RolePermission, IsSchoolMember
 from academics.models import StudentProfile
 from datetime import datetime, timedelta
 from collections import defaultdict
@@ -15,7 +15,7 @@ except Exception:
 class AttendanceRecordViewSet(viewsets.ModelViewSet):
     queryset = AttendanceRecord.objects.select_related('student__user','student__classroom','student__section','school').all()
     serializer_class = AttendanceRecordSerializer
-    permission_classes = [RolePermission]
+    permission_classes = [IsSchoolMember, RolePermission]
     filter_backends = [DjangoFilterBackend] if DjangoFilterBackend else []
     filterset_fields = ['school','student','date','taken_by_user']
     

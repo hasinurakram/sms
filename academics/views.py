@@ -1,6 +1,6 @@
 from rest_framework import viewsets, filters
 from rest_framework.exceptions import ValidationError
-from users.permissions import AdminOrReadOnly, RolePermission
+from users.permissions import AdminOrReadOnly, RolePermission, IsSchoolMember
 from rest_framework.decorators import action
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.views import APIView
@@ -29,7 +29,7 @@ class SchoolListAPI(APIView):
 class ClassRoomViewSet(viewsets.ModelViewSet):
     queryset = ClassRoom.objects.select_related('school').prefetch_related('sections', 'students').all()
     serializer_class = ClassRoomSerializer
-    permission_classes = [AdminOrReadOnly]
+    permission_classes = [IsSchoolMember, AdminOrReadOnly]
     filter_backends = [filters.SearchFilter]
     search_fields = ['name']
     
@@ -153,7 +153,7 @@ class SectionViewSet(viewsets.ModelViewSet):
 class SubjectViewSet(viewsets.ModelViewSet):
     queryset = Subject.objects.select_related('school').all()
     serializer_class = SubjectSerializer
-    permission_classes = [AdminOrReadOnly]
+    permission_classes = [IsSchoolMember, AdminOrReadOnly]
     filter_backends = [filters.SearchFilter]
     search_fields = ['name','code']
     
@@ -293,7 +293,7 @@ class SubjectViewSet(viewsets.ModelViewSet):
 class StudentProfileViewSet(viewsets.ModelViewSet):
     queryset = StudentProfile.objects.select_related('user', 'school', 'classroom', 'section', 'guardian').all()
     serializer_class = StudentProfileSerializer
-    permission_classes = [RolePermission]
+    permission_classes = [IsSchoolMember, RolePermission]
     filter_backends = [filters.SearchFilter]
     search_fields = [
         'user__username',
@@ -1060,7 +1060,7 @@ class StudentProfileViewSet(viewsets.ModelViewSet):
 class TeacherAssignmentViewSet(viewsets.ModelViewSet):
     queryset = TeacherAssignment.objects.select_related('teacher','subject','classroom','section').all()
     serializer_class = TeacherAssignmentSerializer
-    permission_classes = [AdminOrReadOnly]
+    permission_classes = [IsSchoolMember, AdminOrReadOnly]
     filter_backends = [filters.SearchFilter]
     search_fields = ['teacher__username','teacher__first_name','teacher__last_name']
     

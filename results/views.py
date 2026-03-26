@@ -1,7 +1,7 @@
 from rest_framework import viewsets, filters, status, pagination
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from users.permissions import AdminOrReadOnly, RolePermission, SubjectResultWritePermission
+from users.permissions import AdminOrReadOnly, RolePermission, SubjectResultWritePermission, IsSchoolMember
 from rest_framework.permissions import IsAuthenticated
 from django.http import HttpResponse
 from .utils import _class_group, get_subject_maxima, SECTION_MAXIMA
@@ -20,7 +20,7 @@ class ResultPagination(pagination.PageNumberPagination):
 class ExaminationViewSet(viewsets.ModelViewSet):
     queryset = Examination.objects.select_related('school', 'classroom', 'section').all()
     serializer_class = ExaminationSerializer
-    permission_classes = [IsAuthenticated, RolePermission]
+    permission_classes = [IsSchoolMember, IsAuthenticated, RolePermission]
     filter_backends = [filters.SearchFilter]
     search_fields = ['name']
     
@@ -279,7 +279,7 @@ class ExaminationViewSet(viewsets.ModelViewSet):
 class ResultViewSet(viewsets.ModelViewSet):
     queryset = Result.objects.select_related('examination', 'student__user', 'subject').all()
     serializer_class = ResultSerializer
-    permission_classes = [IsAuthenticated, SubjectResultWritePermission]
+    permission_classes = [IsSchoolMember, IsAuthenticated, SubjectResultWritePermission]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['student__user__first_name', 'student__user__last_name', 'student__roll_number']
     ordering_fields = ['student', 'subject', 'examination']
@@ -368,7 +368,7 @@ class ResultViewSet(viewsets.ModelViewSet):
 class StudentOverallResultViewSet(viewsets.ModelViewSet):
     queryset = StudentOverallResult.objects.select_related('examination', 'student__user').all()
     serializer_class = StudentOverallResultSerializer
-    permission_classes = [IsAuthenticated, RolePermission]
+    permission_classes = [IsSchoolMember, IsAuthenticated, RolePermission]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['student__user__first_name', 'student__user__last_name']
     ordering_fields = ['cgpa', 'rank', 'percentage']

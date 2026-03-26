@@ -13,8 +13,8 @@ class UserSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'photo', 'photo_url', 'phone_number', 'mobile_number', 'educational_qualification']
-        read_only_fields = ['id', 'photo_url', 'mobile_number']
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'is_superuser', 'is_staff', 'photo', 'photo_url', 'phone_number', 'mobile_number', 'educational_qualification']
+        read_only_fields = ['id', 'photo_url', 'mobile_number', 'is_superuser', 'is_staff']
     
     def get_photo_url(self, obj):
         if obj.photo:
@@ -105,6 +105,18 @@ class BaseRoleProfileSerializer(serializers.ModelSerializer):
     phone_number = serializers.CharField(write_only=True, required=False, allow_blank=True)
     educational_qualification = serializers.CharField(write_only=True, required=False, allow_blank=True)
     photo = serializers.ImageField(write_only=True, required=False)
+
+    def validate_photo(self, value):
+        if value:
+            # Check file size (2MB limit)
+            if value.size > 2 * 1024 * 1024:
+                raise serializers.ValidationError("Image size should not exceed 2MB.")
+            # Check file extension
+            import os
+            ext = os.path.splitext(value.name)[1].lower()
+            if ext not in ['.jpg', '.jpeg', '.png', '.webp', '.gif']:
+                raise serializers.ValidationError("Unsupported file extension. Allowed: JPG, PNG, WEBP, GIF.")
+        return value
 
     role_value = None  # override in subclasses
 

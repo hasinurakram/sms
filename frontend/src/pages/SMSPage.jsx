@@ -91,10 +91,10 @@ export default function SMSPage() {
     setLoading(true);
     try {
       const [studentsRes, parentsRes, teachersRes, classroomsRes] = await Promise.all([
-        scopedGet('/api/academics/students/', id, {}, { timeout: 15000 }),
-        scopedGet('/api/users/parents/', id, {}, { timeout: 15000 }),
-        scopedGet('/api/academics/assignments/', id, { classroom__school: id }, { timeout: 15000 }),
-        scopedGet('/api/academics/classrooms/', id, {}, { timeout: 15000 })
+        scopedGet('/api/academics/students/', id, {}, { timeout: 60000 }),
+        scopedGet('/api/users/parents/', id, {}, { timeout: 60000 }),
+        scopedGet('/api/academics/assignments/', id, { classroom__school: id }, { timeout: 60000 }),
+        scopedGet('/api/academics/classrooms/', id, {}, { timeout: 60000 })
       ]);
       
       setStudents(Array.isArray(studentsRes.data) ? studentsRes.data : studentsRes.data.results || []);
@@ -124,7 +124,7 @@ export default function SMSPage() {
       return;
     }
     try {
-      const res = await scopedGet('/api/academics/sections/', id, { classroom: classroomId }, { timeout: 15000 });
+      const res = await scopedGet('/api/academics/sections/', id, { classroom: classroomId }, { timeout: 60000 });
       setSections(Array.isArray(res.data) ? res.data : res.data.results || []);
     } catch (err) {
       console.error(err);

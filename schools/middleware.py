@@ -16,6 +16,11 @@ class TenantMiddleware(MiddlewareMixin):
 
         # Try to get school from custom header
         school_id = request.META.get('HTTP_X_SCHOOL_ID')
+        
+        # Fallback to query param
+        if not school_id:
+            school_id = request.GET.get('school') or request.GET.get('school_id')
+            
         if school_id:
             try:
                 school = School.objects.get(pk=int(school_id))

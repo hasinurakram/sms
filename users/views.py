@@ -1,5 +1,6 @@
 from rest_framework import generics, permissions, status, viewsets, serializers
-from users.permissions import AdminOrReadOnly, RolePermission, TeacherSelfOrAdminChange
+from rest_framework_simplejwt.views import TokenObtainPairView
+from users.permissions import AdminOrReadOnly, RolePermission, TeacherSelfOrAdminChange, IsSchoolMember
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.decorators import action, api_view, permission_classes
@@ -26,10 +27,14 @@ import requests
 import re
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
+from django.core.mail import send_mail
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 import secrets, string, io, datetime, csv
 
 User = get_user_model()
+
+class ThrottledTokenObtainPairView(TokenObtainPairView):
+    throttle_scope = 'auth'
 
 class UsernameAvailabilityView(APIView):
     permission_classes = [permissions.AllowAny]
@@ -273,7 +278,13 @@ class CurrentUserView(APIView):
         updated = False
         # Photo upload
         if 'photo' in request.FILES:
-            user.photo = request.FILES['photo']
+            photo = request.FILES['photo']
+            # Basic validation for direct upload
+            if photo.size > 2 * 1024 * 1024:
+                return Response({"error": "Image size should not exceed 2MB."}, status=status.HTTP_400_BAD_REQUEST)
+            if not photo.name.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp')):
+                return Response({"error": "Unsupported file extension. Allowed: JPG, PNG, WEBP, GIF."}, status=status.HTTP_400_BAD_REQUEST)
+            user.photo = photo
             updated = True
         # Basic fields
         username = (request.data.get('username') or '').strip()
@@ -360,7 +371,7 @@ class VerifyPasswordView(APIView):
         return Response({"valid": False, "error": "Invalid password"}, status=status.HTTP_401_UNAUTHORIZED)
 
 class SoftwareAssistantView(APIView):
-    permission_classes = [RolePermission]
+    permission_classes = [IsSchoolMember, RolePermission]
     def get(self, request):
         q = (request.query_params.get('q') or request.query_params.get('query') or '').strip()
         school_id = request.query_params.get('school')
@@ -2252,7 +2263,7 @@ class SoftwareAssistantView(APIView):
 class AdminProfileViewSet(viewsets.ModelViewSet):
     queryset = Profile.objects.select_related('user', 'school').filter(role='admin')
     serializer_class = AdminProfileSerializer
-    permission_classes = [AdminOrReadOnly]
+    permission_classes = [IsSchoolMember, AdminOrReadOnly]
     filterset_fields = ['school']
     parser_classes = [MultiPartParser, FormParser]
     
@@ -2266,7 +2277,7 @@ class AdminProfileViewSet(viewsets.ModelViewSet):
 class ParentProfileViewSet(viewsets.ModelViewSet):
     queryset = Profile.objects.select_related('user', 'school').filter(role='parent')
     serializer_class = ParentProfileSerializer
-    permission_classes = [RolePermission]
+    permission_classes = [IsSchoolMember, RolePermission]
     filterset_fields = ['school']
     parser_classes = [MultiPartParser, FormParser]
     
@@ -2280,7 +2291,7 @@ class ParentProfileViewSet(viewsets.ModelViewSet):
 class CommitteeProfileViewSet(viewsets.ModelViewSet):
     queryset = Profile.objects.select_related('user', 'school').filter(role='committee')
     serializer_class = CommitteeProfileSerializer
-    permission_classes = [AdminOrReadOnly]
+    permission_classes = [IsSchoolMember, AdminOrReadOnly]
     filterset_fields = ['school']
     parser_classes = [MultiPartParser, FormParser]
     
@@ -2294,7 +2305,7 @@ class CommitteeProfileViewSet(viewsets.ModelViewSet):
 class TeacherProfileViewSet(viewsets.ModelViewSet):
     queryset = Profile.objects.select_related('user', 'school').filter(role='teacher')
     serializer_class = TeacherProfileSerializer
-    permission_classes = [TeacherSelfOrAdminChange]
+    permission_classes = [IsSchoolMember, TeacherSelfOrAdminChange]
     filterset_fields = ['school', 'user']
     parser_classes = [MultiPartParser, FormParser]
     
@@ -2319,7 +2330,7 @@ class TaskViewSet(viewsets.ModelViewSet):
     """ViewSet for managing committee tasks"""
     queryset = Task.objects.select_related('assigned_to', 'school', 'created_by').all()
     serializer_class = TaskSerializer
-    permission_classes = [AdminOrReadOnly]
+    permission_classes = [IsSchoolMember, AdminOrReadOnly]
     filterset_fields = ['school', 'assigned_to', 'status', 'priority']
     
     def get_queryset(self):
@@ -2445,6 +2456,7 @@ def send_template_sms_view(request):
 
 class ForgotPasswordView(APIView):
     permission_classes = [permissions.AllowAny]
+    throttle_scope = 'auth'
 
     def post(self, request):
         identifier = (request.data.get('username') or request.data.get('email') or '').strip()
@@ -2458,11 +2470,24 @@ class ForgotPasswordView(APIView):
                 user = User.objects.filter(email__iexact=identifier).first()
             if not user:
                 user = User.objects.filter(username__iexact=identifier).first()
-            if user:
+            if user and user.email:
                 uid = urlsafe_base64_encode(force_bytes(user.pk))
                 token = PasswordResetTokenGenerator().make_token(user)
                 base = getattr(settings, 'SITE_BASE_URL', '').rstrip('/') or 'http://localhost:3000'
                 reset_url = f"{base}/reset-password/{uid}/{token}"
+                
+                # Send Email
+                subject = "Password Reset Request"
+                message = f"Hello {user.username or 'User'},\n\nYou requested a password reset. Click the link below to reset it:\n\n{reset_url}\n\nIf you did not request this, please ignore this email."
+                
+                send_mail(
+                    subject,
+                    message,
+                    settings.DEFAULT_FROM_EMAIL,
+                    [user.email],
+                    fail_silently=True,
+                )
+                
                 if getattr(settings, 'DEBUG', False):
                     resp['debug_reset_url'] = reset_url
         except Exception:
@@ -2472,6 +2497,7 @@ class ForgotPasswordView(APIView):
 
 class ResetPasswordConfirmView(APIView):
     permission_classes = [permissions.AllowAny]
+    throttle_scope = 'auth'
 
     def post(self, request):
         uidb64 = (request.data.get('uid') or request.data.get('uidb64') or '').strip()
@@ -2595,7 +2621,7 @@ class ExportSchoolCredentialsView(APIView):
         return Response({"success": True, "count": len(rows), "file_url": url, "reset_applied": bool(confirm_reset)})
 
 class AutoRuleSuggestionView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsSchoolMember, permissions.IsAuthenticated]
     def get(self, request):
         school_id = request.query_params.get('school')
         try:

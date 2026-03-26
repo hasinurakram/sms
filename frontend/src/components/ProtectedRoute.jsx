@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { isAuthenticated } from '../utils/auth';
 import { Box, CircularProgress, Typography, Button } from '@mui/material';
 import { useAuth } from '../context/AuthContext';
@@ -7,9 +7,14 @@ import { useAuth } from '../context/AuthContext';
 const ProtectedRoute = ({ children, allowedRoles }) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { id: schoolId } = useParams();
   const [isChecking, setIsChecking] = useState(true);
   const { user, loading } = useAuth();
+  
+  // Extract role and user's school ID
   const role = ((user && (user.profile?.role || user.role)) || '').trim().toLowerCase();
+  const userSchoolId = user?.profile?.school;
+  const isSuperUser = !!(user?.is_superuser || user?.user?.is_superuser || user?.profile?.is_superuser || user?.is_staff || role === 'admin' || role === 'super_admin' || role === 'superadmin');
 
   useEffect(() => {
     const checkAuth = () => {
@@ -17,8 +22,20 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
       if (!authenticated) {
         const next = encodeURIComponent(location.pathname + location.search);
         navigate(`/login?next=${next}${Array.isArray(allowedRoles) && allowedRoles.length ? `&require=${allowedRoles.join(',')}` : ''}`, { replace: true });
+        return;
       }
+
+      // Check for school isolation if not a superuser
+      if (schoolId && !isSuperUser && userSchoolId) {
+        if (String(schoolId) !== String(userSchoolId)) {
+          // User is trying to access another school's dashboard
+          setIsChecking(false);
+          return;
+        }
+      }
+
       setIsChecking(false);
+      
       if (Array.isArray(allowedRoles) && allowedRoles.length > 0) {
         const hasRole = !!role;
         const isAdminLike = role === 'admin' || role === 'super_admin';
@@ -32,7 +49,7 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
 
 
     if (!loading) checkAuth();
-  }, [navigate, user, loading, location.pathname, location.search]);
+  }, [navigate, user, loading, location.pathname, location.search, schoolId, userSchoolId, isSuperUser]);
 
   if (isChecking || loading) {
     return (
@@ -54,6 +71,28 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
   if (!(isAuthenticated() || !!user)) {
     return null;
   }
+
+  // School isolation error message
+  if (schoolId && !isSuperUser && userSchoolId && String(schoolId) !== String(userSchoolId)) {
+    return (
+      <Box display="flex" flexDirection="column" alignItems="center" justifyContent="center" minHeight="60vh">
+        <Typography variant="h5" color="error" gutterBottom>
+          এক্সেস রিফিউজড (Access Refused)
+        </Typography>
+        <Typography variant="body1" sx={{ mb: 2 }}>
+          আপনি এই স্কুলের ড্যাশবোর্ডে প্রবেশের অনুমতি পাচ্ছেন না। আপনি কেবল আপনার নিজস্ব স্কুলের তথ্য দেখতে পারবেন।
+        </Typography>
+        <Button 
+          variant="contained" 
+          onClick={() => navigate(`/school/${userSchoolId}`)}
+          sx={{ mt: 2 }}
+        >
+          আপনার স্কুলে ফিরে যান
+        </Button>
+      </Box>
+    );
+  }
+
   if (Array.isArray(allowedRoles) && allowedRoles.length > 0) {
     const hasRole = !!role;
     if (hasRole) {

@@ -5,12 +5,12 @@ from .serializers import (
     FeeStructureSerializer, PaymentSerializer,
     FeeCategorySerializer, StudentFeeAssignmentSerializer, FeeCollectionSerializer, FeeSlipSerializer
 )
-from users.permissions import AdminOrReadOnly
+from users.permissions import AdminOrReadOnly, IsSchoolMember
 
 class FeeStructureViewSet(viewsets.ModelViewSet):
     queryset = FeeStructure.objects.select_related('school','classroom','category').all()
     serializer_class = FeeStructureSerializer
-    permission_classes = [AdminOrReadOnly]
+    permission_classes = [IsSchoolMember, AdminOrReadOnly]
     filter_backends = []
 
     def get_queryset(self):
@@ -30,21 +30,21 @@ class FeeStructureViewSet(viewsets.ModelViewSet):
 class PaymentViewSet(viewsets.ModelViewSet):
     queryset = Payment.objects.select_related('student__user','fee_assignment').all()
     serializer_class = PaymentSerializer
-    permission_classes = [AdminOrReadOnly]
+    permission_classes = [IsSchoolMember, AdminOrReadOnly]
     filter_backends = []
 
 
 class FeeCategoryViewSet(viewsets.ModelViewSet):
     queryset = FeeCategory.objects.select_related('school').all()
     serializer_class = FeeCategorySerializer
-    permission_classes = [AdminOrReadOnly]
+    permission_classes = [IsSchoolMember, AdminOrReadOnly]
     filter_backends = []
 
 
 class StudentFeeAssignmentViewSet(viewsets.ModelViewSet):
     queryset = StudentFeeAssignment.objects.select_related('student__user','student__classroom','fee_structure__category','fee_structure__classroom','fee_structure__school').all()
     serializer_class = StudentFeeAssignmentSerializer
-    permission_classes = [AdminOrReadOnly]
+    permission_classes = [IsSchoolMember, AdminOrReadOnly]
     filter_backends = []
 
     def get_queryset(self):
@@ -86,14 +86,14 @@ class StudentFeeAssignmentViewSet(viewsets.ModelViewSet):
 class FeeCollectionViewSet(viewsets.ModelViewSet):
     queryset = FeeCollection.objects.select_related('school','classroom').all()
     serializer_class = FeeCollectionSerializer
-    permission_classes = [AdminOrReadOnly]
+    permission_classes = [IsSchoolMember, AdminOrReadOnly]
     filter_backends = []
 
 
 class FeeSlipViewSet(viewsets.ModelViewSet):
     queryset = FeeSlip.objects.select_related('school','classroom','student__user','fee_structure').all()
     serializer_class = FeeSlipSerializer
-    permission_classes = [AdminOrReadOnly]
+    permission_classes = [IsSchoolMember, AdminOrReadOnly]
     filter_backends = []
 
     def get_queryset(self):
