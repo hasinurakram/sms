@@ -22,3 +22,6 @@ docs/logs/
 *.log
 .DS_Store
 Thumbs.db
+
+.env
+credentials.json
