@@ -13,6 +13,7 @@ import BookIcon from "@mui/icons-material/Book";
 import ClassIcon from "@mui/icons-material/Class";
 import CategoryIcon from "@mui/icons-material/Category";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
+import VideoCallIcon from "@mui/icons-material/VideoCall";
 import PaymentIcon from "@mui/icons-material/Payment";
 import ReceiptIcon from "@mui/icons-material/Receipt";
 import PeopleIcon from "@mui/icons-material/People";
@@ -130,6 +131,7 @@ const menuItems = [
   { label: 'ছাত্র-ছাত্রী', icon: <SchoolIcon />, key: 'student' },
   { label: 'বিষয়/সাবজেক্ট', icon: <BookIcon />, key: 'subjects' },
   { label: 'হাজিরা', icon: <CheckCircleIcon />, key: 'attendance' },
+  { label: 'লাইভ ক্লাস', icon: <VideoCallIcon />, key: 'live-class' },
   { label: 'রেজাল্ট', icon: <AssessmentIcon />, key: 'results' },
   { label: 'ক্লাস রেজাল্টস', icon: <AssessmentIcon />, key: 'class-results' },
   { label: 'রেজাল্ট কার্ড', icon: <CardMembershipIcon />, key: 'result-card' },
@@ -200,12 +202,33 @@ const SchoolDashboard = () => {
   
   // Check if we're on the main dashboard page with no sub-route
   const isMainDashboard = location.pathname === `/school/${id}` || location.pathname === `/school/${id}/`;
-  const { user, logout } = useAuth();
+  const { user, logout, loading: authLoading } = useAuth();
   
   // Get role and permissions
   const role = ((user && (user.profile?.role || user.role)) || '').trim().toLowerCase();
   const isSuperUser = !!(user?.is_superuser || user?.user?.is_superuser || user?.profile?.is_superuser || user?.is_staff || role === 'admin' || role === 'super_admin' || role === 'superadmin');
   const isTeacher = role === 'teacher';
+
+  useEffect(() => {
+    if (authLoading) return; // Wait until user data is loaded
+
+    // Superusers can access any school
+    if (isSuperUser) return;
+
+    // For regular users, check if their profile school matches the dashboard ID
+    if (user && user.profile?.school && String(user.profile.school) !== String(id)) {
+      setError('দুঃখিত, আপনি এই স্কুলে প্রবেশের জন্য অনুমোদিত ব্যাক্তি নন, ধন্যবাদ।');
+      setLoading(false);
+      // Optional: Redirect to their own school's dashboard or a generic page
+      setTimeout(() => {
+        if (user.profile.school) {
+          navigate(`/school/${user.profile.school}/dashboard`);
+        } else {
+          navigate('/welcome');
+        }
+      }, 3000);
+    }
+  }, [id, user, authLoading, isSuperUser, navigate]);
 
   // Filter menu items based on user role
   const filteredMenuItems = menuItems.filter(item => {
@@ -1564,6 +1587,7 @@ const SchoolDashboard = () => {
       <CssBaseline />
       <AppBar
         position="fixed"
+        className="no-print"
         sx={{
           width: { md: `calc(100% - ${drawerWidth}px)`, xs: '100%' },
           ml: { md: `${drawerWidth}px`, xs: 0 },
@@ -1618,13 +1642,24 @@ const SchoolDashboard = () => {
             )}
             {user && (
               <Stack direction="row" spacing={1} alignItems="center">
-                <Avatar alt={user?.username || 'User'} sx={{ bgcolor: '#1565c0' }} />
-                <Typography variant="body1">{user?.first_name || user?.username || 'User'}</Typography>
-                <Button color="inherit" variant="outlined" onClick={() => navigate(`/school/${id}/results`)}>রেজাল্ট ইনপুট</Button>
-                <Button color="inherit" variant="text" onClick={() => navigate('/change-password')}>পাসওয়ার্ড পরিবর্তন</Button>
-                <Button color="inherit" variant="contained" onClick={logout}>লগআউট</Button>
+                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', mr: 1 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 'bold', lineHeight: 1 }}>
+                    {user?.first_name || user?.username || 'User'}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    ID: {user?.username}
+                  </Typography>
+                </Box>
+                <Avatar 
+                  alt={user?.username || 'User'} 
+                  src={user?.photo_url || user?.photo}
+                  sx={{ bgcolor: '#1565c0', width: 36, height: 36 }} 
+                />
+                <Button color="inherit" size="small" variant="outlined" onClick={() => navigate(`/school/${id}/results`)}>রেজাল্ট ইনপুট</Button>
+                <Button color="inherit" size="small" variant="text" onClick={() => navigate('/change-password')}>পাসওয়ার্ড</Button>
+                <Button color="inherit" size="small" variant="contained" onClick={logout}>লগআউট</Button>
                 {isSuperUser && (
-                  <Button color="inherit" variant="contained" onClick={() => setAdsOpen(true)}>বিজ্ঞাপন যোগ করুন</Button>
+                  <Button color="inherit" size="small" variant="contained" onClick={() => setAdsOpen(true)}>বিজ্ঞাপন</Button>
                 )}
               </Stack>
             )}
@@ -1635,6 +1670,7 @@ const SchoolDashboard = () => {
       {/* Temporary drawer on mobile */}
       <Drawer
         variant="temporary"
+        className="no-print"
         open={mobileOpen}
         onClose={() => setMobileOpen(false)}
         ModalProps={{ keepMounted: true }}
@@ -1716,6 +1752,7 @@ const SchoolDashboard = () => {
       {/* Permanent drawer on md and up */}
       <Drawer
         variant="permanent"
+        className="no-print"
         sx={{
           display: { xs: 'none', md: 'block' },
           width: drawerWidth,
@@ -1774,10 +1811,11 @@ const SchoolDashboard = () => {
         component="main"
         sx={{
           flexGrow: 1,
-          bgcolor: "#f5f5f5",
-          p: 3,
-          width: { md: `calc(100% - ${drawerWidth}px)`, xs: '100%' },
-          mt: { xs: 7, sm: 8 },
+          bgcolor: { xs: "#f5f5f5", print: 'transparent' },
+          p: { xs: 3, print: 0 },
+          width: { md: `calc(100% - ${drawerWidth}px)`, xs: '100%', print: '100%' },
+          ml: { md: 0, print: 0 },
+          mt: { xs: 7, sm: 8, print: 0 },
           minHeight: "100vh",
         }}
       >

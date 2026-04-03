@@ -8,17 +8,17 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "backend.settings")
 django.setup()
 
-from users.views import SoftwareAssistantView
-from django.test import RequestFactory
+from rest_framework.test import APIRequestFactory, force_authenticate
 from django.contrib.auth import get_user_model
 from schools.models import School
 from users.models import Profile
 from academics.models import StudentProfile
+from users.views import SoftwareAssistantView
 
 User = get_user_model()
 
 def test_query(query, school_id=None):
-    factory = RequestFactory()
+    factory = APIRequestFactory()
     params = {'q': query}
     if school_id:
         params['school'] = str(school_id)
@@ -26,24 +26,27 @@ def test_query(query, school_id=None):
     request = factory.get('/api/users/assistant/', params)
     
     # We need a user context
-    user = User.objects.first()
+    user = User.objects.filter(is_superuser=True).first() or User.objects.first()
     if not user:
         user = User.objects.create_user(username='test_admin', password='password')
     
-    request.user = user
+    force_authenticate(request, user=user)
     
     view = SoftwareAssistantView.as_view()
     try:
         response = view(request)
         print(f"Query: {query}")
-        print(f"Response Text: {response.data.get('text')}")
-        users_list = response.data.get('users_list')
-        if users_list:
-            print(f"Users List ({len(users_list)}):")
-            for u in users_list:
-                print(f" - {u['name']} ({u['role']}): {u['phone']}")
+        if hasattr(response, 'data'):
+            print(f"Response Text: {response.data.get('text')}")
+            users_list = response.data.get('users_list')
+            if users_list:
+                print(f"Users List ({len(users_list)}):")
+                for u in users_list:
+                    print(f" - {u['name']} ({u['role']}): {u.get('phone') or 'N/A'}")
+            else:
+                print("Users List: None")
         else:
-            print("Users List: None")
+            print(f"Status: {response.status_code}")
         print("-" * 20)
     except Exception as e:
         print(f"Error: {e}")
@@ -93,7 +96,5 @@ if __name__ == "__main__":
     test_query("B+ রক্তের গ্রুপের কতজন আছে?", school_id=school.id)
     
     # Cleanup
-    # school.delete() # Keep for manual check if needed, but usually better to clean. 
-    # Actually I will clean up to avoid DB clutter.
     school.delete()
     User.objects.filter(username__startswith="bg_student_").delete()

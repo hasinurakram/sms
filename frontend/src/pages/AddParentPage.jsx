@@ -151,8 +151,12 @@ export default function AddParentPage() {
       const cleanFormData = new FormData();
       
       // Add required fields
+      let uname = form.username;
+      if (typeof uname === 'string' && uname) {
+        uname = uname.normalize('NFKC').trim();
+      }
       cleanFormData.append('school_id', id);
-      cleanFormData.append('username', form.username || `${form.phone_number || Date.now()}`);
+      cleanFormData.append('username', uname || `${form.phone_number || Date.now()}`);
       cleanFormData.append('password', form.password || '123456');
       cleanFormData.append('first_name', form.first_name);
       

@@ -87,18 +87,36 @@ def calculate_student_overall_result(examination, student):
 def calculate_ranks(examination):
     """
     Calculate and assign ranks to all students in an examination.
-    Ranks are based on CGPA (higher is better).
+    Ranks are based on CGPA and total marks within each section.
     """
-    # Get all overall results for this examination, ordered by CGPA
-    overall_results = StudentOverallResult.objects.filter(
-        examination=examination
-    ).order_by('-cgpa', '-percentage')
+    from academics.models import Section
     
-    # Assign ranks
-    for rank, result in enumerate(overall_results, start=1):
-        if result.rank != rank:
-            result.rank = rank
-            result.save(update_fields=['rank'])
+    # Get all sections associated with this examination's class
+    sections = Section.objects.filter(classroom=examination.classroom)
+    
+    if sections.exists():
+        for section in sections:
+            # Get all overall results for this examination and this section, ordered by CGPA and percentage
+            overall_results = StudentOverallResult.objects.filter(
+                examination=examination,
+                student__section=section
+            ).order_by('-cgpa', '-percentage', '-total_marks_obtained')
+            
+            # Assign ranks within the section
+            for rank, result in enumerate(overall_results, start=1):
+                if result.rank != rank:
+                    result.rank = rank
+                    result.save(update_fields=['rank'])
+    else:
+        # Fallback to class-wide ranking if no sections are defined
+        overall_results = StudentOverallResult.objects.filter(
+            examination=examination
+        ).order_by('-cgpa', '-percentage', '-total_marks_obtained')
+        
+        for rank, result in enumerate(overall_results, start=1):
+            if result.rank != rank:
+                result.rank = rank
+                result.save(update_fields=['rank'])
 
 
 @receiver(post_save, sender=Examination)

@@ -30,9 +30,10 @@ api.interceptors.request.use(
       const isPublicGet =
         method === 'get' &&
         (
-          /^\/?api\/schools\/?(\?.*)?$/i.test(urlPath) ||
-          /^\/?api\/schools\/\d+\/?(\?.*)?$/i.test(urlPath) ||
-          /^\/?api\/dashboard-stats\/?(\?.*)?$/i.test(urlPath)
+          /^\/?api\/(v1\/)?schools\/?(\?.*)?$/i.test(urlPath) ||
+          /^\/?api\/(v1\/)?schools\/\d+\/?(\?.*)?$/i.test(urlPath) ||
+          /^\/?api\/(v1\/)?ads\/?(\?.*)?$/i.test(urlPath) ||
+          /^\/?api\/(v1\/)?dashboard-stats\/?(\?.*)?$/i.test(urlPath)
         );
       const isAuthEndpoint = /^\/?api\/(token\/?|auth\/login\/?|users\/login\/?)$/i.test(urlPath);
 
@@ -88,9 +89,10 @@ api.interceptors.response.use(
     const urlPath = (originalRequest?.url || '').toString();
     const isPublicGet = (originalRequest?.method || '').toLowerCase() === 'get' &&
       (
-        /^\/?api\/schools\/?(\?.*)?$/i.test(urlPath) ||
-        /^\/?api\/schools\/\d+\/?(\?.*)?$/i.test(urlPath) ||
-        /^\/?api\/dashboard-stats\/?(\?.*)?$/i.test(urlPath)
+        /^\/?api\/(v1\/)?schools\/?(\?.*)?$/i.test(urlPath) ||
+        /^\/?api\/(v1\/)?schools\/\d+\/?(\?.*)?$/i.test(urlPath) ||
+        /^\/?api\/(v1\/)?ads\/?(\?.*)?$/i.test(urlPath) ||
+        /^\/?api\/(v1\/)?dashboard-stats\/?(\?.*)?$/i.test(urlPath)
       );
 
     if (error.response?.status === 401 && isPublicGet && !originalRequest._retryNoAuth) {
@@ -143,6 +145,13 @@ api.interceptors.response.use(
     }
 
     // For other errors, just reject with the error
+    // Global error message handling for non-401 errors
+    if (error.response?.status && error.response.status >= 500) {
+      console.error('Server error:', error);
+    } else if (error.code === 'ERR_NETWORK') {
+      console.error('Network error:', error);
+    }
+    
     return Promise.reject(error);
   }
 );

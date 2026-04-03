@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from schools.models import School
-from .models import ClassRoom, Section, Subject, StudentProfile, TeacherAssignment
+from .models import ClassRoom, Section, Subject, StudentProfile, TeacherAssignment, VirtualClass
 from django.contrib.auth import get_user_model
 from users.models import Profile
 
@@ -45,7 +45,8 @@ class ClassRoomSerializer(serializers.ModelSerializer):
     sections = serializers.SerializerMethodField()
     
     def get_student_count(self, obj):
-        return obj.students.count()
+        # Use annotated value if available to avoid extra query
+        return getattr(obj, 'annotated_student_count', obj.students.count())
     
     def get_sections(self, obj):
         """Get sections for this classroom"""
@@ -75,7 +76,8 @@ class SubjectSerializer(serializers.ModelSerializer):
     
     def get_assigned_teachers(self, obj):
         """Get all teachers assigned to this subject"""
-        assignments = obj.assignments.select_related('teacher').all()
+        # Use all() instead of select_related() to leverage prefetched data
+        assignments = obj.assignments.all()
         teachers_data = []
         for assignment in assignments:
             teacher = assignment.teacher
@@ -102,14 +104,24 @@ class SubjectSerializer(serializers.ModelSerializer):
             pass
         return None
 
+class TinyClassRoomSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ClassRoom
+        fields = ['id', 'name']
+
+class TinySectionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Section
+        fields = ['id', 'name']
+
 class StudentProfileSerializer(serializers.ModelSerializer):
     user = SimpleUserSerializer(read_only=True)
     user_id = serializers.PrimaryKeyRelatedField(source='user', queryset=User.objects.all(), write_only=True, required=False, allow_null=True)
     # Allow setting school via school_id in writes
     school_id = serializers.PrimaryKeyRelatedField(source='school', queryset=School.objects.all(), write_only=True, required=False)
-    classroom = ClassRoomSerializer(read_only=True)
+    classroom = TinyClassRoomSerializer(read_only=True)
     classroom_id = serializers.PrimaryKeyRelatedField(source='classroom', queryset=ClassRoom.objects.all(), write_only=True, allow_null=True, required=False)
-    section = SectionSerializer(read_only=True)
+    section = TinySectionSerializer(read_only=True)
     section_id = serializers.PrimaryKeyRelatedField(source='section', queryset=Section.objects.all(), write_only=True, allow_null=True, required=False)
     guardian = SimpleUserSerializer(read_only=True)
     guardian_id = serializers.PrimaryKeyRelatedField(source='guardian', queryset=User.objects.all(), write_only=True, allow_null=True, required=False)
@@ -130,9 +142,15 @@ class StudentProfileSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         errors = {}
+        # Normalize username if provided
+        username = data.get('username')
+        if username:
+            import unicodedata
+            data['username'] = unicodedata.normalize('NFKC', str(username)).strip()
+            username = data['username']
+
         # If no user provided, ensure we have enough info to create
         if not data.get('user'):
-            username = data.get('username') or ''
             first_name = (data.get('first_name') or '').strip()
             if not username and not first_name:
                 errors['first_name'] = 'Provide at least a username or a first name'
@@ -256,15 +274,19 @@ class StudentProfileSerializer(serializers.ModelSerializer):
         # If no user provided, create one (auto-generate username/password if missing)
         if not user:
             if not username:
-                base = (first_name or 'student').lower().replace(' ', '')
+                import unicodedata
+                base = unicodedata.normalize('NFKC', (first_name or 'student')).strip().lower().replace(' ', '') or 'student'
                 suffix = str(User.objects.count() + 1)
                 username = f"{base}{suffix}"
                 # ensure unique
                 idx = 1
                 orig = username
-                while User.objects.filter(username=username).exists():
+                while User.objects.filter(username=username).exists() or User.objects.filter(username__iexact=username).exists():
                     idx += 1
                     username = f"{orig}{idx}"
+            else:
+                import unicodedata
+                username = unicodedata.normalize('NFKC', str(username)).strip()
             if not password:
                 import secrets, string
                 alphabet = string.ascii_letters + string.digits
@@ -338,8 +360,12 @@ class StudentProfileSerializer(serializers.ModelSerializer):
     
     def update(self, instance, validated_data):
         # Extract related objects
-        classroom = validated_data.pop('classroom', None)
-        section = validated_data.pop('section', None)
+        classroom_was_provided = 'classroom' in validated_data
+        classroom = validated_data.pop('classroom') if classroom_was_provided else None
+        
+        section_was_provided = 'section' in validated_data
+        section = validated_data.pop('section') if section_was_provided else None
+        
         guardian_name = validated_data.get('guardian_name', None)
         # Check if guardian was in validated_data (meaning guardian_id was provided in request)
         # This allows us to clear guardian by sending guardian_id as null/empty
@@ -359,10 +385,14 @@ class StudentProfileSerializer(serializers.ModelSerializer):
         if instance.user:
             user_updated = False
             if username is not None:
-                exists = User.objects.filter(username=username).exclude(pk=instance.user.pk).exists()
+                import unicodedata
+                norm_username = unicodedata.normalize('NFKC', str(username)).strip()
+                exists = User.objects.filter(username=norm_username).exclude(pk=instance.user.pk).exists() or \
+                         User.objects.filter(username__iexact=norm_username).exclude(pk=instance.user.pk).exists()
                 if exists:
-                    raise serializers.ValidationError({'username': 'This username is already taken.'})
-                instance.user.username = username
+                    from rest_framework import serializers as drf_serializers
+                    raise drf_serializers.ValidationError({'username': 'This username is already taken.'})
+                instance.user.username = norm_username
                 user_updated = True
             if first_name is not None:
                 instance.user.first_name = first_name
@@ -414,9 +444,9 @@ class StudentProfileSerializer(serializers.ModelSerializer):
                 pass
         
         # Update student profile fields
-        if classroom is not None:
+        if classroom_was_provided:
             instance.classroom = classroom
-        if section is not None:
+        if section_was_provided:
             instance.section = section
         # Set guardian if it was explicitly provided in the request (including None to clear it)
         if guardian_was_provided:
@@ -471,3 +501,18 @@ class TeacherAssignmentSerializer(serializers.ModelSerializer):
             teacher_serializer = SimpleUserSerializer(instance.teacher, context=self.context)
             ret['teacher'] = teacher_serializer.data
         return ret
+
+class VirtualClassSerializer(serializers.ModelSerializer):
+    teacher_name = serializers.ReadOnlyField(source='teacher.get_full_name')
+    subject_name = serializers.ReadOnlyField(source='subject.name')
+    classroom_name = serializers.ReadOnlyField(source='classroom.name')
+    section_name = serializers.ReadOnlyField(source='section.name')
+    
+    class Meta:
+        model = VirtualClass
+        fields = [
+            'id', 'school', 'teacher', 'teacher_name', 'classroom', 'classroom_name', 
+            'section', 'section_name', 'subject', 'subject_name', 'meeting_id', 
+            'is_active', 'started_at', 'ended_at'
+        ]
+        read_only_fields = ['teacher', 'started_at', 'ended_at', 'meeting_id']

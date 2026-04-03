@@ -47,6 +47,9 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
     def validate(self, data):
         if data['password'] != data['confirm_password']:
             raise serializers.ValidationError("Passwords don't match")
+        # Normalize username
+        if 'username' in data:
+            data['username'] = unicodedata.normalize('NFKC', data['username']).strip()
         return data
     
     def create(self, validated_data):
@@ -108,9 +111,9 @@ class BaseRoleProfileSerializer(serializers.ModelSerializer):
 
     def validate_photo(self, value):
         if value:
-            # Check file size (2MB limit)
-            if value.size > 2 * 1024 * 1024:
-                raise serializers.ValidationError("Image size should not exceed 2MB.")
+            # Check file size (5MB limit)
+            if value.size > 5 * 1024 * 1024:
+                raise serializers.ValidationError("Image size should not exceed 5MB.")
             # Check file extension
             import os
             ext = os.path.splitext(value.name)[1].lower()
@@ -126,14 +129,14 @@ class BaseRoleProfileSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'role', 'school']
 
     def _ensure_user(self, validated_data):
-        user = validated_data.pop('user', None)
-        username = validated_data.pop('username', None)
-        password = validated_data.pop('password', None)
-        first_name = validated_data.pop('first_name', '')
-        last_name = validated_data.pop('last_name', '')
-        email = validated_data.pop('email', '')
-        phone_number = validated_data.pop('phone_number', '')
-        educational_qualification = validated_data.pop('educational_qualification', '')
+        user = validated_data.get('user')
+        username = validated_data.get('username')
+        password = validated_data.get('password')
+        first_name = validated_data.get('first_name', '')
+        last_name = validated_data.get('last_name', '')
+        email = validated_data.get('email', '')
+        phone_number = validated_data.get('phone_number', '')
+        educational_qualification = validated_data.get('educational_qualification', '')
         if user:
             return user
         # auto-generate if missing
@@ -205,12 +208,53 @@ class BaseRoleProfileSerializer(serializers.ModelSerializer):
         photo = validated_data.pop('photo', None)
         designation = validated_data.pop('designation', '')
         user = self._ensure_user(validated_data)
+        # Pop user from validated_data so it doesn't cause issues in update_or_create
+        validated_data.pop('user', None)
+        # If user already exists, update fields if provided
+        user_updated = False
+        username = validated_data.pop('username', None)
+        password = validated_data.pop('password', None)
+        first_name = validated_data.pop('first_name', None)
+        last_name = validated_data.pop('last_name', None)
+        email = validated_data.pop('email', None)
+        phone_number = validated_data.pop('phone_number', None)
+        educational_qualification = validated_data.pop('educational_qualification', None)
+        
+        if username is not None:
+            norm_username = unicodedata.normalize('NFKC', str(username)).strip()
+            if User.objects.filter(username=norm_username).exclude(pk=user.pk).exists() or \
+               User.objects.filter(username__iexact=norm_username).exclude(pk=user.pk).exists():
+                raise serializers.ValidationError({'username': 'This username is already taken.'})
+            user.username = norm_username
+            user_updated = True
+        if password:
+            user.set_password(password)
+            user_updated = True
+        if first_name is not None:
+            user.first_name = first_name
+            user_updated = True
+        if last_name is not None:
+            user.last_name = last_name
+            user_updated = True
+        if email is not None:
+            user.email = email
+            user_updated = True
+        if phone_number is not None:
+            user.phone_number = phone_number
+            user_updated = True
+        if educational_qualification is not None:
+            user.educational_qualification = educational_qualification
+            user_updated = True
         if photo and hasattr(user, 'photo'):
             try:
                 user.photo = photo
-                user.save(update_fields=['photo'])
+                user_updated = True
             except Exception:
                 pass
+        
+        if user_updated:
+            user.save()
+            
         profile, _ = Profile.objects.update_or_create(
             user=user,
             defaults={k: v for k, v in {
@@ -226,6 +270,8 @@ class BaseRoleProfileSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         # Extract user fields
+        username = validated_data.pop('username', None)
+        password = validated_data.pop('password', None)
         first_name = validated_data.pop('first_name', None)
         last_name = validated_data.pop('last_name', None)
         email = validated_data.pop('email', None)
@@ -235,33 +281,43 @@ class BaseRoleProfileSerializer(serializers.ModelSerializer):
         
         # Update user fields
         user = instance.user
+        user_updated = False
+        if username is not None:
+            # Normalize and check uniqueness
+            norm_username = unicodedata.normalize('NFKC', str(username)).strip()
+            if User.objects.filter(username=norm_username).exclude(pk=user.pk).exists() or \
+               User.objects.filter(username__iexact=norm_username).exclude(pk=user.pk).exists():
+                raise serializers.ValidationError({'username': 'This username is already taken.'})
+            user.username = norm_username
+            user_updated = True
+        if password:
+            user.set_password(password)
+            user_updated = True
         if first_name is not None:
             user.first_name = first_name
+            user_updated = True
         if last_name is not None:
             user.last_name = last_name
+            user_updated = True
         if email is not None:
             user.email = email
+            user_updated = True
         if phone_number is not None:
             user.phone_number = phone_number
+            user_updated = True
         if educational_qualification is not None:
             user.educational_qualification = educational_qualification
+            user_updated = True
         if photo is not None:
             user.photo = photo
-        user.save()
+            user_updated = True
         
-        # Update profile fields (designation, etc.)
-        designation = validated_data.pop('designation', None)
-        if designation is not None:
-            instance.designation = designation
-        blood_group = validated_data.pop('blood_group', None)
-        if blood_group is not None:
-            instance.blood_group = blood_group
-        occupation = validated_data.pop('occupation', None)
-        if occupation is not None:
-            instance.occupation = occupation
-        income = validated_data.pop('income', None)
-        if income is not None:
-            instance.income = income
+        if user_updated:
+            user.save()
+        
+        # Update profile fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
         instance.save()
         
         return instance

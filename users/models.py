@@ -140,3 +140,37 @@ class AssistantMemory(models.Model):
         ]
     def __str__(self):
         return f"{self.school_id} - {self.key}"
+
+class AssistantKnowledge(models.Model):
+    """Stores unstructured facts or context for the AI to learn from."""
+    school = models.ForeignKey(School, on_delete=models.CASCADE, related_name='knowledge_base')
+    category = models.CharField(max_length=100, default='general')
+    fact = models.TextField(help_text="The information the AI has learned")
+    source = models.CharField(max_length=200, blank=True, null=True, help_text="Where this info came from (e.g. user_interaction, document)")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    is_verified = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"{self.category}: {self.fact[:50]}..."
+
+class AIChatSession(models.Model):
+    """Stores a chat session for multi-turn conversation context."""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='ai_sessions', null=True, blank=True)
+    school = models.ForeignKey(School, on_delete=models.CASCADE, related_name='ai_sessions')
+    title = models.CharField(max_length=200, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.user.username} - {self.title or self.created_at}"
+
+class AIChatMessage(models.Model):
+    """Stores individual messages within a session."""
+    session = models.ForeignKey(AIChatSession, on_delete=models.CASCADE, related_name='messages')
+    role = models.CharField(max_length=20, choices=[('user', 'User'), ('assistant', 'AI')], default='user')
+    content = models.TextField()
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.role}: {self.content[:30]}"

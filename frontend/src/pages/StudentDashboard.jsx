@@ -12,6 +12,7 @@ import { ArrowBack, Save as SaveIcon, History as HistoryIcon } from '@mui/icons-
 import dayjs from 'dayjs';
 import 'dayjs/locale/bn';
 import { useToast } from '../components/Toast';
+import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import MonthlyAttendanceInput from '../components/MonthlyAttendanceInput';
 import ResultCardComponent from '../components/ResultCard';
@@ -331,7 +332,8 @@ function withHooks(Component) {
     const params = useParams();
     const navigate = useNavigate();
     const toast = useToast();
-    return <Component {...props} params={params} navigate={navigate} toast={toast} />;
+    const { user, logout } = useAuth();
+    return <Component {...props} params={params} navigate={navigate} toast={toast} user={user} logout={logout} />;
   }
 }
 
@@ -1060,7 +1062,7 @@ class StudentDashboard extends React.Component {
 
   render() {
     const { loading, error, student, attendance, results, attendanceSummary, feesLoading, feeRows, feeTotals, feePayments, selectedTab, schoolInfo } = this.state;
-    const { navigate } = this.props;
+    const { navigate, user, logout } = this.props;
 
     if (loading) {
       return (
@@ -1069,8 +1071,6 @@ class StudentDashboard extends React.Component {
         </Box>
       );
     }
-
-    
 
     const attendanceColumns = [
       { 
@@ -1210,16 +1210,34 @@ class StudentDashboard extends React.Component {
         background: '#f5f7fa',
         pb: 4
       }}>
-        <AppBar position="static" color="transparent" elevation={0}>
-          <Toolbar>
+        <AppBar position="static" color="inherit" elevation={1} sx={{ mb: 2, bgcolor: 'white' }}>
+          <Toolbar sx={{ justifyContent: 'space-between' }}>
             <Button
               startIcon={<ArrowBack />}
               onClick={() => navigate(-1)}
-              color="inherit"
-              sx={{ color: 'text.primary' }}
+              color="primary"
             >
               Back
             </Button>
+
+            {user && (
+              <Stack direction="row" spacing={2} alignItems="center">
+                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                  <Typography variant="body2" sx={{ fontWeight: 'bold', lineHeight: 1 }}>
+                    {user.first_name || user.username}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    ID: {user.username}
+                  </Typography>
+                </Box>
+                <Avatar 
+                  alt={user.username} 
+                  src={user.photo_url || user.photo}
+                  sx={{ width: 32, height: 32, bgcolor: 'primary.main' }} 
+                />
+                <Button color="error" size="small" variant="outlined" onClick={logout}>লগআউট</Button>
+              </Stack>
+            )}
           </Toolbar>
         </AppBar>
 

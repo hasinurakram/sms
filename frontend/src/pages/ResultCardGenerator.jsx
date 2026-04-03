@@ -769,67 +769,172 @@ export default function ResultCardGenerator() {
         setResults(merged);
       }
 
-      // Get overall for chosen examination (classroom-নিরপেক্ষ)
+      // Get overall result with rank - try multiple methods
+      let overall = null;
       try {
         const exId = chosenExam?.id || null;
-        if (exId) {
-          const classOverallRes = await scopedGet('/api/results/overall/', id, { examination: exId, page_size: 500 }, { timeout: 15000 });
+        
+        // Method 1: Try student-specific combined overall result (Best for rank calculation)
+        if (selectedExamType && selectedClass) {
+          try {
+            const combinedRes = await api.get('/api/results/overall/combined_by_exam_type/', {
+              params: {
+                student: student.id,
+                exam_type: selectedExamType,
+                classroom: selectedClass,
+                section: selectedSection,
+                year: selectedYear
+              }
+            });
+            if (combinedRes.data && combinedRes.data.rank) {
+              overall = {
+                percentage: combinedRes.data.percentage,
+                rank: combinedRes.data.rank,
+                is_passed: combinedRes.data.is_passed,
+                total_marks_obtained: combinedRes.data.total_marks_obtained,
+                total_marks_possible: combinedRes.data.total_marks_possible,
+                cgpa: combinedRes.data.cgpa,
+                grade: combinedRes.data.grade
+              };
+            }
+          } catch (err) {
+            console.warn('Combined by exam type failed', err);
+          }
+        }
+
+        // Method 2: If no rank yet, try single exam student-specific overall result
+        if (!overall && exId) {
+          try {
+            const res = await api.get('/api/results/overall/', { 
+              params: { student: student.id, examination: exId } 
+            });
+            const results = Array.isArray(res.data) ? res.data : (res.data?.results || []);
+            const me = results[0];
+            if (me) {
+              overall = {
+                percentage: me.percentage,
+                rank: Number(me.rank || me.position || 0) || null,
+                is_passed: me.is_passed,
+                total_marks_obtained: me.total_marks_obtained,
+                total_marks_possible: me.total_marks_possible,
+                cgpa: me.cgpa,
+                grade: me.grade
+              };
+            }
+          } catch (err) {
+            console.warn('Single student overall fetch failed', err);
+          }
+        }
+        
+        // Method 3: Fallback to list-based approach if needed (Even for single exam)
+        if (!overall && selectedExamType && selectedClass) {
+          try {
+            const combinedRes = await api.get('/api/results/overall/combined_rank_list_by_exam_type/', {
+              params: {
+                exam_type: selectedExamType,
+                classroom: selectedClass,
+                section: selectedSection,
+                school: id,
+                year: selectedYear,
+                page_size: 2500 // Increased to handle large schools
+              }
+            });
+            const list = Array.isArray(combinedRes.data) ? combinedRes.data : (combinedRes.data?.results || []);
+            const me = (list || []).find(item => {
+              const sid = item?.student?.id ?? item?.student_id;
+              return String(sid) === String(student.id);
+            });
+            if (me) {
+              overall = {
+                percentage: me.percentage,
+                rank: Number(me.rank || me.position || 0) || null,
+                is_passed: me.is_passed,
+                total_marks_obtained: me.total_marks_obtained,
+                total_marks_possible: me.total_marks_possible,
+                cgpa: me.cgpa,
+                grade: me.grade
+              };
+            }
+          } catch (err) {
+            console.warn('Combined rank fetch failed', err);
+          }
+        }
+        
+        // Method 4: Fallback to single exam list fetch
+        if (!overall && exId) {
+          const classOverallRes = await scopedGet('/api/results/overall/', id, { examination: exId, page_size: 1000 }, { timeout: 15000 });
           const list = Array.isArray(classOverallRes.data) ? classOverallRes.data : (classOverallRes.data?.results || []);
           const me = (list || []).find(item => {
             const sid = item?.student?.id ?? item?.student_id;
             return String(sid) === String(student.id);
           });
           if (me) {
-            setOverallResult({
+            overall = {
               percentage: me.percentage,
               rank: Number(me.rank || me.position || 0) || null,
-              is_passed: me.is_passed
-            });
-          } else {
-            setOverallResult(null);
+              is_passed: me.is_passed,
+              total_marks_obtained: me.total_marks_obtained,
+              total_marks_possible: me.total_marks_possible,
+              cgpa: me.cgpa,
+              grade: me.grade
+            };
           }
-        } else {
-          setOverallResult(null);
         }
       } catch (err) {
-        /* ignore errors for combined overall; fallback calculation below */
-        // Fallback: Calculate on frontend without rank
-        if (fetchedResults.length > 0) {
-          const totalObtained = fetchedResults.reduce((sum, r) => sum + (parseFloat(r.total_obtained) || 0), 0);
-          const totalPossible = fetchedResults.reduce((sum, r) => {
-            const ex = r.examination || {};
-            const wm = parseFloat(ex.written_max) || 0;
-            const mm = parseFloat(ex.mcq_max) || 0;
-            const pm = parseFloat(ex.practical_max) || 0;
-            const maximaSum = (wm || mm || pm) ? (wm + mm + pm) : (parseFloat(ex.total_marks) || 100);
-            return sum + maximaSum;
-          }, 0);
-          const avgGPA = fetchedResults.reduce((sum, r) => sum + (parseFloat(r.gpa) || 0), 0) / fetchedResults.length;
-          const percentage = totalPossible > 0 ? (totalObtained / totalPossible * 100).toFixed(2) : 0;
-          const isPassed = fetchedResults.every(r => r.is_passed);
-          
-          // Determine grade based on CGPA
-          let grade = 'F';
-          if (avgGPA >= 5.0) grade = 'A+';
-          else if (avgGPA >= 4.0) grade = 'A';
-          else if (avgGPA >= 3.5) grade = 'A-';
-          else if (avgGPA >= 3.0) grade = 'B';
-          else if (avgGPA >= 2.0) grade = 'C';
-          else if (avgGPA >= 1.0) grade = 'D';
-          
-          setOverallResult({
-            total_marks_obtained: totalObtained.toFixed(2),
-            total_marks_possible: totalPossible.toFixed(2),
-            percentage: percentage,
-            cgpa: avgGPA.toFixed(2),
-            grade: grade,
-            is_passed: isPassed,
-            rank: null
-          });
-        } else {
-          setOverallResult(null);
-        }
+        console.warn('Overall API failed, will fallback to manual calculation', err);
       }
+
+      // If overall still null, calculate on frontend
+      if (!overall && fetchedResults.length > 0) {
+        const totalObtained = fetchedResults.reduce((sum, r) => sum + (parseFloat(r.total_obtained) || 0), 0);
+        const totalPossible = fetchedResults.reduce((sum, r) => {
+          const ex = r.examination || {};
+          const wm = parseFloat(ex.written_max) || 0;
+          const mm = parseFloat(ex.mcq_max) || 0;
+          const pm = parseFloat(ex.practical_max) || 0;
+          const maximaSum = (wm || mm || pm) ? (wm + mm + pm) : (parseFloat(ex.total_marks) || 100);
+          const rMax = parseFloat(r.total_marks);
+          return sum + (rMax > 0 ? rMax : maximaSum);
+        }, 0);
+        
+        const avgGPA = fetchedResults.reduce((sum, r) => sum + (parseFloat(r.gpa) || 0), 0) / fetchedResults.length;
+        const percentage = totalPossible > 0 ? (totalObtained / totalPossible * 100).toFixed(2) : 0;
+        const isPassed = fetchedResults.every(r => r.is_passed);
+        
+        let grade = 'F';
+        if (avgGPA >= 5.0) grade = 'A+';
+        else if (avgGPA >= 4.0) grade = 'A';
+        else if (avgGPA >= 3.5) grade = 'A-';
+        else if (avgGPA >= 3.0) grade = 'B';
+        else if (avgGPA >= 2.0) grade = 'C';
+        else if (avgGPA >= 1.0) grade = 'D';
+        
+        overall = {
+          total_marks_obtained: totalObtained.toFixed(2),
+          total_marks_possible: totalPossible.toFixed(2),
+          percentage: percentage,
+          cgpa: avgGPA.toFixed(2),
+          grade: grade,
+          is_passed: isPassed,
+          rank: null
+        };
+      }
+      setOverallResult(overall);
+
+      // Fetch "New Roll" from StudentYearRecord
+      try {
+        const historyRes = await api.get('/api/academics/students/history/', { 
+          params: { school: id, year: selectedYear, student_id: student.id } 
+        });
+        const records = Array.isArray(historyRes.data) ? historyRes.data : (historyRes.data?.results || []);
+        const me = records.find(r => String(r.student?.id || r.student) === String(student.id));
+        if (me && me.roll_number) {
+          setStudentData(prev => ({
+            ...prev,
+            student: { ...prev.student, promoted_roll: me.roll_number }
+          }));
+        }
+      } catch (_) {}
 
       toast.success(`Result card generated with ${Array.isArray(results) ? results.length : 0} subjects!`);
     } catch (err) {
@@ -954,8 +1059,96 @@ export default function ResultCardGenerator() {
       let overall = null;
       try {
         const exId = chosenExam?.id || null;
-        if (exId) {
-          const classOverallRes = await scopedGet('/api/results/overall/', id, { examination: exId, page_size: 500 }, { timeout: 15000 });
+        
+        // Method 1: Try student-specific combined overall result (Best for rank calculation)
+        if (selectedExamType && selectedClass) {
+          try {
+            const combinedRes = await api.get('/api/results/overall/combined_by_exam_type/', {
+              params: {
+                student: stuId,
+                exam_type: selectedExamType,
+                classroom: selectedClass,
+                section: selectedSection,
+                year: selectedYear
+              }
+            });
+            if (combinedRes.data && combinedRes.data.rank) {
+              overall = {
+                percentage: combinedRes.data.percentage,
+                rank: combinedRes.data.rank,
+                is_passed: combinedRes.data.is_passed,
+                total_marks_obtained: combinedRes.data.total_marks_obtained,
+                total_marks_possible: combinedRes.data.total_marks_possible,
+                cgpa: combinedRes.data.cgpa,
+                grade: combinedRes.data.grade
+              };
+            }
+          } catch (err) {
+            console.warn('Combined by exam type failed in buildCardForStudent', err);
+          }
+        }
+
+        // Method 2: Try single student overall result
+        if (!overall && exId) {
+          try {
+            const res = await api.get('/api/results/overall/', { 
+              params: { student: stuId, examination: exId } 
+            });
+            const results = Array.isArray(res.data) ? res.data : (res.data?.results || []);
+            const me = results[0];
+            if (me) {
+              overall = {
+                percentage: me.percentage,
+                rank: Number(me.rank || me.position || 0) || null,
+                is_passed: me.is_passed,
+                total_marks_obtained: me.total_marks_obtained,
+                total_marks_possible: me.total_marks_possible,
+                cgpa: me.cgpa,
+                grade: me.grade
+              };
+            }
+          } catch (err) {
+            console.warn('Single student overall fetch failed in buildCardForStudent', err);
+          }
+        }
+
+        // Method 3: Fallback to list-based approach (Even for single exam)
+        if (!overall && selectedExamType && selectedClass) {
+          try {
+            const combinedRes = await api.get('/api/results/overall/combined_rank_list_by_exam_type/', {
+              params: {
+                exam_type: selectedExamType,
+                classroom: selectedClass,
+                section: selectedSection,
+                school: id,
+                year: selectedYear,
+                page_size: 2500 // Increased to handle large schools
+              }
+            });
+            const list = Array.isArray(combinedRes.data) ? combinedRes.data : (combinedRes.data?.results || []);
+            const me = (list || []).find(item => {
+              const sid = item?.student?.id ?? item?.student_id;
+              return String(sid) === String(stuId);
+            });
+            if (me) {
+              overall = {
+                percentage: me.percentage,
+                rank: Number(me.rank || me.position || 0) || null,
+                is_passed: me.is_passed,
+                total_marks_obtained: me.total_marks_obtained,
+                total_marks_possible: me.total_marks_possible,
+                cgpa: me.cgpa,
+                grade: me.grade
+              };
+            }
+          } catch (err) {
+            console.warn('Combined rank fetch failed in buildCardForStudent', err);
+          }
+        }
+        
+        // Method 4: Final fallback to single exam list fetch
+        if (!overall && exId) {
+          const classOverallRes = await scopedGet('/api/results/overall/', id, { examination: exId, page_size: 2500 }, { timeout: 15000 });
           const list = Array.isArray(classOverallRes.data) ? classOverallRes.data : (classOverallRes.data?.results || []);
           const me = (list || []).find(item => {
             const sid = item?.student?.id ?? item?.student_id;
@@ -965,10 +1158,12 @@ export default function ResultCardGenerator() {
             overall = {
               percentage: me.percentage,
               rank: Number(me.rank || me.position || 0) || null,
-              is_passed: me.is_passed
+              is_passed: me.is_passed,
+              total_marks_obtained: me.total_marks_obtained,
+              total_marks_possible: me.total_marks_possible,
+              cgpa: me.cgpa,
+              grade: me.grade
             };
-          } else {
-            overall = null;
           }
         }
       } catch (_) {
@@ -1121,7 +1316,7 @@ export default function ResultCardGenerator() {
   return (
     <Box sx={{ p: 3 }}>
       {/* Header */}
-      <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ xs: 'stretch', sm: 'center' }} justifyContent="space-between" spacing={2} sx={{ mb: 3 }}>
+      <Stack className="no-print" direction={{ xs: 'column', sm: 'row' }} alignItems={{ xs: 'stretch', sm: 'center' }} justifyContent="space-between" spacing={2} sx={{ mb: 3 }}>
         <Typography variant="h4">
           <AssessmentIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
           রেজাল্ট কার্ড জেনারেটর

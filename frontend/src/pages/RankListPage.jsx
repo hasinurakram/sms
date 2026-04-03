@@ -89,21 +89,42 @@ const RankListPage = () => {
     scopedGet('/api/academics/sections/', schoolId, { classroom: selectedClass })
       .then(res => {
         const data = Array.isArray(res.data) ? res.data : (res.data?.results || res.data?.data || []);
-        setSections(Array.isArray(data) ? data : []);
+        const sectionList = Array.isArray(data) ? data : [];
+        setSections(sectionList);
+        if (sectionList.length === 1) {
+          setSelectedSection(String(sectionList[0].id));
+        }
       })
       .catch(() => setSections([]));
   }, [schoolId, selectedClass]);
 
   const handleFetchRankings = () => {
-    if (!selectedExamType || !selectedClass || !selectedSection) return;
+    if (!selectedExamType || !selectedClass) return;
     setLoading(true);
     setErrorMessage('');
     setRankings([]);
     setResultsByStudent(new Map());
     // Prefer examination-level overall for exact totals/ranks
+    // If we can't find exams for the year, try without year filter to be sure
     scopedGet('/api/results/examinations/', schoolId, { classroom: selectedClass, page_size: 1000, year: selectedYear })
       .then(async exRes => {
-        const allExams = Array.isArray(exRes.data) ? exRes.data : (exRes.data?.results || []);
+        let allExams = Array.isArray(exRes.data) ? exRes.data : (exRes.data?.results || []);
+        
+        // If no exams found for this year, try without year filter
+        if (allExams.length === 0) {
+          try {
+            const noYearRes = await scopedGet('/api/results/examinations/', schoolId, { classroom: selectedClass, page_size: 1000 });
+            allExams = Array.isArray(noYearRes.data) ? noYearRes.data : (noYearRes.data?.results || []);
+            // Further filter in JS if name contains year
+            allExams = allExams.filter(e => {
+              if (!e.year && !e.exam_date) return true; // year-less exams might be the ones
+              return String(e.year) === String(selectedYear) || 
+                     (e.exam_date && String(new Date(e.exam_date).getFullYear()) === String(selectedYear)) ||
+                     (e.name && e.name.includes(String(selectedYear)));
+            });
+          } catch (_) {}
+        }
+
         const matching = (allExams || []).filter(e => String(e.exam_type || '') === String(selectedExamType));
         const picked = [...matching].sort((a, b) => {
           const ad = a.exam_date ? new Date(a.exam_date).getTime() : 0;
@@ -185,7 +206,7 @@ const RankListPage = () => {
             section: selectedSection,
             school: schoolId || undefined,
             year: selectedYear,
-            page_size: 1000
+            page_size: 2500
           }
         })
           .then(async res => {
@@ -834,7 +855,7 @@ const RankListPage = () => {
             <Button
               variant="contained"
               onClick={handleFetchRankings}
-              disabled={!selectedExamType || !selectedClass || !selectedSection || loading}
+              disabled={!selectedExamType || !selectedClass || loading}
               fullWidth
             >
               Show
@@ -874,7 +895,7 @@ const RankListPage = () => {
                 <TableCell>Section</TableCell>
                 <TableCell>Total Marks</TableCell>
                 <TableCell>Failed Subjects</TableCell>
-                <TableCell>New Roll</TableCell>
+                <TableCell>Position (মেধাক্রম)</TableCell>
                 {displaySubjects.map(item => <TableCell key={item.canonical} align="center">{item.label}</TableCell>)}
               </TableRow>
             </TableHead>
@@ -938,7 +959,7 @@ const RankListPage = () => {
                 <TableCell sx={{ fontWeight: 'bold', border: '1px solid #ddd' }}>Name</TableCell>
                 <TableCell sx={{ fontWeight: 'bold', border: '1px solid #ddd' }}>Total Marks</TableCell>
                 <TableCell sx={{ fontWeight: 'bold', border: '1px solid #ddd' }}>Failed</TableCell>
-                <TableCell sx={{ fontWeight: 'bold', border: '1px solid #ddd' }}>New Roll</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', border: '1px solid #ddd' }}>Position (মেধাক্রম)</TableCell>
                 {displaySubjects.map(item => (
                   <TableCell key={item.canonical} sx={{ fontWeight: 'bold', border: '1px solid #ddd' }} align="center">
                     {item.label}

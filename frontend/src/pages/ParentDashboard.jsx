@@ -28,7 +28,10 @@ import {
   DialogContent,
   DialogActions,
   TextField,
-  MenuItem
+  MenuItem,
+  AppBar,
+  Toolbar,
+  Container
 } from '@mui/material';
 import {
   Person as PersonIcon,
@@ -58,6 +61,81 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import StudentFeeSlipCard from '../components/StudentFeeSlipCard';
+
+const toBnDigits = (s) => String(s).replace(/[0-9]/g, (d) => '০১২৩৪৫৬৭৮৯'[Number(d)]);
+const monthYearBn = `${dayjs().locale('bn').format('MMMM')} ${toBnDigits(dayjs().format('YYYY'))} ইং`;
+
+const getMediaUrl = (path) => {
+  if (!path) return null;
+  const base = (api?.defaults?.baseURL || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/$/, '');
+  const val = String(path);
+  if (/^https?:\/\//i.test(val)) return val;
+  const normalized = val.replace(/\\/g, '/');
+  if (normalized.startsWith('/media/')) return `${base}${normalized}`;
+  if (normalized.startsWith('media/')) return `${base}/${normalized}`;
+  const clean = normalized.startsWith('/') ? normalized : `/media/${normalized}`;
+  return `${base}${clean}`;
+};
+
+const resolveStudentPhoto = (student) => {
+  if (!student) return null;
+  const vals = [
+    student.photo_url,
+    student.profile_picture,
+    student.photo,
+    student.user?.photo_url,
+    student.user?.photo
+  ];
+  for (const v of vals) {
+    if (!v) continue;
+    const url = getMediaUrl(v);
+    if (url) return url;
+  }
+  return null;
+};
+
+const HeaderCard = styled(Paper)(({ theme }) => ({
+  background: 'linear-gradient(135deg, #1a237e 0%, #283593 100%)',
+  color: 'white',
+  padding: theme.spacing(3),
+  marginBottom: theme.spacing(3),
+  borderRadius: theme.shape.borderRadius * 2,
+  position: 'relative',
+  overflow: 'hidden',
+  '&::before': {
+    content: '" "',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundImage: 'radial-gradient(circle at 90% 10%, rgba(255,255,255,0.1) 0%, transparent 20%)',
+    pointerEvents: 'none',
+  },
+}));
+
+const StyledAvatar = styled(Avatar)(({ theme }) => ({
+  width: 100,
+  height: 100,
+  border: '4px solid white',
+  boxShadow: theme.shadows[4],
+  marginRight: theme.spacing(3),
+  [theme.breakpoints.down('sm')]: {
+    width: 80,
+    height: 80,
+    marginRight: 0,
+    marginBottom: theme.spacing(2),
+  },
+}));
+
+const SchoolLogo = styled('img')(({ theme }) => ({
+  maxHeight: 80,
+  maxWidth: 200,
+  objectFit: 'contain',
+  [theme.breakpoints.down('sm')]: {
+    maxHeight: 60,
+  },
+}));
 
 const ParentDashboard = () => {
   const { id, parentId } = useParams(); // id = school, parentId = parent
@@ -1211,8 +1289,43 @@ const ParentDashboard = () => {
       <CircularProgress size={60} />
     </Box>
   ) : (
-    <Box sx={{ p: 3 }}>
-      {/* Edit Profile Dialog */}
+    <Box sx={{ minHeight: '100vh', bgcolor: '#f5f7fa', pb: 5 }}>
+      <AppBar position="static" color="inherit" elevation={1} sx={{ mb: 2, bgcolor: 'white' }}>
+        <Toolbar sx={{ justifyContent: 'space-between' }}>
+          <Button
+            startIcon={<ArrowBackIcon />}
+            onClick={() => navigate(-1)}
+            color="primary"
+          >
+            Back
+          </Button>
+
+          {user && (
+            <Stack direction="row" spacing={2} alignItems="center">
+              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+                <Typography variant="body2" sx={{ fontWeight: 'bold', lineHeight: 1 }}>
+                  {user.first_name || user.username}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  ID: {user.username}
+                </Typography>
+              </Box>
+              <Avatar 
+                alt={user.username} 
+                src={user.photo_url || user.photo}
+                sx={{ width: 32, height: 32, bgcolor: 'primary.main' }} 
+              />
+              <Button color="error" size="small" variant="outlined" onClick={() => {
+                localStorage.removeItem('token');
+                window.location.href = '/login';
+              }}>লগআউট</Button>
+            </Stack>
+          )}
+        </Toolbar>
+      </AppBar>
+
+      <Container maxWidth="lg">
+        {/* Edit Profile Dialog */}
       <Dialog open={editDialogOpen} onClose={handleCloseEditDialog} fullWidth maxWidth="sm">
         <DialogTitle sx={{ textAlign: 'center', fontWeight: 'bold', borderBottom: '1px solid #eee', py: 2 }}>
           প্রোফাইল এডিট করুন
@@ -2088,81 +2201,9 @@ const ParentDashboard = () => {
           )}
         </>
       )}
+      </Container>
     </Box>
   );
 };
 
 export default ParentDashboard;
-  const toBnDigits = (s) => String(s).replace(/[0-9]/g, (d) => '০১২৩৪৫৬৭৮৯'[Number(d)]);
-  const monthYearBn = `${dayjs().locale('bn').format('MMMM')} ${toBnDigits(dayjs().format('YYYY'))} ইং`;
-  const getMediaUrl = (path) => {
-    if (!path) return null;
-    const base = (api?.defaults?.baseURL || (typeof window !== 'undefined' ? window.location.origin : '')).replace(/\/$/, '');
-    const val = String(path);
-    if (/^https?:\/\//i.test(val)) return val;
-    const normalized = val.replace(/\\/g, '/');
-    if (normalized.startsWith('/media/')) return `${base}${normalized}`;
-    if (normalized.startsWith('media/')) return `${base}/${normalized}`;
-    const clean = normalized.startsWith('/') ? normalized : `/media/${normalized}`;
-    return `${base}${clean}`;
-  };
-
-  const resolveStudentPhoto = (student) => {
-    if (!student) return null;
-    const vals = [
-      student.photo_url,
-      student.profile_picture,
-      student.photo,
-      student.user?.photo_url,
-      student.user?.photo
-    ];
-    for (const v of vals) {
-      if (!v) continue;
-      const url = getMediaUrl(v);
-      if (url) return url;
-    }
-    return null;
-  };
-
-  const HeaderCard = styled(Paper)(({ theme }) => ({
-    background: 'linear-gradient(135deg, #1a237e 0%, #283593 100%)',
-    color: 'white',
-    padding: theme.spacing(3),
-    marginBottom: theme.spacing(3),
-    borderRadius: theme.shape.borderRadius * 2,
-    position: 'relative',
-    overflow: 'hidden',
-    '&::before': {
-      content: '" "',
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      backgroundImage: 'radial-gradient(circle at 90% 10%, rgba(255,255,255,0.1) 0%, transparent 20%)',
-      pointerEvents: 'none',
-    },
-  }));
-
-  const StyledAvatar = styled(Avatar)(({ theme }) => ({
-    width: 100,
-    height: 100,
-    border: '4px solid white',
-    boxShadow: theme.shadows[4],
-    marginRight: theme.spacing(3),
-    [theme.breakpoints.down('sm')]: {
-      width: 80,
-      height: 80,
-      marginRight: 0,
-      marginBottom: theme.spacing(2),
-    },
-  }));
-
-  const SchoolLogo = styled('img')(({ theme }) => ({
-    maxHeight: 80,
-    maxWidth: 200,
-    objectFit: 'contain',
-    [theme.breakpoints.down('sm')]: {
-      maxHeight: 60,
-    },
-  }));

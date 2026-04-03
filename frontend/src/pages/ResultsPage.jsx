@@ -66,6 +66,7 @@ export default function ResultsPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const isSuperUser = !!(user?.is_superuser || user?.is_staff);
   const role = ((user && (user.profile?.role || user.role)) || '').toLowerCase();
   const currentUserId = (user && (user.user?.id || user.id)) || null;
   const [assignments, setAssignments] = useState([]);
@@ -335,11 +336,14 @@ export default function ResultsPage() {
   };
   const getExamYear = (exam) => {
     try {
-      const d = exam?.exam_date ? new Date(exam.exam_date) : null;
-      if (d && !Number.isNaN(d.getTime())) return d.getFullYear();
+      if (exam?.year) return parseInt(exam.year, 10);
+      // Try to parse from name first if year is missing, as name often contains the year
       const name = String(exam?.name || '');
       const m = name.match(/(19|20)\d{2}/);
       if (m) return parseInt(m[0], 10);
+      // Fallback to date
+      const d = exam?.exam_date ? new Date(exam.exam_date) : null;
+      if (d && !Number.isNaN(d.getTime())) return d.getFullYear();
       return null;
     } catch (_) { return null; }
   };
@@ -1163,23 +1167,30 @@ export default function ResultsPage() {
     if (!cls) return;
     const exams = getExamsForClass(cls);
     const years = Array.from(new Set(exams.map(ex => getExamYear(ex)).filter(Boolean))).sort((a, b) => b - a);
+    
+    // Auto-set year only if not already set
     if (!bulkYear && years.length) {
       setBulkYear(String(years[0]));
     }
-    const filtered = years.length && bulkYear ? exams.filter(ex => String(getExamYear(ex) || '') === String(bulkYear)) : exams;
-    if (!bulkForm.exam && filtered.length) {
-      setBulkForm(prev => ({ ...prev, exam: filtered[0].id }));
+
+    // Filter exams by the current bulkYear
+    const filtered = exams.filter(ex => {
+      if (!bulkYear) return true;
+      const yr = getExamYear(ex);
+      return yr != null && String(yr) === String(bulkYear);
+    });
+
+    // If the currently selected exam is NOT in the filtered list, pick the first available one from filtered
+    if (filtered.length > 0) {
+      const isCurrentExamValid = filtered.some(ex => String(ex.id) === String(bulkForm.exam));
+      if (!bulkForm.exam || !isCurrentExamValid) {
+        setBulkForm(prev => ({ ...prev, exam: filtered[0].id }));
+      }
+    } else if (!bulkYear && exams.length > 0 && !bulkForm.exam) {
+      // If no year filter and no exam selected, pick first available exam
+      setBulkForm(prev => ({ ...prev, exam: exams[0].id }));
     }
-  }, [bulkForm.classroom, examinations]);
-  useEffect(() => {
-    const cls = bulkForm.classroom;
-    if (!cls || !bulkYear) return;
-    const exams = getExamsForClass(cls);
-    const filtered = exams.filter(ex => String(getExamYear(ex) || '') === String(bulkYear));
-    if (filtered.length && !filtered.some(ex => String(ex.id) === String(bulkForm.exam))) {
-      setBulkForm(prev => ({ ...prev, exam: filtered[0].id }));
-    }
-  }, [bulkYear, bulkForm.classroom, examinations]);
+  }, [bulkForm.classroom, examinations, bulkYear]);
 
   const setBulkMark = (sid, field, value) => {
     const examObj = getExamById(bulkForm.exam || selectedExam);
@@ -1216,8 +1227,9 @@ export default function ResultsPage() {
     const classroomId = parseInt(bulkForm.classroom);
     if (!examId || !subjectId || !classroomId) { toast.error('পরীক্ষা, শ্রেণি ও বিষয় নির্বাচন করুন'); return; }
     const examObj = examinations.find(ex => ex.id === examId);
-    if (!examObj || examObj.classroom !== classroomId) { toast.error('নির্বাচিত পরীক্ষা ওই শ্রেণির নয়'); return; }
-    if (role === 'teacher') {
+    if (!examObj || getClassroomId(examObj.classroom) !== classroomId) { toast.error('নির্বাচিত পরীক্ষা ওই শ্রেণির নয়'); return; }
+    
+    if (role === 'teacher' && !isSuperUser) {
       const sec = bulkForm.section ? parseInt(bulkForm.section) : null;
       const ok = assignments.some(a => parseInt(a.classroom) === classroomId && parseInt(a.subject) === subjectId && (a.section == null || (sec != null && parseInt(a.section) === sec)));
       if (!ok) { toast.error('আপনি এই বিষয়ে ইনপুট দিতে অনুমোদিত নন'); return; }
@@ -1230,6 +1242,7 @@ export default function ResultsPage() {
     setBulkSaving(true);
     const payload = {
       examination: examId,
+      is_admin: isSuperUser, // Add flag to indicate admin status
       results: rows.map(r => ({
         examination: examId,
         student_id: parseInt(r.sid),
@@ -2206,19 +2219,15 @@ export default function ResultsPage() {
               </FormControl>
             </Grid>
             <Grid size={{ xs: 12, md: 3 }}>
-              <FormControl fullWidth>
-                <InputLabel>সাল</InputLabel>
-                <Select
-                  value={bulkYear}
-                  onChange={(e) => setBulkYear(String(e.target.value))}
-                  label="সাল"
-                  disabled={!bulkForm.classroom}
-                >
-                  {Array.from(new Set(getExamsForClass(bulkForm.classroom).map(ex => getExamYear(ex)).filter(Boolean))).sort((a, b) => b - a).map(y => (
-                    <MenuItem key={y} value={String(y)}>{y}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
+              <TextField
+                fullWidth
+                label="সাল"
+                type="number"
+                value={bulkYear}
+                onChange={(e) => setBulkYear(e.target.value)}
+                disabled={!bulkForm.classroom}
+                placeholder="উদা: ২০২৫"
+              />
             </Grid>
             <Grid size={{ xs: 12, md: 3 }}>
               <FormControl fullWidth>

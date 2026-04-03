@@ -1,7 +1,9 @@
 from rest_framework import viewsets, permissions, status
 from users.permissions import AdminOrReadOnly
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
+from django.views.decorators.cache import cache_page
 from django.db.models import Count, Sum, Q, IntegerField, F
 from django.db.models.functions import Cast
 from .models import School, Advertisement
@@ -91,12 +93,11 @@ class AdvertisementBulk(APIView):
         return Response({'created': created}, status=status.HTTP_200_OK)
 
 @api_view(['GET'])
-@permission_classes([permissions.AllowAny])  # TEMP: dev-only open access
+@permission_classes([IsAuthenticated])
+@cache_page(60 * 15) # Cache for 15 minutes
 def dashboard_stats(request):
-    """
-    Get statistics for dashboard
-    """
-    # Determine school id from query param; if missing and user is authenticated, fall back to profile
+    """Returns key stats for the school dashboard."""
+    # Try to get school from user profile first
     school_id = request.query_params.get('school_id')
     if school_id is not None:
         try:

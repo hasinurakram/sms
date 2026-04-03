@@ -233,10 +233,13 @@ export default function ResultCard({ studentData, results, overallResult, examin
       examination?.school_name,
       student?.school_name
     ].map(v => String(v || '').trim()).filter(v => v);
+    
     const bnCandidates = candidates.filter(v => /[\u0980-\u09FF]/.test(v));
     if (bnCandidates.length > 0) return bnCandidates.sort((a, b) => b.length - a.length)[0];
     if (candidates.length > 0) return candidates.sort((a, b) => b.length - a.length)[0];
+    
     if (isSchool19) return 'বহরিয়া উচ্চ বিদ্যালয়';
+    if (isSchool16) return 'ভাটরা উচ্চ বিদ্যালয়';
     if (schoolId) return `School #${schoolId}`;
     return 'School Name';
   })();
@@ -580,7 +583,14 @@ export default function ResultCard({ studentData, results, overallResult, examin
         </Grid>
         <Grid size={{ xs: 6 }}>
           <Typography variant="body2" color="text.secondary">Roll Number:</Typography>
-          <Typography variant="body1" sx={{ fontWeight: 'bold', mt: 0.25 }}>{student.roll_number || 'N/A'}</Typography>
+          <Typography variant="body1" sx={{ fontWeight: 'bold', mt: 0.25 }}>
+            {student.roll_number || 'N/A'}
+            {student.promoted_roll && student.promoted_roll !== student.roll_number && (
+              <span style={{ marginLeft: '8px', color: '#1976d2' }}>
+                (নতুন রোল: {toBnDigits(student.promoted_roll)})
+              </span>
+            )}
+          </Typography>
         </Grid>
         <Grid size={{ xs: 6 }}>
           <Typography variant="body2" color="text.secondary">Class:</Typography>

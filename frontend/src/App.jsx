@@ -6,6 +6,7 @@ import { SchoolProvider } from './context/SchoolContext';
 import { AcademicsProvider } from './context/AcademicsContext';
 import { NotificationProvider } from './context/NotificationContext';
 import { AuthProvider } from './context/AuthContext';
+import ErrorBoundary from './components/ErrorBoundary';
 import ProtectedRoute from './components/ProtectedRoute';
 import { isAuthenticated } from './utils/auth';
 
@@ -53,6 +54,7 @@ const AttendanceRecordsPage = React.lazy(() => import('./pages/AttendanceRecords
 const ExaminationsPage = React.lazy(() => import('./pages/ExaminationsPage'));
 const DebugPage = React.lazy(() => import('./pages/DebugPage'));
 const YearReportPage = React.lazy(() => import('./pages/YearReportPage'));
+const VirtualClassPage = React.lazy(() => import('./pages/VirtualClassPage'));
 
 const StartupRedirect = () => {
   const navigate = useNavigate();
@@ -93,15 +95,16 @@ const PathTracker = () => {
 function App() {
   return (
     <Router>
-      <AuthProvider>
-        <ToastProvider>
-          <NotificationProvider>
-            <SchoolProvider>
-              <AcademicsProvider>
-            <Suspense fallback={<div>Loading...</div>}>
-              <StartupRedirect />
-              <PathTracker />
-              <Routes>
+      <ErrorBoundary>
+        <AuthProvider>
+          <ToastProvider>
+            <NotificationProvider>
+              <SchoolProvider>
+                <AcademicsProvider>
+                  <Suspense fallback={<div>Loading...</div>}>
+                    <StartupRedirect />
+                    <PathTracker />
+                    <Routes>
           {/* হোমপেজে WelcomePage */}
           <Route path="/" element={<WelcomePage />} />
 
@@ -120,6 +123,7 @@ function App() {
           <Route path="attendance/records" element={<ProtectedRoute allowedRoles={['admin','teacher']}><AttendanceRecordsPage /></ProtectedRoute>} />
           <Route path="attendance/report-card" element={<ProtectedRoute allowedRoles={['admin','teacher']}><AttendanceReportCard /></ProtectedRoute>} />
           <Route path="academics" element={<ProtectedRoute allowedRoles={['admin','teacher']}><AcademicsPage /></ProtectedRoute>} />
+          <Route path="live-class" element={<VirtualClassPage />} />
           <Route path="results" element={<ProtectedRoute allowedRoles={['admin','teacher']}><ResultsPage /></ProtectedRoute>} />
           <Route path="examinations" element={<ProtectedRoute allowedRoles={['admin','teacher']}><ExaminationsPage /></ProtectedRoute>} />
           <Route path="fees" element={<ProtectedRoute allowedRoles={['admin','teacher']}><FeesPage /></ProtectedRoute>} />
@@ -153,13 +157,14 @@ function App() {
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password/:uid/:token" element={<ResetPasswordPage />} />
         <Route path="/change-password" element={<ChangePasswordPage />} />
-              </Routes>
-            </Suspense>
-              </AcademicsProvider>
-            </SchoolProvider>
-          </NotificationProvider>
-        </ToastProvider>
-      </AuthProvider>
+                    </Routes>
+                  </Suspense>
+                </AcademicsProvider>
+              </SchoolProvider>
+            </NotificationProvider>
+          </ToastProvider>
+        </AuthProvider>
+      </ErrorBoundary>
     </Router>
   );
 }

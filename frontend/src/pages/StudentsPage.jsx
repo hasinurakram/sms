@@ -597,6 +597,16 @@ export default function StudentsPage() {
         refreshSections(id),
         refreshSubjects(id)
       ]);
+      
+      // OPTIMIZATION: If we already have students in context, don't force a school-wide refresh
+      // This makes page navigation much faster.
+      if (Array.isArray(contextStudents) && contextStudents.length > 0) {
+        console.log('Using cached students from context');
+        setLoading(false);
+        setInitialLoad(false);
+        return;
+      }
+
       console.log('Academic shell refreshed. Loading students list...');
       // Try context-native refresh first for robustness
       let list = [];
@@ -778,17 +788,7 @@ export default function StudentsPage() {
     
     try {
       setLoading(true);
-      const allowedSectionNames = new Set(['ক','খ','গ']);
       let sectionIdForUpdate = editFormData.section_id || '';
-      try {
-        if (sectionIdForUpdate) {
-          const secObj = (contextSections || []).find(s => String(s.id) === String(sectionIdForUpdate));
-          if (secObj && !allowedSectionNames.has(String(secObj.name || ''))) {
-            sectionIdForUpdate = '';
-            toast.warning('সেকশন কেবল ক/খ/গ হতে পারে; সেকশন ফাঁকা রাখা হচ্ছে');
-          }
-        }
-      } catch (_) {}
       // If class requires sections and none selected, try to auto-assign by group/name
       try {
         const clsIdNum = editFormData.classroom_id ? Number(editFormData.classroom_id) : null;
@@ -827,8 +827,14 @@ export default function StudentsPage() {
           if (matched?.id) {
             guardianIdToUse = matched.id;
           } else {
-            const parentBase = (typedGuardianName || editFormData.phone_number || 'parent').toLowerCase().replace(/[^a-z0-9]/g, '');
-            const parentUsername = await ensureAvailableUsername(parentBase);
+            const parentBase = (typedGuardianName || editFormData.phone_number || 'parent');
+            let normParentBase = parentBase;
+            try {
+              normParentBase = parentBase.normalize('NFKC').toLowerCase().trim();
+            } catch (_) {
+              normParentBase = parentBase.toLowerCase().trim();
+            }
+            const parentUsername = await ensureAvailableUsername(normParentBase);
             const parentForm = new FormData();
             parentForm.append('school_id', id);
             parentForm.append('username', parentUsername);
@@ -846,14 +852,14 @@ export default function StudentsPage() {
       }
       
       // Update student profile information (classroom, section, roll, guardian)
-      // Send null for empty values instead of empty strings
+      // Send empty string for empty values to let backend clear them
       const studentData = {
-        classroom_id: editFormData.classroom_id || null,
-        section_id: sectionIdForUpdate || null,
+        classroom_id: editFormData.classroom_id || '',
+        section_id: sectionIdForUpdate || '',
         group: editFormData.group || '',
         roll_number: editFormData.roll_number || '',
         blood_group: editFormData.blood_group || '',
-        guardian_id: guardianIdToUse || null,
+        guardian_id: guardianIdToUse || '',
         first_name: editFormData.first_name || '',
         last_name: editFormData.last_name || '',
         email: editFormData.email || '',
@@ -861,11 +867,9 @@ export default function StudentsPage() {
       };
       
       // Use FormData for multipart/form-data content type
-    const formData = new FormData();
+      const formData = new FormData();
       Object.keys(studentData).forEach(key => {
-        if (studentData[key] !== null && studentData[key] !== undefined && studentData[key] !== '') {
-          formData.append(key, studentData[key]);
-        }
+        formData.append(key, studentData[key]);
       });
     if (editFormData.username && editFormData.username !== (selectedStudent?.user?.username || '')) {
       formData.append('username', editFormData.username);
@@ -1133,7 +1137,16 @@ export default function StudentsPage() {
       setSaving(true);
       
       // Auto-generate creds if missing to allow first-name-only creation
-      const base = (newStudent.username || newStudent.first_name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const normalizeUsername = (s) => {
+        if (!s) return '';
+        try {
+          return s.normalize('NFKC').toLowerCase().trim();
+        } catch (_) {
+          return s.toLowerCase().trim();
+        }
+      };
+      
+      const base = normalizeUsername(newStudent.username || newStudent.first_name || '');
       const genPassword = newStudent.password || '12345678';
       // Always ensure availability for the final username (even if user typed one)
       const finalUsername = await ensureAvailableUsername(base);
@@ -1156,9 +1169,9 @@ export default function StudentsPage() {
         if (matched?.id) {
           createdGuardianId = matched.id;
         } else {
-          try {
-            const parentBase = (typedGuardianName || newStudent.phone_number || 'parent').toLowerCase().replace(/[^a-z0-9]/g, '');
-            const parentUsername = await ensureAvailableUsername(parentBase);
+            try {
+              const parentBase = normalizeUsername(typedGuardianName || newStudent.phone_number || 'parent');
+              const parentUsername = await ensureAvailableUsername(parentBase);
             const parentForm = new FormData();
             parentForm.append('school_id', id);
             parentForm.append('username', parentUsername);
@@ -1278,7 +1291,14 @@ export default function StudentsPage() {
 
   // Ensure a unique username by checking availability and trying alternatives
   const ensureAvailableUsername = useCallback(async (desiredBase) => {
-    const base = (desiredBase || '').toLowerCase().replace(/[^a-z0-9]/g, '') || 'student';
+    let base = (desiredBase || '').trim();
+    if (base) {
+      try {
+        base = base.normalize('NFKC').toLowerCase();
+      } catch (_) {}
+    }
+    if (!base) base = 'student';
+    
     const tryNames = new Set();
     // First try exact base if user explicitly typed it
     tryNames.add(base);

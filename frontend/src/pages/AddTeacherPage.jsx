@@ -46,9 +46,12 @@ export default function AddTeacherPage() {
           api.get(`/api/academics/classrooms/?school=${id}`),
           api.get(`/api/academics/sections/?school=${id}`)
         ]);
-        setSubjects(subj.data || []);
-        setClassrooms(classes.data || []);
+        const subjectsData = Array.isArray(subj.data) ? subj.data : (subj.data?.results || []);
+        const classroomsData = Array.isArray(classes.data) ? classes.data : (classes.data?.results || []);
         const sectionsData = Array.isArray(secs.data) ? secs.data : (secs.data?.results || []);
+        
+        setSubjects(subjectsData || []);
+        setClassrooms(classroomsData || []);
         setSections(sectionsData || []);
       } catch (e) {
         console.error("Error loading dropdown data:", e);
@@ -99,9 +102,13 @@ export default function AddTeacherPage() {
     setSaving(true);
     try {
       const fd = new FormData();
+      let uname = form.username;
+      if (typeof uname === 'string' && uname) {
+        uname = uname.normalize('NFKC').trim();
+      }
       // Backend expects school_id for teacher role creation
       fd.append('school_id', id);
-      if (form.username) fd.append('username', form.username);
+      if (uname) fd.append('username', uname);
       if (form.password) fd.append('password', form.password);
       fd.append('first_name', form.first_name || '');
       fd.append('last_name', form.last_name || '');

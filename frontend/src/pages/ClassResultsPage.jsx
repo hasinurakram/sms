@@ -200,26 +200,45 @@ export default function ClassResultsPage() {
     };
     scopedGet('/api/results/examinations/', id, { classroom: selectedClass, page_size: 2000, year: selectedYear }, { timeout: 30000 })
       .then(async res => {
-        const all = Array.isArray(res.data) ? res.data : (res.data?.results || []);
+        let all = Array.isArray(res.data) ? res.data : (res.data?.results || []);
+        
+        // Fallback: If no exams for this year, try without year filter
+        if (all.length === 0) {
+          try {
+            const noYearRes = await scopedGet('/api/results/examinations/', id, { classroom: selectedClass, page_size: 2000 }, { timeout: 15000 });
+            all = Array.isArray(noYearRes.data) ? noYearRes.data : (noYearRes.data?.results || []);
+          } catch (_) {}
+        }
+
         const filterType = normalizeExamType(selectedExamType || 'all');
         let exams = filterType === 'all'
           ? all
           : all.filter(e => normalizeExamType(e.exam_type, e.name) === filterType);
+        
+        // Final fallback: If filtering by exam type returns nothing, use all exams for that classroom
+        if (exams.length === 0 && all.length > 0) {
+          exams = all;
+        }
+
         if (selectedExamId) {
           exams = exams.filter(e => String(e.id) === String(selectedExamId));
         }
         setExaminations(exams);
+        
         const examIdSet = new Set((exams || []).map(e => String(e.id)));
         const isResultForSelectedYear = (r) => {
           try {
             const exIdRaw = (typeof r.examination === 'object') ? r.examination?.id : r.examination;
             if (exIdRaw != null && examIdSet.has(String(exIdRaw))) return true;
           } catch (_) {}
+          
           const y = extractYear(r);
+          // If no year found, and we have no exams to filter by, show it
           if (y == null) {
             return examIdSet.size === 0;
           }
-          return Number(y) === Number(selectedYear);
+          // If year matches selectedYear, or we have no exams found for that year
+          return Number(y) === Number(selectedYear) || (exams.length === 0 && all.length === 0);
         };
         const byStudent = new Map();
         const fetchResultsByClassPaginated = async () => {
@@ -234,7 +253,15 @@ export default function ClassResultsPage() {
               const res = await scopedGet('/api/results/results/', id, params, { timeout: 15000 });
               const data = res.data;
               const arr = Array.isArray(data) ? data : (data?.results || []);
-          if (!arr.length) break;
+              
+              // Fallback: If no results with section filter, try without section filter
+              if (!arr.length && typeof selectedSection === 'number' && Number.isFinite(selectedSection)) {
+                const resNoSec = await scopedGet('/api/results/results/', id, { classroom: selectedClass, page, page_size: pageSize }, { timeout: 15000 });
+                const arrNoSec = Array.isArray(resNoSec.data) ? resNoSec.data : (resNoSec.data?.results || []);
+                if (arrNoSec.length) arr.push(...arrNoSec);
+              }
+
+              if (!arr.length) break;
               collected.push(...arr.filter(isResultForSelectedYear));
               const hasNext = Boolean((data?.next || '').length);
               if (hasNext) continue;
@@ -279,14 +306,17 @@ export default function ClassResultsPage() {
               if (!ignoreSection && effectiveSectionGlobal !== undefined) params.section = effectiveSectionGlobal;
               const rRes = await scopedGet('/api/results/results/', id, params, { timeout: 30000 });
               let arr = Array.isArray(rRes.data) ? rRes.data : (rRes.data?.results || []);
-              if (!arr.length) {
-                arr = await fetchResultsPaginated(ex.id);
+              
+              // Fallback: If no results with section filter, try without section filter
+              if (!arr.length && !ignoreSection && effectiveSectionGlobal !== undefined) {
+                const rResNoSec = await scopedGet('/api/results/results/', id, { examination: ex.id, page_size: 3000 }, { timeout: 30000 });
+                arr = Array.isArray(rResNoSec.data) ? rResNoSec.data : (rResNoSec.data?.results || []);
               }
+
               arr = (arr || []).filter(isResultForSelectedYear);
               for (const r of arr) {
                 const stuObj = typeof r.student === 'object' ? r.student : null;
-                const clsId = stuObj?.classroom?.id || stuObj?.classroom_id;
-                const secId = stuObj?.section?.id || stuObj?.section_id;
+                const secId = stuObj?.section?.id || stuObj?.section_id || r.section_id || r.section?.id;
                 if (!ignoreSection && effectiveSectionGlobal !== undefined) {
                   if (secId != null && String(secId) !== String(effectiveSectionGlobal)) continue;
                 }
@@ -294,7 +324,17 @@ export default function ClassResultsPage() {
                 if (!sid) continue;
                 const sidStr = String(sid);
                 if (!byStudent.has(sidStr)) byStudent.set(sidStr, []);
-                byStudent.get(sidStr).push(r);
+                
+                // Avoid duplicates
+                const existing = byStudent.get(sidStr);
+                const isDup = existing.some(x => {
+                  const xSub = typeof x.subject === 'object' ? x.subject?.id : x.subject;
+                  const rSub = typeof r.subject === 'object' ? r.subject?.id : r.subject;
+                  const xEx = typeof x.examination === 'object' ? x.examination?.id : x.examination;
+                  const rEx = typeof r.examination === 'object' ? r.examination?.id : r.examination;
+                  return String(xSub) === String(rSub) && String(xEx) === String(rEx);
+                });
+                if (!isDup) existing.push(r);
               }
             } catch (_) {}
           }
@@ -307,8 +347,7 @@ export default function ClassResultsPage() {
         const classArr = await fetchResultsByClassPaginated();
         for (const r of classArr) {
           const stuObj = typeof r.student === 'object' ? r.student : null;
-          const clsId = stuObj?.classroom?.id || stuObj?.classroom_id;
-          const secId = stuObj?.section?.id || stuObj?.section_id;
+          const secId = stuObj?.section?.id || stuObj?.section_id || r.section_id || r.section?.id;
           const eff = (() => { const n = parseInt(String(selectedSection), 10); return Number.isFinite(n) ? n : undefined; })();
           if (eff !== undefined) {
             if (secId != null && String(secId) !== String(eff)) continue;
@@ -317,7 +356,17 @@ export default function ClassResultsPage() {
           if (!sid) continue;
           const sidStr = String(sid);
           if (!byStudent.has(sidStr)) byStudent.set(sidStr, []);
-          byStudent.get(sidStr).push(r);
+          
+          // Avoid duplicates
+          const existing = byStudent.get(sidStr);
+          const isDup = existing.some(x => {
+            const xSub = typeof x.subject === 'object' ? x.subject?.id : x.subject;
+            const rSub = typeof r.subject === 'object' ? r.subject?.id : r.subject;
+            const xEx = typeof x.examination === 'object' ? x.examination?.id : x.examination;
+            const rEx = typeof r.examination === 'object' ? r.examination?.id : r.examination;
+            return String(xSub) === String(rSub) && String(xEx) === String(rEx);
+          });
+          if (!isDup) existing.push(r);
         }
         if (byStudent.size === 0) {
           try {
@@ -423,53 +472,84 @@ export default function ClassResultsPage() {
           let pickedId = null;
           let pickedRanks = new Map();
           let pickedTotals = new Map();
-          for (const exId of candidateIds) {
+          
+          // Try combined rank list first if exam type is specified
+          if (selectedExamType && selectedExamType !== 'all' && !selectedExamId) {
             try {
-              const params = { examination: exId, page_size: 2000 };
-              if (effectiveSectionGlobal !== undefined) params.section = effectiveSectionGlobal;
-              if (selectedClass) params.classroom = selectedClass;
-              const resp = await scopedGet('/api/results/overall/', id, params, { timeout: 30000 });
-              const data = resp.data;
-              const arr = Array.isArray(data) ? data : (data?.results || []);
-              if (!arr.length) {
-                try {
-                  const resp2 = await scopedGet('/api/results/overall/', id, { examination: exId, page_size: 2000, year: selectedYear }, { timeout: 30000 });
-                  const data2 = resp2.data;
-                  const arr2 = Array.isArray(data2) ? data2 : (data2?.results || []);
-                  if (!arr2.length) continue;
-                  const m2 = new Map();
-                  const mt2 = new Map();
-                  for (const o of arr2 || []) {
-                    const sid = typeof o.student === 'object' ? o.student?.id : o.student;
-                    const rk = o.rank || o.position || null;
-                    if (sid && rk) m2.set(String(sid), parseInt(rk, 10));
-                    const tot = o.total_marks_obtained != null ? parseFloat(o.total_marks_obtained) : null;
-                    if (sid && tot != null) mt2.set(String(sid), tot);
-                  }
-                  pickedId = exId;
-                  pickedRanks = m2;
-                  pickedTotals = mt2;
-                  break;
-                } catch (_) { continue; }
-              }
-              const m = new Map();
-              const mt = new Map();
-              for (const o of arr || []) {
-                if (effectiveSectionGlobal !== undefined) {
-                  const secId = o?.student?.section?.id || o?.student?.section_id;
-                  if (secId != null && String(secId) !== String(effectiveSectionGlobal)) continue;
+              const combinedRes = await api.get('/api/results/overall/combined_rank_list_by_exam_type/', {
+                params: {
+                  exam_type: selectedExamType,
+                  classroom: selectedClass,
+                  section: selectedSection,
+                  school: id,
+                  year: selectedYear,
+                  page_size: 2500
                 }
-                const sid = typeof o.student === 'object' ? o.student?.id : o.student;
-                const rk = o.rank || o.position || null;
-                if (sid && rk) m.set(String(sid), parseInt(rk, 10));
-                const tot = o.total_marks_obtained != null ? parseFloat(o.total_marks_obtained) : null;
-                if (sid && tot != null) mt.set(String(sid), tot);
+              });
+              const data = Array.isArray(combinedRes.data) ? combinedRes.data : (combinedRes.data?.results || []);
+              if (data.length > 0) {
+                for (const o of data) {
+                  const sid = typeof o.student === 'object' ? o.student?.id : (o.student_id ?? o.student);
+                  const rk = o.rank || o.position || null;
+                  if (sid && rk) pickedRanks.set(String(sid), parseInt(rk, 10));
+                  const tot = o.total_marks_obtained != null ? parseFloat(o.total_marks_obtained) : null;
+                  if (sid && tot != null) pickedTotals.set(String(sid), tot);
+                }
               }
-              pickedId = exId;
-              pickedRanks = m;
-              pickedTotals = mt;
-              break;
-            } catch (_) {}
+            } catch (err) {
+              console.warn('Combined rank list fetch failed in ClassResultsPage', err);
+            }
+          }
+
+          if (pickedRanks.size === 0) {
+            for (const exId of candidateIds) {
+              try {
+                const params = { examination: exId, page_size: 2500 };
+                if (effectiveSectionGlobal !== undefined) params.section = effectiveSectionGlobal;
+                if (selectedClass) params.classroom = selectedClass;
+                const resp = await scopedGet('/api/results/overall/', id, params, { timeout: 30000 });
+                const data = resp.data;
+                const arr = Array.isArray(data) ? data : (data?.results || []);
+                if (!arr.length) {
+                  try {
+                    const resp2 = await scopedGet('/api/results/overall/', id, { examination: exId, page_size: 2500, year: selectedYear }, { timeout: 30000 });
+                    const data2 = resp2.data;
+                    const arr2 = Array.isArray(data2) ? data2 : (data2?.results || []);
+                    if (!arr2.length) continue;
+                    const m2 = new Map();
+                    const mt2 = new Map();
+                    for (const o of arr2 || []) {
+                      const sid = typeof o.student === 'object' ? o.student?.id : (o.student_id ?? o.student);
+                      const rk = o.rank || o.position || null;
+                      if (sid && rk) m2.set(String(sid), parseInt(rk, 10));
+                      const tot = o.total_marks_obtained != null ? parseFloat(o.total_marks_obtained) : null;
+                      if (sid && tot != null) mt2.set(String(sid), tot);
+                    }
+                    pickedId = exId;
+                    pickedRanks = m2;
+                    pickedTotals = mt2;
+                    break;
+                  } catch (_) { continue; }
+                }
+                const m = new Map();
+                const mt = new Map();
+                for (const o of arr || []) {
+                  if (effectiveSectionGlobal !== undefined) {
+                    const secId = o?.student?.section?.id || o?.student?.section_id || o?.section_id;
+                    if (secId != null && String(secId) !== String(effectiveSectionGlobal)) continue;
+                  }
+                  const sid = typeof o.student === 'object' ? o.student?.id : (o.student_id ?? o.student);
+                  const rk = o.rank || o.position || null;
+                  if (sid && rk) m.set(String(sid), parseInt(rk, 10));
+                  const tot = o.total_marks_obtained != null ? parseFloat(o.total_marks_obtained) : null;
+                  if (sid && tot != null) mt.set(String(sid), tot);
+                }
+                pickedId = exId;
+                pickedRanks = m;
+                pickedTotals = mt;
+                break;
+              } catch (_) {}
+            }
           }
           setActiveExamId(pickedId || null);
           setOverallRanks(pickedRanks);
@@ -1004,8 +1084,27 @@ export default function ClassResultsPage() {
       return 0;                              // passed -> top
     };
     const secNum = (() => { const n = parseInt(String(selectedSection), 10); return Number.isFinite(n) ? n : undefined; })();
+    
+    // Priority 1: Use backend ranks if available for the current filtered list
+    const list = secNum !== undefined
+      ? (displayStudentsList || []).filter(s => String(getSecId(s)) === String(secNum))
+      : (displayStudentsList || []);
+    
+    const backendRanks = new Map();
+    if (overallRanks && overallRanks.size > 0) {
+      for (const s of list) {
+        const rk = overallRanks.get(String(s.id));
+        if (rk != null) backendRanks.set(String(s.id), rk);
+      }
+    }
+    
+    // If we have enough backend ranks, use them
+    if (backendRanks.size > 0 && backendRanks.size >= list.length * 0.5) {
+      return backendRanks;
+    }
+
+    // Priority 2: Calculate frontend ranks
     if (secNum !== undefined) {
-      const list = (displayStudentsList || []).filter(s => String(getSecId(s)) === String(secNum));
       const arr = list.map(s => ({ s, total: totalsMap.get(String(s.id)) || 0, rollNum: rollNumOf(s), rankCode: statusRankOf(s) }));
       arr.sort((a, b) => {
         if (a.rankCode !== b.rankCode) return a.rankCode - b.rankCode;
@@ -1263,7 +1362,7 @@ export default function ClassResultsPage() {
               <TableCell>Roll</TableCell>
               <TableCell>Student</TableCell>
               <TableCell align="center">প্রাপ্ত মোট নাম্বার</TableCell>
-              <TableCell align="center">নতুন রোল</TableCell>
+              <TableCell align="center">মেধাক্রম (Position)</TableCell>
                   {displaySubjects.map(item => <TableCell key={item.canonical || item.label} align="center">{item.label}</TableCell>)}
             </TableRow>
           </TableHead>

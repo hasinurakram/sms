@@ -1,0 +1,337 @@
+Total exams: 168
+ID: 826, School: বহরিয়া উচ্চ বিদ্যালয়, Name: আইসিটি, Year: None, Date: None, Type: model, Class: প্রথম শ্রেণি
+  Results count: 0
+ID: 880, School: বহরিয়া উচ্চ বিদ্যালয়, Name: আইসিটি, Year: None, Date: None, Type: model, Class: নবম শ্রেণি
+  Results count: 0
+ID: 835, School: বহরিয়া উচ্চ বিদ্যালয়, Name: আইসিটি, Year: None, Date: None, Type: model, Class: দ্বিতীয় শ্রেণি
+  Results count: 0
+ID: 844, School: বহরিয়া উচ্চ বিদ্যালয়, Name: আইসিটি, Year: None, Date: None, Type: model, Class: ষষ্ঠ শ্রেণি
+  Results count: 0
+ID: 871, School: বহরিয়া উচ্চ বিদ্যালয়, Name: আইসিটি, Year: None, Date: None, Type: model, Class: দশম শেণি
+  Results count: 0
+ID: 898, School: বহরিয়া উচ্চ বিদ্যালয়, Name: আইসিটি, Year: None, Date: None, Type: model, Class: ৪র্থ শ্রেণি
+  Results count: 0
+ID: 862, School: বহরিয়া উচ্চ বিদ্যালয়, Name: আইসিটি, Year: None, Date: None, Type: model, Class: সপ্তম শ্রেণি
+  Results count: 0
+ID: 853, School: বহরিয়া উচ্চ বিদ্যালয়, Name: আইসিটি, Year: None, Date: None, Type: model, Class: অষ্টম শ্রেণি
+  Results count: 0
+ID: 889, School: বহরিয়া উচ্চ বিদ্যালয়, Name: আইসিটি, Year: None, Date: None, Type: model, Class: তৃতীয় শ্রেণি
+  Results count: 0
+ID: 907, School: বহরিয়া উচ্চ বিদ্যালয়, Name: আইসিটি, Year: None, Date: None, Type: model, Class: ৫ম শ্রেণি
+  Results count: 0
+ID: 878, School: বহরিয়া উচ্চ বিদ্যালয়, Name: ইংরেজি-১ম, Year: None, Date: None, Type: model, Class: নবম শ্রেণি
+  Results count: 0
+ID: 896, School: বহরিয়া উচ্চ বিদ্যালয়, Name: ইংরেজি-১ম, Year: None, Date: None, Type: model, Class: ৪র্থ শ্রেণি
+  Results count: 0
+ID: 869, School: বহরিয়া উচ্চ বিদ্যালয়, Name: ইংরেজি-১ম, Year: None, Date: None, Type: model, Class: দশম শেণি
+  Results count: 0
+ID: 905, School: বহরিয়া উচ্চ বিদ্যালয়, Name: ইংরেজি-১ম, Year: None, Date: None, Type: model, Class: ৫ম শ্রেণি
+  Results count: 0
+ID: 842, School: বহরিয়া উচ্চ বিদ্যালয়, Name: ইংরেজি-১ম, Year: None, Date: None, Type: model, Class: ষষ্ঠ শ্রেণি
+  Results count: 0
+ID: 860, School: বহরিয়া উচ্চ বিদ্যালয়, Name: ইংরেজি-১ম, Year: None, Date: None, Type: model, Class: সপ্তম শ্রেণি
+  Results count: 0
+ID: 833, School: বহরিয়া উচ্চ বিদ্যালয়, Name: ইংরেজি-১ম, Year: None, Date: None, Type: model, Class: দ্বিতীয় শ্রেণি
+  Results count: 0
+ID: 824, School: বহরিয়া উচ্চ বিদ্যালয়, Name: ইংরেজি-১ম, Year: None, Date: None, Type: model, Class: প্রথম শ্রেণি
+  Results count: 26
+ID: 887, School: বহরিয়া উচ্চ বিদ্যালয়, Name: ইংরেজি-১ম, Year: None, Date: None, Type: model, Class: তৃতীয় শ্রেণি
+  Results count: 0
+ID: 851, School: বহরিয়া উচ্চ বিদ্যালয়, Name: ইংরেজি-১ম, Year: None, Date: None, Type: model, Class: অষ্টম শ্রেণি
+  Results count: 0
+ID: 825, School: বহরিয়া উচ্চ বিদ্যালয়, Name: ইংরেজি-২য়, Year: None, Date: None, Type: model, Class: প্রথম শ্রেণি
+  Results count: 0
+ID: 861, School: বহরিয়া উচ্চ বিদ্যালয়, Name: ইংরেজি-২য়, Year: None, Date: None, Type: model, Class: সপ্তম শ্রেণি
+  Results count: 0
+ID: 852, School: বহরিয়া উচ্চ বিদ্যালয়, Name: ইংরেজি-২য়, Year: None, Date: None, Type: model, Class: অষ্টম শ্রেণি
+  Results count: 0
+ID: 843, School: বহরিয়া উচ্চ বিদ্যালয়, Name: ইংরেজি-২য়, Year: None, Date: None, Type: model, Class: ষষ্ঠ শ্রেণি
+  Results count: 0
+ID: 834, School: বহরিয়া উচ্চ বিদ্যালয়, Name: ইংরেজি-২য়, Year: None, Date: None, Type: model, Class: দ্বিতীয় শ্রেণি
+  Results count: 0
+ID: 870, School: বহরিয়া উচ্চ বিদ্যালয়, Name: ইংরেজি-২য়, Year: None, Date: None, Type: model, Class: দশম শেণি
+  Results count: 0
+ID: 897, School: বহরিয়া উচ্চ বিদ্যালয়, Name: ইংরেজি-২য়, Year: None, Date: None, Type: model, Class: ৪র্থ শ্রেণি
+  Results count: 0
+ID: 888, School: বহরিয়া উচ্চ বিদ্যালয়, Name: ইংরেজি-২য়, Year: None, Date: None, Type: model, Class: তৃতীয় শ্রেণি
+  Results count: 0
+ID: 906, School: বহরিয়া উচ্চ বিদ্যালয়, Name: ইংরেজি-২য়, Year: None, Date: None, Type: model, Class: ৫ম শ্রেণি
+  Results count: 0
+ID: 879, School: বহরিয়া উচ্চ বিদ্যালয়, Name: ইংরেজি-২য়, Year: None, Date: None, Type: model, Class: নবম শ্রেণি
+  Results count: 0
+ID: 839, School: বহরিয়া উচ্চ বিদ্যালয়, Name: গণিত, Year: None, Date: None, Type: model, Class: দ্বিতীয় শ্রেণি
+  Results count: 0
+ID: 911, School: বহরিয়া উচ্চ বিদ্যালয়, Name: গণিত, Year: None, Date: None, Type: model, Class: ৫ম শ্রেণি
+  Results count: 0
+ID: 902, School: বহরিয়া উচ্চ বিদ্যালয়, Name: গণিত, Year: None, Date: None, Type: model, Class: ৪র্থ শ্রেণি
+  Results count: 0
+ID: 893, School: বহরিয়া উচ্চ বিদ্যালয়, Name: গণিত, Year: None, Date: None, Type: model, Class: তৃতীয় শ্রেণি
+  Results count: 0
+ID: 884, School: বহরিয়া উচ্চ বিদ্যালয়, Name: গণিত, Year: None, Date: None, Type: model, Class: নবম শ্রেণি
+  Results count: 0
+ID: 875, School: বহরিয়া উচ্চ বিদ্যালয়, Name: গণিত, Year: None, Date: None, Type: model, Class: দশম শেণি
+  Results count: 0
+ID: 866, School: বহরিয়া উচ্চ বিদ্যালয়, Name: গণিত, Year: None, Date: None, Type: model, Class: সপ্তম শ্রেণি
+  Results count: 0
+ID: 857, School: বহরিয়া উচ্চ বিদ্যালয়, Name: গণিত, Year: None, Date: None, Type: model, Class: অষ্টম শ্রেণি
+  Results count: 0
+ID: 848, School: বহরিয়া উচ্চ বিদ্যালয়, Name: গণিত, Year: None, Date: None, Type: model, Class: ষষ্ঠ শ্রেণি
+  Results count: 0
+ID: 830, School: বহরিয়া উচ্চ বিদ্যালয়, Name: গণিত, Year: None, Date: None, Type: model, Class: প্রথম শ্রেণি
+  Results count: 0
+ID: 891, School: বহরিয়া উচ্চ বিদ্যালয়, Name: ধর্ম, Year: None, Date: None, Type: model, Class: তৃতীয় শ্রেণি
+  Results count: 0
+ID: 837, School: বহরিয়া উচ্চ বিদ্যালয়, Name: ধর্ম, Year: None, Date: None, Type: model, Class: দ্বিতীয় শ্রেণি
+  Results count: 0
+ID: 846, School: বহরিয়া উচ্চ বিদ্যালয়, Name: ধর্ম, Year: None, Date: None, Type: model, Class: ষষ্ঠ শ্রেণি
+  Results count: 0
+ID: 855, School: বহরিয়া উচ্চ বিদ্যালয়, Name: ধর্ম, Year: None, Date: None, Type: model, Class: অষ্টম শ্রেণি
+  Results count: 0
+ID: 864, School: বহরিয়া উচ্চ বিদ্যালয়, Name: ধর্ম, Year: None, Date: None, Type: model, Class: সপ্তম শ্রেণি
+  Results count: 0
+ID: 873, School: বহরিয়া উচ্চ বিদ্যালয়, Name: ধর্ম, Year: None, Date: None, Type: model, Class: দশম শেণি
+  Results count: 0
+ID: 900, School: বহরিয়া উচ্চ বিদ্যালয়, Name: ধর্ম, Year: None, Date: None, Type: model, Class: ৪র্থ শ্রেণি
+  Results count: 0
+ID: 882, School: বহরিয়া উচ্চ বিদ্যালয়, Name: ধর্ম, Year: None, Date: None, Type: model, Class: নবম শ্রেণি
+  Results count: 0
+ID: 909, School: বহরিয়া উচ্চ বিদ্যালয়, Name: ধর্ম, Year: None, Date: None, Type: model, Class: ৫ম শ্রেণি
+  Results count: 0
+ID: 828, School: বহরিয়া উচ্চ বিদ্যালয়, Name: ধর্ম, Year: None, Date: None, Type: model, Class: প্রথম শ্রেণি
+  Results count: 0
+ID: 912, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বাংলা-১ম, Year: None, Date: None, Type: model, Class: ৫ম শ্রেণি
+  Results count: 0
+ID: 815, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বাংলা-১ম, Year: None, Date: None, Type: test, Class: ষষ্ঠ শ্রেণি
+  Results count: 2
+ID: 831, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বাংলা-১ম, Year: None, Date: None, Type: model, Class: প্রথম শ্রেণি
+  Results count: 0
+ID: 840, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বাংলা-১ম, Year: None, Date: None, Type: model, Class: দ্বিতীয় শ্রেণি
+  Results count: 0
+ID: 849, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বাংলা-১ম, Year: None, Date: None, Type: model, Class: ষষ্ঠ শ্রেণি
+  Results count: 0
+ID: 858, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বাংলা-১ম, Year: None, Date: None, Type: model, Class: অষ্টম শ্রেণি
+  Results count: 0
+ID: 867, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বাংলা-১ম, Year: None, Date: None, Type: model, Class: সপ্তম শ্রেণি
+  Results count: 0
+ID: 876, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বাংলা-১ম, Year: None, Date: None, Type: model, Class: দশম শেণি
+  Results count: 0
+ID: 885, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বাংলা-১ম, Year: None, Date: None, Type: model, Class: নবম শ্রেণি
+  Results count: 0
+ID: 894, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বাংলা-১ম, Year: None, Date: None, Type: model, Class: তৃতীয় শ্রেণি
+  Results count: 0
+ID: 903, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বাংলা-১ম, Year: None, Date: None, Type: model, Class: ৪র্থ শ্রেণি
+  Results count: 0
+ID: 823, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বাংলা-২য়, Year: None, Date: None, Type: model, Class: প্রথম শ্রেণি
+  Results count: 0
+ID: 832, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বাংলা-২য়, Year: None, Date: None, Type: model, Class: দ্বিতীয় শ্রেণি
+  Results count: 0
+ID: 904, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বাংলা-২য়, Year: None, Date: None, Type: model, Class: ৫ম শ্রেণি
+  Results count: 0
+ID: 841, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বাংলা-২য়, Year: None, Date: None, Type: model, Class: ষষ্ঠ শ্রেণি
+  Results count: 0
+ID: 850, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বাংলা-২য়, Year: None, Date: None, Type: model, Class: অষ্টম শ্রেণি
+  Results count: 0
+ID: 859, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বাংলা-২য়, Year: None, Date: None, Type: model, Class: সপ্তম শ্রেণি
+  Results count: 0
+ID: 868, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বাংলা-২য়, Year: None, Date: None, Type: model, Class: দশম শেণি
+  Results count: 0
+ID: 877, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বাংলা-২য়, Year: None, Date: None, Type: model, Class: নবম শ্রেণি
+  Results count: 0
+ID: 895, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বাংলা-২য়, Year: None, Date: None, Type: model, Class: ৪র্থ শ্রেণি
+  Results count: 0
+ID: 886, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বাংলা-২য়, Year: None, Date: None, Type: model, Class: তৃতীয় শ্রেণি
+  Results count: 0
+ID: 829, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বাংলাদেশ ও বিশ্বপরিচয়, Year: None, Date: None, Type: model, Class: প্রথম শ্রেণি
+  Results count: 0
+ID: 910, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বাংলাদেশ ও বিশ্বপরিচয়, Year: None, Date: None, Type: model, Class: ৫ম শ্রেণি
+  Results count: 0
+ID: 883, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বাংলাদেশ ও বিশ্বপরিচয়, Year: None, Date: None, Type: model, Class: নবম শ্রেণি
+  Results count: 0
+ID: 901, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বাংলাদেশ ও বিশ্বপরিচয়, Year: None, Date: None, Type: model, Class: ৪র্থ শ্রেণি
+  Results count: 0
+ID: 892, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বাংলাদেশ ও বিশ্বপরিচয়, Year: None, Date: None, Type: model, Class: তৃতীয় শ্রেণি
+  Results count: 0
+ID: 874, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বাংলাদেশ ও বিশ্বপরিচয়, Year: None, Date: None, Type: model, Class: দশম শেণি
+  Results count: 0
+ID: 865, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বাংলাদেশ ও বিশ্বপরিচয়, Year: None, Date: None, Type: model, Class: সপ্তম শ্রেণি
+  Results count: 0
+ID: 856, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বাংলাদেশ ও বিশ্বপরিচয়, Year: None, Date: None, Type: model, Class: অষ্টম শ্রেণি
+  Results count: 0
+ID: 847, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বাংলাদেশ ও বিশ্বপরিচয়, Year: None, Date: None, Type: model, Class: ষষ্ঠ শ্রেণি
+  Results count: 0
+ID: 838, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বাংলাদেশ ও বিশ্বপরিচয়, Year: None, Date: None, Type: model, Class: দ্বিতীয় শ্রেণি
+  Results count: 0
+ID: 890, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বিজ্ঞান, Year: None, Date: None, Type: model, Class: তৃতীয় শ্রেণি
+  Results count: 0
+ID: 836, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বিজ্ঞান, Year: None, Date: None, Type: model, Class: দ্বিতীয় শ্রেণি
+  Results count: 0
+ID: 881, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বিজ্ঞান, Year: None, Date: None, Type: model, Class: নবম শ্রেণি
+  Results count: 0
+ID: 908, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বিজ্ঞান, Year: None, Date: None, Type: model, Class: ৫ম শ্রেণি
+  Results count: 0
+ID: 845, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বিজ্ঞান, Year: None, Date: None, Type: model, Class: ষষ্ঠ শ্রেণি
+  Results count: 0
+ID: 854, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বিজ্ঞান, Year: None, Date: None, Type: model, Class: অষ্টম শ্রেণি
+  Results count: 0
+ID: 872, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বিজ্ঞান, Year: None, Date: None, Type: model, Class: দশম শেণি
+  Results count: 0
+ID: 899, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বিজ্ঞান, Year: None, Date: None, Type: model, Class: ৪র্থ শ্রেণি
+  Results count: 0
+ID: 827, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বিজ্ঞান, Year: None, Date: None, Type: model, Class: প্রথম শ্রেণি
+  Results count: 0
+ID: 863, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বিজ্ঞান, Year: None, Date: None, Type: model, Class: সপ্তম শ্রেণি
+  Results count: 0
+ID: 819, School: বহরিয়া উচ্চ বিদ্যালয়, Name: অর্ধ-বার্ষিক, Year: None, Date: 2026-06-10, Type: half_yearly, Class: ষষ্ঠ শ্রেণি
+  Results count: 0
+ID: 820, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বাংলা-১ম, Year: None, Date: 2026-06-03, Type: half_yearly, Class: ষষ্ঠ শ্রেণি
+  Results count: 0
+ID: 818, School: বহরিয়া উচ্চ বিদ্যালয়, Name: ক্লাস টেস্ট, Year: None, Date: 2026-03-25, Type: test, Class: ৫ম শ্রেণি
+  Results count: 0
+ID: 817, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বাংলা, Year: None, Date: 2026-03-10, Type: test, Class: ষষ্ঠ শ্রেণি
+  Results count: 0
+ID: 816, School: বহরিয়া উচ্চ বিদ্যালয়, Name: বিশেষ মূল্যায়ন, Year: None, Date: 2026-02-25, Type: test, Class: ষষ্ঠ শ্রেণি
+  Results count: 0
+ID: 822, School: ভাটরা উচ্চ বিদ্যালয়, Name: গণিত, Year: 2026, Date: 2026-02-19, Type: test, Class: নবম শ্রেণি
+  Results count: 0
+ID: 768, School: ভাটরা উচ্চ বিদ্যালয়, Name: কৃষি, Year: None, Date: 2025-12-09, Type: annual, Class: সপ্তম শ্রেণি
+  Results count: 0
+ID: 769, School: ভাটরা উচ্চ বিদ্যালয়, Name: কৃষি, Year: None, Date: 2025-12-09, Type: annual, Class: অষ্টম শ্রেণি
+  Results count: 0
+ID: 767, School: ভাটরা উচ্চ বিদ্যালয়, Name: কৃষি, Year: None, Date: 2025-12-09, Type: annual, Class: ষষ্ঠ শ্রেণি
+  Results count: 0
+ID: 814, School: ভাটরা উচ্চ বিদ্যালয়, Name: ইংরেজী-২য়, Year: None, Date: 2025-12-08, Type: annual, Class: সপ্তম শ্রেণি
+  Results count: 122
+ID: 813, School: ভাটরা উচ্চ বিদ্যালয়, Name: উচ্চতর গণিত, Year: None, Date: 2025-12-08, Type: annual, Class: নবম শ্রেণি
+  Results count: 50
+ID: 809, School: ভাটরা উচ্চ বিদ্যালয়, Name: তথ্য ও যোগাযোগ প্রযুক্তি, Year: None, Date: 2025-12-07, Type: annual, Class: অষ্টম শ্রেণি
+  Results count: 60
+ID: 807, School: ভাটরা উচ্চ বিদ্যালয়, Name: তথ্য ও যোগাযোগ প্রযুক্তি, Year: None, Date: 2025-12-07, Type: annual, Class: ষষ্ঠ শ্রেণি
+  Results count: 66
+ID: 810, School: ভাটরা উচ্চ বিদ্যালয়, Name: তথ্য ও যোগাযোগ প্রযুক্তি, Year: None, Date: 2025-12-07, Type: annual, Class: নবম শ্রেণি
+  Results count: 119
+ID: 811, School: ভাটরা উচ্চ বিদ্যালয়, Name: তথ্য ও যোগাযোগ প্রযুক্তি, Year: None, Date: 2025-12-07, Type: annual, Class: দশম শ্রেণি
+  Results count: 17
+ID: 808, School: ভাটরা উচ্চ বিদ্যালয়, Name: তথ্য ও যোগাযোগ প্রযুক্তি, Year: None, Date: 2025-12-07, Type: annual, Class: সপ্তম শ্রেণি
+  Results count: 128
+ID: 766, School: ভাটরা উচ্চ বিদ্যালয়, Name: ধর্ম ও নৈতিক শিক্ষা, Year: None, Date: 2025-12-07, Type: annual, Class: অষ্টম শ্রেণি
+  Results count: 118
+ID: 764, School: ভাটরা উচ্চ বিদ্যালয়, Name: ধর্ম ও নৈতিক শিক্ষা, Year: None, Date: 2025-12-07, Type: annual, Class: ষষ্ঠ শ্রেণি
+  Results count: 130
+ID: 765, School: ভাটরা উচ্চ বিদ্যালয়, Name: ধর্ম ও নৈতিক শিক্ষা, Year: None, Date: 2025-12-07, Type: annual, Class: সপ্তম শ্রেণি
+  Results count: 128
+ID: 798, School: ভাটরা উচ্চ বিদ্যালয়, Name: অর্থনীতি, Year: None, Date: 2025-12-03, Type: annual, Class: দশম শ্রেণি
+  Results count: 0
+ID: 785, School: ভাটরা উচ্চ বিদ্যালয়, Name: অর্থনীতি, Year: None, Date: 2025-12-03, Type: annual, Class: নবম শ্রেণি
+  Results count: 0
+ID: 794, School: ভাটরা উচ্চ বিদ্যালয়, Name: ইতিহাস, Year: None, Date: 2025-12-03, Type: annual, Class: দশম শ্রেণি
+  Results count: 0
+ID: 781, School: ভাটরা উচ্চ বিদ্যালয়, Name: ইতিহাস, Year: None, Date: 2025-12-03, Type: annual, Class: নবম শ্রেণি
+  Results count: 38
+ID: 812, School: ভাটরা উচ্চ বিদ্যালয়, Name: কৃষি, Year: None, Date: 2025-12-03, Type: annual, Class: নবম শ্রেণি
+  Results count: 67
+ID: 788, School: ভাটরা উচ্চ বিদ্যালয়, Name: গণিত, Year: None, Date: 2025-12-03, Type: annual, Class: দশম শ্রেণি
+  Results count: 17
+ID: 775, School: ভাটরা উচ্চ বিদ্যালয়, Name: গণিত, Year: None, Date: 2025-12-03, Type: annual, Class: নবম শ্রেণি
+  Results count: 121
+ID: 776, School: ভাটরা উচ্চ বিদ্যালয়, Name: ধর্ম ও নৈতিক শিক্ষা, Year: None, Date: 2025-12-03, Type: annual, Class: নবম শ্রেণি
+  Results count: 119
+ID: 789, School: ভাটরা উচ্চ বিদ্যালয়, Name: ধর্ম ও নৈতিক শিক্ষা, Year: None, Date: 2025-12-03, Type: annual, Class: দশম শ্রেণি
+  Results count: 17
+ID: 795, School: ভাটরা উচ্চ বিদ্যালয়, Name: পৌরনীতি, Year: None, Date: 2025-12-03, Type: annual, Class: দশম শ্রেণি
+  Results count: 0
+ID: 782, School: ভাটরা উচ্চ বিদ্যালয়, Name: পৌরনীতি, Year: None, Date: 2025-12-03, Type: annual, Class: নবম শ্রেণি
+  Results count: 39
+ID: 780, School: ভাটরা উচ্চ বিদ্যালয়, Name: ফিন্যান্স, Year: None, Date: 2025-12-03, Type: annual, Class: নবম শ্রেণি
+  Results count: 28
+ID: 793, School: ভাটরা উচ্চ বিদ্যালয়, Name: ফিন্যান্স, Year: None, Date: 2025-12-03, Type: annual, Class: দশম শ্রেণি
+  Results count: 0
+ID: 774, School: ভাটরা উচ্চ বিদ্যালয়, Name: বাংলা-১ম, Year: None, Date: 2025-12-03, Type: annual, Class: নবম শ্রেণি
+  Results count: 120
+ID: 787, School: ভাটরা উচ্চ বিদ্যালয়, Name: বাংলা-১ম, Year: None, Date: 2025-12-03, Type: annual, Class: দশম শ্রেণি
+  Results count: 17
+ID: 783, School: ভাটরা উচ্চ বিদ্যালয়, Name: বাংলা-২য়, Year: None, Date: 2025-12-03, Type: annual, Class: নবম শ্রেণি
+  Results count: 118
+ID: 796, School: ভাটরা উচ্চ বিদ্যালয়, Name: বাংলা-২য়, Year: None, Date: 2025-12-03, Type: annual, Class: দশম শ্রেণি
+  Results count: 17
+ID: 778, School: ভাটরা উচ্চ বিদ্যালয়, Name: বাংলাদেশ ও বিশ্বপরিচয়, Year: None, Date: 2025-12-03, Type: annual, Class: নবম শ্রেণি
+  Results count: 80
+ID: 791, School: ভাটরা উচ্চ বিদ্যালয়, Name: বাংলাদেশ ও বিশ্বপরিচয়, Year: None, Date: 2025-12-03, Type: annual, Class: দশম শ্রেণি
+  Results count: 17
+ID: 760, School: ভাটরা উচ্চ বিদ্যালয়, Name: বাংলাদেশ ও বিশ্বপরিচয়, Year: None, Date: 2025-12-03, Type: annual, Class: অষ্টম শ্রেণি
+  Results count: 118
+ID: 758, School: ভাটরা উচ্চ বিদ্যালয়, Name: বাংলাদেশ ও বিশ্বপরিচয়, Year: None, Date: 2025-12-03, Type: annual, Class: ষষ্ঠ শ্রেণি
+  Results count: 132
+ID: 759, School: ভাটরা উচ্চ বিদ্যালয়, Name: বাংলাদেশ ও বিশ্বপরিচয়, Year: None, Date: 2025-12-03, Type: annual, Class: সপ্তম শ্রেণি
+  Results count: 127
+ID: 777, School: ভাটরা উচ্চ বিদ্যালয়, Name: বিজ্ঞান, Year: None, Date: 2025-12-03, Type: annual, Class: নবম শ্রেণি
+  Results count: 38
+ID: 790, School: ভাটরা উচ্চ বিদ্যালয়, Name: বিজ্ঞান, Year: None, Date: 2025-12-03, Type: annual, Class: দশম শ্রেণি
+  Results count: 0
+ID: 784, School: ভাটরা উচ্চ বিদ্যালয়, Name: ব্যবসায় উদ্যোগ, Year: None, Date: 2025-12-03, Type: annual, Class: নবম শ্রেণি
+  Results count: 28
+ID: 797, School: ভাটরা উচ্চ বিদ্যালয়, Name: ব্যবসায় উদ্যোগ, Year: None, Date: 2025-12-03, Type: annual, Class: দশম শ্রেণি
+  Results count: 0
+ID: 799, School: ভাটরা উচ্চ বিদ্যালয়, Name: ভূগোল, Year: None, Date: 2025-12-03, Type: annual, Class: দশম শ্রেণি
+  Results count: 0
+ID: 786, School: ভাটরা উচ্চ বিদ্যালয়, Name: ভূগোল, Year: None, Date: 2025-12-03, Type: annual, Class: নবম শ্রেণি
+  Results count: 39
+ID: 779, School: ভাটরা উচ্চ বিদ্যালয়, Name: হিসাববিজ্ঞান, Year: None, Date: 2025-12-03, Type: annual, Class: নবম শ্রেণি
+  Results count: 28
+ID: 792, School: ভাটরা উচ্চ বিদ্যালয়, Name: হিসাববিজ্ঞান, Year: None, Date: 2025-12-03, Type: annual, Class: দশম শ্রেণি
+  Results count: 0
+ID: 801, School: ভাটরা উচ্চ বিদ্যালয়, Name: ইংরেজি-২য়, Year: None, Date: 2025-12-02, Type: annual, Class: নবম শ্রেণি
+  Results count: 118
+ID: 803, School: ভাটরা উচ্চ বিদ্যালয়, Name: ইংরেজি-২য়, Year: None, Date: 2025-12-02, Type: annual, Class: দশম শ্রেণি
+  Results count: 17
+ID: 802, School: ভাটরা উচ্চ বিদ্যালয়, Name: ইংরেজী-১ম, Year: None, Date: 2025-12-02, Type: annual, Class: দশম শ্রেণি
+  Results count: 17
+ID: 800, School: ভাটরা উচ্চ বিদ্যালয়, Name: ইংরেজী-১ম, Year: None, Date: 2025-12-02, Type: annual, Class: নবম শ্রেণি
+  Results count: 119
+ID: 804, School: ভাটরা উচ্চ বিদ্যালয়, Name: জীব বিজ্ঞান, Year: None, Date: 2025-12-02, Type: annual, Class: নবম শ্রেণি
+  Results count: 52
+ID: 806, School: ভাটরা উচ্চ বিদ্যালয়, Name: পদার্থ, Year: None, Date: 2025-12-02, Type: annual, Class: নবম শ্রেণি
+  Results count: 52
+ID: 756, School: ভাটরা উচ্চ বিদ্যালয়, Name: বিজ্ঞান, Year: None, Date: 2025-12-02, Type: annual, Class: সপ্তম শ্রেণি
+  Results count: 127
+ID: 755, School: ভাটরা উচ্চ বিদ্যালয়, Name: বিজ্ঞান, Year: None, Date: 2025-12-02, Type: annual, Class: ষষ্ঠ শ্রেণি
+  Results count: 131
+ID: 757, School: ভাটরা উচ্চ বিদ্যালয়, Name: বিজ্ঞান, Year: None, Date: 2025-12-02, Type: annual, Class: অষ্টম শ্রেণি
+  Results count: 118
+ID: 805, School: ভাটরা উচ্চ বিদ্যালয়, Name: রসায়ন(A), Year: None, Date: 2025-12-02, Type: annual, Class: নবম শ্রেণি
+  Results count: 52
+ID: 742, School: ভাটরা উচ্চ বিদ্যালয়, Name: বাংলা-১ম, Year: None, Date: 2025-12-01, Type: annual, Class: অষ্টম শ্রেণি
+  Results count: 118
+ID: 740, School: ভাটরা উচ্চ বিদ্যালয়, Name: বাংলা-১ম, Year: None, Date: 2025-12-01, Type: annual, Class: ষষ্ঠ শ্রেণি
+  Results count: 133
+ID: 741, School: ভাটরা উচ্চ বিদ্যালয়, Name: বাংলা-১ম, Year: None, Date: 2025-12-01, Type: annual, Class: সপ্তম শ্রেণি
+  Results count: 128
+ID: 748, School: ভাটরা উচ্চ বিদ্যালয়, Name: বাংলা-২য়, Year: None, Date: 2025-12-01, Type: annual, Class: অষ্টম শ্রেণি
+  Results count: 118
+ID: 746, School: ভাটরা উচ্চ বিদ্যালয়, Name: বাংলা-২য়, Year: None, Date: 2025-12-01, Type: annual, Class: ষষ্ঠ শ্রেণি
+  Results count: 131
+ID: 747, School: ভাটরা উচ্চ বিদ্যালয়, Name: বাংলা-২য়, Year: None, Date: 2025-12-01, Type: annual, Class: সপ্তম শ্রেণি
+  Results count: 190
+ID: 749, School: ভাটরা উচ্চ বিদ্যালয়, Name: ইংরেজী-১ম, Year: None, Date: 2025-11-29, Type: annual, Class: ষষ্ঠ শ্রেণি
+  Results count: 130
+ID: 750, School: ভাটরা উচ্চ বিদ্যালয়, Name: ইংরেজী-১ম, Year: None, Date: 2025-11-29, Type: annual, Class: সপ্তম শ্রেণি
+  Results count: 127
+ID: 751, School: ভাটরা উচ্চ বিদ্যালয়, Name: ইংরেজী-১ম, Year: None, Date: 2025-11-29, Type: annual, Class: অষ্টম শ্রেণি
+  Results count: 116
+ID: 754, School: ভাটরা উচ্চ বিদ্যালয়, Name: গণিত, Year: None, Date: 2025-11-29, Type: annual, Class: অষ্টম শ্রেণি
+  Results count: 117
+ID: 752, School: ভাটরা উচ্চ বিদ্যালয়, Name: গণিত, Year: None, Date: 2025-11-29, Type: annual, Class: ষষ্ঠ শ্রেণি
+  Results count: 131
+ID: 753, School: ভাটরা উচ্চ বিদ্যালয়, Name: গণিত, Year: None, Date: 2025-11-29, Type: annual, Class: সপ্তম শ্রেণি
+  Results count: 130
+ID: 761, School: ভাটরা উচ্চ বিদ্যালয়, Name: ICT, Year: None, Date: 2025-11-26, Type: annual, Class: ষষ্ঠ শ্রেণি
+  Results count: 66
+ID: 763, School: ভাটরা উচ্চ বিদ্যালয়, Name: ICT, Year: None, Date: 2025-11-26, Type: annual, Class: অষ্টম শ্রেণি
+  Results count: 58
+ID: 762, School: ভাটরা উচ্চ বিদ্যালয়, Name: ICT, Year: None, Date: 2025-11-26, Type: annual, Class: সপ্তম শ্রেণি
+  Results count: 0
+ID: 745, School: ভাটরা উচ্চ বিদ্যালয়, Name: ইংরেজি-২য়, Year: None, Date: 2025-11-26, Type: annual, Class: অষ্টম শ্রেণি
+  Results count: 107
+ID: 743, School: ভাটরা উচ্চ বিদ্যালয়, Name: ইংরেজি-২য়, Year: None, Date: 2025-11-26, Type: annual, Class: ষষ্ঠ শ্রেণি
+  Results count: 129
+ID: 821, School: ভাটরা উচ্চ বিদ্যালয়, Name: বাংলা, Year: None, Date: 2024-02-19, Type: test, Class: ষষ্ঠ শ্রেণি
+  Results count: 1

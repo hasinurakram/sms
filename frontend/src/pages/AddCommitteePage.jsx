@@ -66,8 +66,12 @@ export default function AddCommitteePage() {
     setSaving(true);
     try {
       const fd = new FormData();
+      let uname = form.username;
+      if (typeof uname === 'string' && uname) {
+        uname = uname.normalize('NFKC').trim();
+      }
       fd.append('school_id', id);
-      if (form.username) fd.append('username', form.username);
+      if (uname) fd.append('username', uname);
       if (form.password) fd.append('password', form.password);
       fd.append('first_name', form.first_name || '');
       fd.append('last_name', form.last_name || '');

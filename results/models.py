@@ -57,6 +57,10 @@ class Examination(models.Model):
                         y = int(m.group(0))
                 except Exception:
                     y = None
+            if y is None:
+                # Fallback to current year if still None
+                from datetime import datetime
+                y = datetime.now().year
             self.year = y
         super().save(*args, **kwargs)
 

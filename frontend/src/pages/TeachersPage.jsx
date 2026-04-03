@@ -171,20 +171,18 @@ export default function TeachersPage() {
 
     const enrichedAssignments = assignData.map(a => {
       const rawTeacher = a.teacher || {};
-      const userId = rawTeacher.user?.id || null;
-      const teacherId = rawTeacher.id || null;
+      const userId = rawTeacher.user?.id || rawTeacher.id || null;
+      const teacherIdFromAssignment = a.teacher_id || null;
 
       let profile = null;
       if (userId && userIdToProfile.has(userId)) {
         profile = userIdToProfile.get(userId);
-      } else if (teacherId && userIdToProfile.has(teacherId)) {
-        profile = userIdToProfile.get(teacherId);
-      } else if (teacherId && profileIdToProfile.has(teacherId)) {
-        profile = profileIdToProfile.get(teacherId);
+      } else if (teacherIdFromAssignment && profileIdToProfile.has(teacherIdFromAssignment)) {
+        profile = profileIdToProfile.get(teacherIdFromAssignment);
       }
 
-      if ((userId || teacherId) && !profile) {
-        console.warn('No profile found for teacher', { userId, teacherId, teacher: rawTeacher });
+      if (userId && !profile) {
+        // No profile found, will be created on edit
       }
 
       return {
@@ -222,7 +220,7 @@ export default function TeachersPage() {
       let rawAssignments = [];
       let teacherProfiles = [];
       try {
-        const assignRes = await api.get(`/api/academics/assignments/?classroom__school=${id}`);
+        const assignRes = await api.get(`/api/academics/assignments/?classroom__school=${id}&_t=${Date.now()}`);
         rawAssignments = Array.isArray(assignRes.data)
           ? assignRes.data
           : (assignRes.data?.results || []);
@@ -231,7 +229,7 @@ export default function TeachersPage() {
         rawAssignments = [];
       }
       try {
-        const teacherRes = await api.get(`/api/users/teachers/?school=${id}`);
+        const teacherRes = await api.get(`/api/users/teachers/?school=${id}&_t=${Date.now()}`);
         const teacherData = teacherRes.data || [];
         teacherProfiles = Array.isArray(teacherData) ? teacherData : (teacherData.results || []);
       } catch (e) {
@@ -286,8 +284,13 @@ export default function TeachersPage() {
         }
       } catch (_) {}
 
+      // Build final assignments list
       const combined = buildAssignments(filteredAssignments, filteredProfiles);
+      
+      // Update local state immediately
       setAssignments(combined);
+      setTeachers(filteredProfiles);
+      
       setLoading(false);
       if (combined.length > 0) {
         toast.success(`Loaded ${combined.length} teacher${combined.length === 1 ? '' : 's'} (including unassigned)`);
@@ -318,6 +321,7 @@ export default function TeachersPage() {
         last_name: userData.last_name || '',
         email: userData.email || '',
         username: userData.username || '',
+        password: '',
         phone_number: userData.phone_number || '',
         educational_qualification: userData.educational_qualification || '',
         designation: prof?.designation || ''
@@ -349,6 +353,8 @@ export default function TeachersPage() {
       }
       
       const formData = new FormData();
+      if (editFormData.username) formData.append('username', editFormData.username);
+      if (editFormData.password) formData.append('password', editFormData.password);
       formData.append('first_name', editFormData.first_name || '');
       formData.append('last_name', editFormData.last_name || '');
       formData.append('email', editFormData.email || '');
@@ -368,6 +374,18 @@ export default function TeachersPage() {
         } catch (e) {
           console.warn('Profile patch failed, proceeding with assignments', e?.response?.data || e?.message);
           toast.warning('প্রোফাইল আপডেট হয়নি, তবুও অ্যাসাইনমেন্ট লিংক হবে');
+        }
+      } else if (userId) {
+        // Fallback: create teacher profile for this user if missing
+        try {
+          formData.append('user_id', userId);
+          formData.append('school_id', id);
+          await api.post('/api/users/teachers/', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+          });
+        } catch (e) {
+          console.warn('User profile creation failed', e?.response?.data || e?.message);
+          toast.error('শিক্ষক প্রোফাইল আপডেট বা তৈরি করতে ব্যর্থ');
         }
       }
       // Upsert teaching assignments based on edit selections
@@ -429,13 +447,17 @@ export default function TeachersPage() {
         last_name: '',
         email: '',
         username: '',
+        password: '',
         phone_number: '',
+        educational_qualification: '',
+        designation: '',
         _photoFile: null
       });
       setSelectedTeacher(null);
+      // Short delay to allow DB sync before reload
       setTimeout(() => {
         loadAssignments();
-      }, 800);
+      }, 500);
     } catch (error) {
       let errorMsg = 'Failed to update teacher profile';
       if (error.response?.data) {
@@ -580,15 +602,18 @@ export default function TeachersPage() {
         api.get(`/api/academics/subjects/?school=${id}`),
         api.get(`/api/academics/classrooms/?school=${id}`)
       ]);
-      setSubjects(subjectsRes.data);
-      setClassrooms(classroomsRes.data);
+      const subjectsData = Array.isArray(subjectsRes.data) ? subjectsRes.data : (subjectsRes.data?.results || []);
+      const classroomsData = Array.isArray(classroomsRes.data) ? classroomsRes.data : (classroomsRes.data?.results || []);
+      
+      setSubjects(subjectsData);
+      setClassrooms(classroomsData);
       setSections([]);
       
       // Show warning if no data
-      if (subjectsRes.data.length === 0) {
+      if (subjectsData.length === 0) {
         toast.warning('No subjects found for this school. Please add subjects first.');
       }
-      if (classroomsRes.data.length === 0) {
+      if (classroomsData.length === 0) {
         toast.warning('No classes found for this school. Please add classes first.');
       }
     } catch (err) {
@@ -602,7 +627,10 @@ export default function TeachersPage() {
     const cls = newTeacher.classroom_id;
     if (!cls) { setSections([]); return; }
     api.get(`/api/academics/sections/?classroom=${cls}`)
-      .then(res => setSections(res.data || []))
+      .then(res => {
+        const data = Array.isArray(res.data) ? res.data : (res.data?.results || []);
+        setSections(data);
+      })
       .catch(err => { console.error('Failed to load sections:', err); setSections([]); });
   }, [newTeacher.classroom_id]);
 
@@ -624,7 +652,14 @@ export default function TeachersPage() {
   const handleAddTeacher = async () => {
     // Validation & auto-generate
     const genIfMissing = () => {
-      const base = (newTeacher.first_name || newTeacher.username || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      let base = (newTeacher.username || newTeacher.first_name || '').trim();
+      if (base) {
+        try {
+          base = base.normalize('NFKC').toLowerCase();
+        } catch (_) {
+          base = base.toLowerCase();
+        }
+      }
       const suffix = String(Math.floor(Math.random() * 900) + 100);
       const username = newTeacher.username || (base ? `${base}${suffix}` : `teacher${suffix}`);
       const password = newTeacher.password || '12345678';
@@ -1216,19 +1251,19 @@ export default function TeachersPage() {
             <TextField
               label="First Name"
               fullWidth
-              value={editFormData.first_name}
+              value={editFormData.first_name || ''}
               onChange={(e) => setEditFormData({...editFormData, first_name: e.target.value})}
             />
             <TextField
               label="Last Name"
               fullWidth
-              value={editFormData.last_name}
+              value={editFormData.last_name || ''}
               onChange={(e) => setEditFormData({...editFormData, last_name: e.target.value})}
             />
             <TextField
               label="Email"
               fullWidth
-              value={editFormData.email}
+              value={editFormData.email || ''}
               onChange={(e) => setEditFormData({...editFormData, email: e.target.value})}
             />
             <TextField
@@ -1238,23 +1273,30 @@ export default function TeachersPage() {
               onChange={(e) => setEditFormData({...editFormData, designation: e.target.value})}
             />
             <TextField
-              label="Username"
+              label="Username (Login ID)"
               fullWidth
-              value={editFormData.username}
+              value={editFormData.username || ''}
               onChange={(e) => setEditFormData({...editFormData, username: e.target.value})}
-              disabled
-              helperText="Username cannot be changed"
+              helperText="Username for login"
+            />
+            <TextField
+              label="New Password"
+              type="password"
+              fullWidth
+              value={editFormData.password || ''}
+              onChange={(e) => setEditFormData({...editFormData, password: e.target.value})}
+              helperText="Leave blank to keep current password"
             />
             <TextField
               label="Phone Number"
               fullWidth
-              value={editFormData.phone_number}
+              value={editFormData.phone_number || ''}
               onChange={(e) => setEditFormData({...editFormData, phone_number: e.target.value})}
             />
             <TextField
               label="শিক্ষাগত যোগ্যতা (Educational Qualification)"
               fullWidth
-              value={editFormData.educational_qualification}
+              value={editFormData.educational_qualification || ''}
               onChange={(e) => setEditFormData({...editFormData, educational_qualification: e.target.value})}
               placeholder="e.g., B.A., M.A., B.Ed., এম.এ., বি.এড."
               helperText="Optional - শিক্ষাগত যোগ্যতা লিখুন"
@@ -1264,7 +1306,7 @@ export default function TeachersPage() {
               multiple
               options={subjects || []}
               getOptionLabel={(s) => s?.name || ''}
-              value={(subjects || []).filter(s => editSelectedSubjectIds.includes(s.id))}
+              value={(Array.isArray(subjects) ? subjects : []).filter(s => editSelectedSubjectIds.includes(s.id))}
               onChange={(e, vals) => setEditSelectedSubjectIds(vals.map(v => v.id))}
               renderInput={(params) => (
                 <TextField {...params} label="Subjects (multiple)" placeholder="Select one or more" />
@@ -1274,7 +1316,7 @@ export default function TeachersPage() {
               multiple
               options={classrooms || []}
               getOptionLabel={(c) => c?.name || ''}
-              value={(classrooms || []).filter(c => editSelectedClassroomIds.includes(c.id))}
+              value={(Array.isArray(classrooms) ? classrooms : []).filter(c => editSelectedClassroomIds.includes(c.id))}
               onChange={(e, vals) => setEditSelectedClassroomIds(vals.map(v => v.id))}
               renderInput={(params) => (
                 <TextField {...params} label="Classes (multiple)" placeholder="Select one or more" />

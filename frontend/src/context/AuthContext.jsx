@@ -30,7 +30,24 @@ export const AuthProvider = ({ children }) => {
   const fetchUser = async () => {
     try {
       const response = await api.get('/api/users/me/');
-      setUser(response.data);
+      if (response.data) {
+        // Flatten the structure if it contains nested 'user' and 'profile'
+        // This ensures user.username, user.first_name, etc. work in components
+        const data = response.data;
+        if (data.user && typeof data.user === 'object') {
+          const flattened = {
+            ...data.user,
+            profile: data.profile || {},
+            // Keep role at top level for convenience
+            role: data.profile?.role || data.user.role || (data.user.is_superuser ? 'admin' : 'student')
+          };
+          setUser(flattened);
+        } else {
+          setUser(data);
+        }
+      } else {
+        setUser(null);
+      }
     } catch (error) {
       console.error('Failed to fetch user:', error);
       setUser(null);
@@ -42,9 +59,18 @@ export const AuthProvider = ({ children }) => {
   const login = async (username, password) => {
     try {
       let uname = username;
+      if (typeof uname === 'string') {
+        try {
+          uname = uname.normalize('NFKC').trim();
+        } catch (_) {}
+      }
       try {
-        const digits = String(username || '').replace(/\D/g, '');
-        const isNumericId = !!digits && /^\d+$/.test(digits);
+        const trimmed = String(uname || '').trim();
+        // A numeric ID must be strictly digits and typically 4+ digits for a system ID or a short roll number
+        // We only try to resolve as numeric if there are ONLY digits. Bengali digits are handled as strings.
+        const isNumericId = /^[0-9]+$/.test(trimmed);
+        const digits = isNumericId ? trimmed : '';
+        // If it contains non-digit characters (like Bengali), it's definitely a username, skip numeric resolving
         if (isNumericId) {
           // Try resolve student by roll number within current school first (safer than direct ID fetch which might 404)
           const schoolId = localStorage.getItem('currentSchoolId');

@@ -241,7 +241,7 @@ export default function SubjectCard({
                 </Typography>
                 {assignedTeachers.length > 0 ? (
                   <Stack spacing={1.5}>
-                    {assignedTeachers.map((teacher, index) => (
+                    {(Array.isArray(assignedTeachers) ? assignedTeachers : []).map((teacher, index) => (
                       <Card 
                         key={`${subject.id}-teacher-${teacher.id || teacher.user?.id || index}`} 
                         variant="outlined" 
@@ -445,7 +445,7 @@ export default function SubjectCard({
               helperText="Choose a teacher to assign to this subject"
             >
               <MenuItem value="">-- Select Teacher --</MenuItem>
-              {teachers.map((teacher) => {
+              {(Array.isArray(teachers) ? teachers : []).map((teacher) => {
                 const user = teacher.user || teacher;
                 const name = `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.username;
                 return (
@@ -465,7 +465,7 @@ export default function SubjectCard({
               helperText="Choose the classroom for this assignment"
             >
               <MenuItem value="">-- Select Classroom --</MenuItem>
-              {classrooms.map((classroom) => (
+              {(Array.isArray(classrooms) ? classrooms : []).map((classroom) => (
                 <MenuItem key={classroom.id} value={classroom.id}>
                   {classroom.name}
                 </MenuItem>
@@ -482,7 +482,7 @@ export default function SubjectCard({
               helperText="Choose a section if applicable"
             >
               <MenuItem value="">-- No Section --</MenuItem>
-              {sections.map((section) => (
+              {(Array.isArray(sections) ? sections : []).map((section) => (
                 <MenuItem key={section.id} value={section.id}>
                   {section.name}
                 </MenuItem>

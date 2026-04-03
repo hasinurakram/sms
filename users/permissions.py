@@ -11,7 +11,7 @@ class RolePermission(permissions.BasePermission):
         'super_admin': ['view', 'create', 'change', 'delete'],
         'student': ['view'],
         'parent': ['view'],
-        'teacher': ['view', 'create', 'change', 'delete'],
+        'teacher': ['view'],
         'committee': ['view', 'create', 'change'],
         'admin': ['view', 'change', 'create', 'delete'],
     }
@@ -102,6 +102,11 @@ class SubjectResultWritePermission(permissions.BasePermission):
         role = getattr(profile, 'role', None) if profile else None
         if role in ('admin', 'super_admin'):
             return True
+            
+        # For bulk_results action, we let the view's internal logic handle the per-subject permission check
+        if getattr(view, 'action', None) == 'bulk_results':
+            return True
+
         try:
             from academics.models import TeacherAssignment
             from results.models import Examination, Result
@@ -112,6 +117,8 @@ class SubjectResultWritePermission(permissions.BasePermission):
                 subject_id = request.data.get('subject') or request.data.get('subject_id')
                 exam_id = request.data.get('examination') or request.data.get('examination_id') or view.kwargs.get('pk')
                 if not subject_id or not exam_id:
+                    # If it's a POST to a list (like creating a single result), we need these
+                    # But if it's an action, we might have already handled it
                     return False
                 exam = Examination.objects.filter(id=exam_id).first()
                 if not exam:
@@ -126,9 +133,11 @@ class SubjectResultWritePermission(permissions.BasePermission):
                 subject_id = getattr(target, 'subject_id', None)
                 classroom_id = getattr(getattr(target, 'examination', None), 'classroom_id', None)
                 section_id = getattr(getattr(target, 'examination', None), 'section_id', None)
+            
+            if not subject_id:
+                return False
+
             # Strict subject, but section handling:
-            # - If exam has a section, allow assignments for that section OR assignments with no section (applies to all)
-            # - If exam has no section, allow any assignment in the classroom regardless of assignment section
             from django.db.models import Q
             base = TeacherAssignment.objects.filter(teacher=user, subject_id=subject_id, classroom_id=classroom_id)
             if section_id is not None:
@@ -170,6 +179,8 @@ class TeacherSelfOrAdminChange(permissions.BasePermission):
             return getattr(obj, 'user_id', None) == getattr(user, 'id', None)
         except Exception:
             return False
+
+class TeacherSubjectResultPermission(permissions.BasePermission):
     def has_object_permission(self, request, view, obj):
         if request.method in permissions.SAFE_METHODS:
             return True

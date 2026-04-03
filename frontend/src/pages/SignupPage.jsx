@@ -42,8 +42,14 @@ const SignupPage = () => {
     setSuccess('');
     setSubmitting(true);
     try {
+      let uname = form.username.trim();
+      if (typeof uname === 'string' && uname) {
+        try {
+          uname = uname.normalize('NFKC');
+        } catch (_) {}
+      }
       const payload = {
-        username: form.username.trim(),
+        username: uname,
         email: form.email.trim(),
         first_name: form.first_name.trim(),
         last_name: form.last_name.trim(),

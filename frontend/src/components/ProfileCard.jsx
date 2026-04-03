@@ -72,6 +72,8 @@ export default function ProfileCard({
   const [deleting, setDeleting] = useState(false);
   
   const [formData, setFormData] = useState({
+    username: '',
+    password: '',
     first_name: '',
     last_name: '',
     email: '',
@@ -151,6 +153,8 @@ export default function ProfileCard({
   const handleEdit = () => {
     if (!canAdminEdit) { toast.error(denyMsg); return; }
     setFormData({
+      username: user?.username || '',
+      password: '',
       first_name: user?.first_name || '',
       last_name: user?.last_name || '',
       email: user?.email || '',
@@ -528,6 +532,8 @@ export default function ProfileCard({
     setSaving(true);
     try {
       const fd = new FormData();
+      if (formData.username) fd.append('username', formData.username);
+      if (formData.password) fd.append('password', formData.password);
       fd.append('first_name', formData.first_name || '');
       fd.append('last_name', formData.last_name || '');
       fd.append('email', formData.email || '');
@@ -1009,6 +1015,12 @@ export default function ProfileCard({
             <Box>
               <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 2 }}>👤 Personal Information</Typography>
               <Grid container spacing={2}>
+                <Grid size={{ xs: 12, sm: 6 }}>
+                  <TextField id="edit-username" name="username" label="ইউজার আইডি (Login ID)" value={formData.username} onChange={(e) => setFormData({ ...formData, username: e.target.value })} fullWidth error={!!formErrors.username} helperText={formErrors.username || ''} />
+                </Grid>
+                <Grid size={{ xs: 12, sm: 6 }}>
+                  <TextField id="edit-password" name="password" label="নতুন পাসওয়ার্ড" type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} fullWidth helperText="পরিবর্তন না করতে চাইলে ফাঁকা রাখুন" />
+                </Grid>
                 <Grid size={{ xs: 12, sm: 6 }}>
                   <TextField id="edit-first-name" name="first_name" label="First Name" value={formData.first_name} onChange={(e) => setFormData({ ...formData, first_name: e.target.value })} fullWidth error={!!formErrors.first_name} helperText={formErrors.first_name || ''} />
                 </Grid>

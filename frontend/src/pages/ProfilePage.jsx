@@ -205,7 +205,12 @@ export default function ProfilePage() {
           setLoading(false);
           return;
         }
-        const base = first.toLowerCase().replace(/[^a-z0-9]/g, '');
+        let base = first;
+        try {
+          base = first.normalize('NFKC').toLowerCase().replace(/\s+/g, '');
+        } catch (_) {
+          base = first.toLowerCase().replace(/\s+/g, '');
+        }
         const suffix = String(Math.floor(Math.random() * 900) + 100);
         const username = `${base}${suffix}`;
         const emailCandidate = (formData.email || '').trim() || `${base}.${id || 'school'}@example.com`;
@@ -252,8 +257,14 @@ export default function ProfilePage() {
         toast.success('Profile created successfully!');
       } else {
         // Update existing profile (user fields)
+        let uname = formData.username;
+        if (typeof uname === 'string') {
+          try {
+            uname = uname.normalize('NFKC').trim();
+          } catch (_) {}
+        }
         const userPayload = {
-          username: formData.username,
+          username: uname,
           first_name: formData.first_name,
           last_name: formData.last_name,
           email: formData.email,

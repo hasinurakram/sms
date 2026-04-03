@@ -2,7 +2,8 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     ClassRoomViewSet, SectionViewSet, SubjectViewSet,
-    StudentProfileViewSet, TeacherAssignmentViewSet, SchoolListAPI, ImportStudentsAPI
+    StudentProfileViewSet, TeacherAssignmentViewSet, SchoolListAPI, ImportStudentsAPI,
+    VirtualClassViewSet
 )
 
 router = DefaultRouter()
@@ -11,6 +12,7 @@ router.register('sections', SectionViewSet)
 router.register('subjects', SubjectViewSet)
 router.register('students', StudentProfileViewSet)
 router.register('assignments', TeacherAssignmentViewSet)
+router.register('virtual-classes', VirtualClassViewSet)
 
 urlpatterns = [
     path('schools/', SchoolListAPI.as_view(), name='school-list'),  # ❌ api/ বাদ দিয়ে শুধু schools/

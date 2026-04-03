@@ -1,19 +1,25 @@
-
 import os
+import sys
 import django
+
+# Add the project root to sys.path
+sys.path.append('F:\\Project')
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'backend.settings')
 django.setup()
 
-from academics.models import StudentProfile, ClassRoom, Subject
-from users.models import Profile
-from schools.models import School
+from academics.models import ClassRoom, StudentProfile
+from django.db.models import Q
 
-sid = 16
-s = School.objects.filter(id=sid).first()
-print(f'School: {s}')
-print(f'Students: {StudentProfile.objects.filter(school_id=sid).count()}')
-print(f'Teachers: {Profile.objects.filter(school_id=sid, role="teacher").count()}')
-print(f'Parents: {Profile.objects.filter(school_id=sid, role="parent").count()}')
-print(f'Classes: {ClassRoom.objects.filter(school_id=sid).count()}')
-print(f'Subjects: {Subject.objects.filter(school_id=sid).count()}')
+def check_counts():
+    classes = ClassRoom.objects.filter(Q(name__icontains='ষষ্ঠ') | Q(name__icontains='6'))
+    total = 0
+    for c in classes:
+        all_count = c.students.count()
+        active_count = c.students.filter(user__is_active=True).count()
+        print(f"Class: {c.name} (ID: {c.id}) - Total: {all_count}, Active: {active_count}")
+        total += active_count
+    print(f"Grand Total Active: {total}")
+
+if __name__ == '__main__':
+    check_counts()

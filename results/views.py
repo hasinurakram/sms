@@ -1,7 +1,7 @@
 from rest_framework import viewsets, filters, status, pagination
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from users.permissions import AdminOrReadOnly, RolePermission, SubjectResultWritePermission, IsSchoolMember
+from users.permissions import AdminOrReadOnly, RolePermission, SubjectResultWritePermission, IsSchoolMember, TeacherSubjectResultPermission
 from rest_framework.permissions import IsAuthenticated
 from django.http import HttpResponse
 from .utils import _class_group, get_subject_maxima, SECTION_MAXIMA
@@ -45,9 +45,14 @@ class ExaminationViewSet(viewsets.ModelViewSet):
                 y = int(year)
             except Exception:
                 y = None
-            if y:
+            if y is not None:
+                # Prefer examination.year when available; fallback to exam_date/year in name
                 from django.db.models import Q
-                qs = qs.filter(Q(exam_date__year=y) | (Q(exam_date__isnull=True) & Q(name__icontains=str(y))))
+                qs = qs.filter(
+                    Q(year=y) |
+                    Q(exam_date__year=y) |
+                    (Q(exam_date__isnull=True) & Q(name__icontains=str(y)))
+                )
         return qs
     
     @action(detail=True, methods=['post'], permission_classes=[SubjectResultWritePermission])
@@ -56,7 +61,14 @@ class ExaminationViewSet(viewsets.ModelViewSet):
         examination = self.get_object()
         user = request.user
         prof = getattr(user, 'profile', None)
-        is_admin = bool(getattr(user, 'is_superuser', False) or getattr(user, 'is_staff', False) or (prof and getattr(prof, 'role', None) in ('admin','super_admin')))
+        # Check if user is admin via request flag or actual permissions
+        request_is_admin = request.data.get('is_admin', False)
+        is_admin = bool(
+            getattr(user, 'is_superuser', False) or 
+            getattr(user, 'is_staff', False) or 
+            (prof and getattr(prof, 'role', None) in ('admin','super_admin')) or
+            request_is_admin
+        )
         if not is_admin:
             from academics.models import TeacherAssignment
             from django.db.models import Q
@@ -264,22 +276,43 @@ class ExaminationViewSet(viewsets.ModelViewSet):
         self._calculate_ranks(examination)
     
     def _calculate_ranks(self, examination):
-        """Calculate and assign ranks to all students in an examination"""
-        all_overall = list(StudentOverallResult.objects.filter(examination=examination).select_related('student'))
-        rankable = []
-        for o in all_overall:
-            fail_count = Result.objects.filter(examination=examination, student=o.student, is_passed=False).count()
-            rankable.append((fail_count, float(o.cgpa), float(o.percentage), o))
-        rankable.sort(key=lambda x: (x[0], -x[1], -x[2]))
-        for idx, (_, _, _, o) in enumerate(rankable, start=1):
-            o.rank = idx
-            o.save(update_fields=['rank'])
+        """Calculate and assign ranks to all students in an examination within each section"""
+        from academics.models import Section
+        sections = Section.objects.filter(classroom=examination.classroom)
+        
+        if sections.exists():
+            for section in sections:
+                all_overall = list(StudentOverallResult.objects.filter(
+                    examination=examination,
+                    student__section=section
+                ).select_related('student'))
+                rankable = []
+                for o in all_overall:
+                    fail_count = Result.objects.filter(examination=examination, student=o.student, is_passed=False).count()
+                    rankable.append((fail_count, float(o.cgpa), float(o.percentage), o))
+                rankable.sort(key=lambda x: (x[0], -x[1], -x[2]))
+                for idx, (_, _, _, o) in enumerate(rankable, start=1):
+                    if o.rank != idx:
+                        o.rank = idx
+                        o.save(update_fields=['rank'])
+        else:
+            # Fallback for classes without sections
+            all_overall = list(StudentOverallResult.objects.filter(examination=examination).select_related('student'))
+            rankable = []
+            for o in all_overall:
+                fail_count = Result.objects.filter(examination=examination, student=o.student, is_passed=False).count()
+                rankable.append((fail_count, float(o.cgpa), float(o.percentage), o))
+            rankable.sort(key=lambda x: (x[0], -x[1], -x[2]))
+            for idx, (_, _, _, o) in enumerate(rankable, start=1):
+                if o.rank != idx:
+                    o.rank = idx
+                    o.save(update_fields=['rank'])
 
 
 class ResultViewSet(viewsets.ModelViewSet):
     queryset = Result.objects.select_related('examination', 'student__user', 'subject').all()
     serializer_class = ResultSerializer
-    permission_classes = [IsSchoolMember, IsAuthenticated, SubjectResultWritePermission]
+    permission_classes = [IsSchoolMember, IsAuthenticated, SubjectResultWritePermission, TeacherSubjectResultPermission]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['student__user__first_name', 'student__user__last_name', 'student__roll_number']
     ordering_fields = ['student', 'subject', 'examination']
@@ -402,7 +435,8 @@ class StudentOverallResultViewSet(viewsets.ModelViewSet):
                 y = int(year)
             except Exception:
                 y = None
-            if y:
+            if y is not None:
+                # Prefer examination.year when available; fallback to exam_date/year in name
                 from django.db.models import Q
                 qs = qs.filter(
                     Q(examination__year=y) |
@@ -466,6 +500,7 @@ class StudentOverallResultViewSet(viewsets.ModelViewSet):
         
         exams = exams.filter(
             Q(exam_date__year=year) | 
+            Q(year=year) | 
             (Q(exam_date__isnull=True) & Q(name__icontains=str(year)))
         )
         
@@ -649,7 +684,7 @@ class StudentOverallResultViewSet(viewsets.ModelViewSet):
             except Exception:
                 y = None
             if y:
-                examinations = examinations.filter(Q(exam_date__year=y) | (Q(exam_date__isnull=True) & Q(name__icontains=str(y))))
+                examinations = examinations.filter(Q(exam_date__year=y) | Q(year=y) | (Q(exam_date__isnull=True) & Q(name__icontains=str(y))))
         
         if not examinations.exists():
             return Response(
@@ -657,97 +692,81 @@ class StudentOverallResultViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        # Get all results for this student across all these examinations
-        results = Result.objects.filter(
-            examination__in=examinations,
-            student=student
-        ).select_related('examination', 'subject')
+        # Get all students in this classroom/section for ranking
+        all_students_qs = StudentProfile.objects.filter(classroom_id=classroom_id)
+        if student.section_id:
+            all_students_qs = all_students_qs.filter(section_id=student.section_id)
+        elif section_id and str(section_id).lower() not in ('', 'null', 'none'):
+            all_students_qs = all_students_qs.filter(section_id=section_id)
         
-        if not results.exists():
+        all_students_list = list(all_students_qs)
+        
+        # Optimized: Single query for all results of all students in these examinations
+        all_results = Result.objects.filter(
+            examination__in=examinations,
+            student__in=all_students_list
+        ).select_related('examination', 'examination__classroom', 'subject')
+        
+        # Group results by student
+        results_by_student = {}
+        for r in all_results:
+            sid = r.student_id
+            if sid not in results_by_student:
+                results_by_student[sid] = []
+            results_by_student[sid].append(r)
+        
+        # Process rankings
+        student_rankings = []
+        for s in all_students_list:
+            s_results = results_by_student.get(s.id, [])
+            if not s_results:
+                continue
+            
+            s_total_obtained = sum(float(r.total_obtained) for r in s_results)
+            s_total_possible = 0
+            for r in s_results:
+                tm = None
+                try:
+                    cg = _class_group(getattr(r.examination.classroom, "name", None))
+                    maxima = get_subject_maxima(cg, getattr(r.subject, "name", None))
+                    if maxima:
+                        tm = int(maxima.get("written", 0)) + int(maxima.get("mcq", 0)) + int(maxima.get("practical", 0))
+                except Exception:
+                    tm = None
+                s_total_possible += (tm if tm else r.examination.total_marks)
+            
+            s_avg_gpa = sum(float(r.gpa) for r in s_results) / len(s_results)
+            s_percentage = (s_total_obtained / s_total_possible * 100) if s_total_possible > 0 else 0
+            s_fail = sum(1 for r in s_results if not r.is_passed)
+            
+            student_rankings.append({
+                'student_id': s.id,
+                'cgpa': s_avg_gpa,
+                'percentage': s_percentage,
+                'fail_count': s_fail,
+                'total_obtained': s_total_obtained,
+                'total_possible': s_total_possible,
+                'is_passed': all(r.is_passed for r in s_results)
+            })
+        
+        student_rankings.sort(key=lambda x: (x['fail_count'], -x['cgpa'], -x['percentage']))
+        
+        # Find the specific student's data and rank
+        me = next((sr for sr in student_rankings if sr['student_id'] == student.id), None)
+        if not me:
             return Response(
-                {"detail": "No results found for this student"},
+                {"detail": "No results found for this student in the ranking list"},
                 status=status.HTTP_404_NOT_FOUND
             )
         
-        # Calculate combined totals
-        def _class_group(n):
-            x = (n or "").lower()
-            if "ষষ্ঠ" in x or "six" in x or " 6" in x or x.startswith("6") or "সপ্তম" in x or "seven" in x or " 7" in x or x.startswith("7") or "অষ্টম" in x or "eight" in x or " 8" in x or x.startswith("8"):
-                return "six_to_eight"
-            if "নবম" in x or "nine" in x or " 9" in x or x.startswith("9") or "দশম" in x or "ten" in x or " 10" in x or x.startswith("10"):
-                return "nine_ten"
-            return None
-        SECTION_MAXIMA = {
-            "six_to_eight": {
-                "bangla first paper": {"written": 70, "mcq": 30, "practical": 0},
-                "বাংলা প্রথম পত্র": {"written": 70, "mcq": 30, "practical": 0},
-                "bangla second paper": {"written": 35, "mcq": 15, "practical": 0},
-                "বাংলা দ্বিতীয় পত্র": {"written": 35, "mcq": 15, "practical": 0},
-                "english first paper": {"written": 100, "mcq": 0, "practical": 0},
-                "ইংরেজি প্রথম পত্র": {"written": 100, "mcq": 0, "practical": 0},
-                "english second paper": {"written": 50, "mcq": 0, "practical": 0},
-                "ইংরেজি দ্বিতীয় পত্র": {"written": 50, "mcq": 0, "practical": 0},
-                "mathematics": {"written": 70, "mcq": 30, "practical": 0},
-                "গণিত": {"written": 70, "mcq": 30, "practical": 0},
-                "science": {"written": 70, "mcq": 30, "practical": 0},
-                "বিজ্ঞান": {"written": 70, "mcq": 30, "practical": 0},
-                "বাংলাদেশ ও বিশ্বপরিচয়": {"written": 70, "mcq": 30, "practical": 0},
-                "বাংলাদেশ ও বিশ্বপরিয়": {"written": 70, "mcq": 30, "practical": 0},
-                "ict": {"written": 10, "mcq": 15, "practical": 25},
-                "আইসিটি": {"written": 10, "mcq": 15, "practical": 25},
-                "ধর্ম": {"written": 70, "mcq": 30, "practical": 0},
-                "religion": {"written": 70, "mcq": 30, "practical": 0},
-                "কৃষি": {"written": 50, "mcq": 25, "practical": 25},
-                "agriculture": {"written": 50, "mcq": 25, "practical": 25},
-            },
-            "nine_ten": {
-                "bangla 1+2": {"written": 140, "mcq": 60, "practical": 0},
-                "বাংলা ১+২": {"written": 140, "mcq": 60, "practical": 0},
-                "english 1+2": {"written": 200, "mcq": 0, "practical": 0},
-                "ইংরেজি ১+২": {"written": 200, "mcq": 0, "practical": 0},
-                "mathematics": {"written": 70, "mcq": 30, "practical": 0},
-                "গণিত": {"written": 70, "mcq": 30, "practical": 0},
-                "science": {"written": 70, "mcq": 30, "practical": 0},
-                "বিজ্ঞান": {"written": 70, "mcq": 30, "practical": 0},
-                "বাংলাদেশ ও বিশ্বপরিচয়": {"written": 70, "mcq": 30, "practical": 0},
-                "বাংলাদেশ ও বিশ্বপরিয়": {"written": 70, "mcq": 30, "practical": 0},
-                "ict": {"written": 10, "mcq": 15, "practical": 25},
-                "আইসিটি": {"written": 10, "mcq": 15, "practical": 25},
-                "ধর্ম": {"written": 70, "mcq": 30, "practical": 0},
-                "religion": {"written": 70, "mcq": 30, "practical": 0},
-                "কৃষি": {"written": 50, "mcq": 25, "practical": 25},
-                "agriculture": {"written": 50, "mcq": 25, "practical": 25},
-                "পদার্থ": {"written": 50, "mcq": 25, "practical": 25},
-                "রসায়ন": {"written": 50, "mcq": 25, "practical": 25},
-                "জীববিজ্ঞান": {"written": 50, "mcq": 25, "practical": 25},
-                "উচ্চতর গণিত": {"written": 50, "mcq": 25, "practical": 25},
-                "ইতিহাস": {"written": 70, "mcq": 30, "practical": 0},
-                "ব্যবসায় উদ্যোগ": {"written": 70, "mcq": 30, "practical": 0},
-                "ভূগোল": {"written": 70, "mcq": 30, "practical": 0},
-                "ব্যবসায় শিক্ষা": {"written": 70, "mcq": 30, "practical": 0},
-                "পৌরনীতি": {"written": 70, "mcq": 30, "practical": 0},
-                "ফিন্যান্স": {"written": 70, "mcq": 30, "practical": 0},
-            },
-        }
-        def _subject_total_max(classroom_name, subject_name):
-            g = _class_group(classroom_name)
-            if not g:
-                return None
-            s = (subject_name or "").strip().lower()
-            m = SECTION_MAXIMA.get(g, {}).get(s)
-            if not m:
-                return None
-            return int(m.get("written", 0)) + int(m.get("mcq", 0)) + int(m.get("practical", 0))
-        total_obtained = sum(float(r.total_obtained) for r in results)
-        total_possible = 0
-        for r in results:
-            tm = _subject_total_max(getattr(r.examination.classroom, "name", None), getattr(r.subject, "name", None))
-            total_possible += (tm if tm else r.examination.total_marks)
-        avg_gpa = sum(float(r.gpa) for r in results) / results.count()
-        percentage = (total_obtained / total_possible * 100) if total_possible > 0 else 0
-        is_passed = all(r.is_passed for r in results)
+        rank = None
+        for idx, sr in enumerate(student_rankings, start=1):
+            if sr['student_id'] == student.id:
+                rank = idx
+                break
         
-        # Determine grade based on CGPA
+        # Determine overall grade based on CGPA
+        avg_gpa = me['cgpa']
         if avg_gpa >= 5.0:
             grade = 'A+'
         elif avg_gpa >= 4.0:
@@ -762,63 +781,19 @@ class StudentOverallResultViewSet(viewsets.ModelViewSet):
             grade = 'D'
         else:
             grade = 'F'
-        
-        # Calculate rank by comparing with other students in the same classroom
-        # Get all students in this classroom
-        from academics.models import StudentProfile
-        all_students = StudentProfile.objects.filter(classroom_id=classroom_id)
-        
-        # Enforce section-based ranking:
-        # If the student belongs to a section, rank is calculated ONLY within that section.
-        if student.section_id:
-            all_students = all_students.filter(section_id=student.section_id)
-        elif section_id:
-            all_students = all_students.filter(section_id=section_id)
-        
-        student_results = []
-        for s in all_students:
-            s_results = Result.objects.filter(
-                examination__in=examinations,
-                student=s
-            )
-            if s_results.exists():
-                s_total_obtained = sum(float(r.total_obtained) for r in s_results)
-                s_total_possible = 0
-                for r in s_results:
-                    tm = _subject_total_max(getattr(r.examination.classroom, "name", None), getattr(r.subject, "name", None))
-                    s_total_possible += (tm if tm else r.examination.total_marks)
-                s_avg_gpa = sum(float(r.gpa) for r in s_results) / s_results.count()
-                s_percentage = (s_total_obtained / s_total_possible * 100) if s_total_possible > 0 else 0
-                s_fail = sum(1 for r in s_results if not r.is_passed)
-                
-                student_results.append({
-                    'student_id': s.id,
-                    'cgpa': s_avg_gpa,
-                    'percentage': s_percentage,
-                    'fail_count': s_fail
-                })
-        
-        student_results.sort(key=lambda x: (x['fail_count'], -x['cgpa'], -x['percentage']))
-        
-        # Find rank
-        rank = None
-        for idx, sr in enumerate(student_results, start=1):
-            if sr['student_id'] == student.id:
-                rank = idx
-                break
-        
+
         return Response({
             'student': student.id,
             'exam_type': exam_type,
             'classroom': classroom_id,
-            'total_marks_obtained': round(total_obtained, 2),
-            'total_marks_possible': round(total_possible, 2),
-            'percentage': round(percentage, 2),
-            'cgpa': round(avg_gpa, 2),
+            'total_marks_obtained': round(me['total_obtained'], 2),
+            'total_marks_possible': round(me['total_possible'], 2),
+            'percentage': round(me['percentage'], 2),
+            'cgpa': round(me['cgpa'], 2),
             'grade': grade,
-            'is_passed': is_passed,
+            'is_passed': me['is_passed'],
             'rank': rank,
-            'total_students': len(student_results)
+            'total_students': len(student_rankings)
         })
 
     @action(detail=False, methods=['get'])
@@ -847,7 +822,7 @@ class StudentOverallResultViewSet(viewsets.ModelViewSet):
             except Exception:
                 y = None
             if y:
-                examinations = examinations.filter(Q(exam_date__year=y) | Q(name__icontains=str(y)))
+                examinations = examinations.filter(Q(exam_date__year=y) | Q(year=y) | Q(name__icontains=str(y)))
 
         if not examinations.exists():
             return Response([], status=status.HTTP_200_OK)

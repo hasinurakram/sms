@@ -1,4 +1,4 @@
-from rest_framework import viewsets, filters
+from rest_framework import viewsets, filters, permissions
 from rest_framework.exceptions import ValidationError
 from users.permissions import AdminOrReadOnly, RolePermission, IsSchoolMember
 from rest_framework.decorators import action
@@ -7,16 +7,24 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from django.db import transaction
+from django.utils import timezone
 
 from schools.models import School
-from .models import ClassRoom, Section, Subject, StudentProfile, TeacherAssignment
+from .models import ClassRoom, Section, Subject, StudentProfile, TeacherAssignment, VirtualClass
 from .serializers import (
     SchoolSerializer, ClassRoomSerializer, SectionSerializer,
-    SubjectSerializer, StudentProfileSerializer, TeacherAssignmentSerializer
+    SubjectSerializer, StudentProfileSerializer, TeacherAssignmentSerializer,
+    VirtualClassSerializer
 )
 
 from results.models import Examination, StudentOverallResult
 from django.db.models import Q, Count
+from rest_framework.pagination import PageNumberPagination
+
+class StandardResultsSetPagination(PageNumberPagination):
+    page_size = 100
+    page_size_query_param = 'page_size'
+    max_page_size = 1000
 
 
 class SchoolListAPI(APIView):
@@ -27,14 +35,18 @@ class SchoolListAPI(APIView):
 
 
 class ClassRoomViewSet(viewsets.ModelViewSet):
-    queryset = ClassRoom.objects.select_related('school').prefetch_related('sections', 'students').all()
+    queryset = ClassRoom.objects.select_related('school').prefetch_related('sections').annotate(
+        annotated_student_count=Count('students', distinct=True)
+    ).all()
     serializer_class = ClassRoomSerializer
     permission_classes = [IsSchoolMember, AdminOrReadOnly]
     filter_backends = [filters.SearchFilter]
     search_fields = ['name']
     
     def get_queryset(self):
-        queryset = ClassRoom.objects.select_related('school').prefetch_related('sections', 'students').all()
+        queryset = ClassRoom.objects.select_related('school').prefetch_related('sections').annotate(
+            annotated_student_count=Count('students', distinct=True)
+        ).all()
         school_id = self.request.query_params.get('school')
         if school_id:
             queryset = queryset.filter(school_id=school_id)
@@ -47,15 +59,21 @@ class ClassRoomViewSet(viewsets.ModelViewSet):
         if not school_id:
             return Response({"detail": "school parameter required"}, status=status.HTTP_400_BAD_REQUEST)
         
-        classrooms = ClassRoom.objects.filter(school_id=school_id).prefetch_related('students')
+        classrooms = ClassRoom.objects.filter(school_id=school_id).annotate(
+            student_count_annotated=Count('students', distinct=True)
+        )
+        
+        # Get school-wide subject count once
+        subject_count = Subject.objects.filter(school_id=school_id).count()
+        
         data = []
         for classroom in classrooms:
             data.append({
                 'id': classroom.id,
                 'name': classroom.name,
                 'description': classroom.description,
-                'student_count': classroom.students.count(),
-                'subject_count': Subject.objects.filter(school_id=school_id).count()  # subjects are school-wide
+                'student_count': getattr(classroom, 'student_count_annotated', 0),
+                'subject_count': subject_count
             })
         return Response(data)
     
@@ -158,7 +176,9 @@ class SubjectViewSet(viewsets.ModelViewSet):
     search_fields = ['name','code']
     
     def get_queryset(self):
-        queryset = Subject.objects.select_related('school').prefetch_related('classrooms').all()
+        queryset = Subject.objects.select_related('school').prefetch_related(
+            'classrooms', 'sections', 'assignments__teacher'
+        ).all()
         school_id = self.request.query_params.get('school')
         classroom_id = self.request.query_params.get('classroom')
         if school_id:
@@ -295,6 +315,7 @@ class StudentProfileViewSet(viewsets.ModelViewSet):
     serializer_class = StudentProfileSerializer
     permission_classes = [IsSchoolMember, RolePermission]
     filter_backends = [filters.SearchFilter]
+    pagination_class = StandardResultsSetPagination
     search_fields = [
         'user__username',
         'user__first_name',
@@ -1555,5 +1576,49 @@ class ImportStudentsAPI(APIView):
             if changed:
                 sp.save()
             return 0, 1
-
         return 1, 0
+
+class VirtualClassViewSet(viewsets.ModelViewSet):
+    queryset = VirtualClass.objects.all()
+    serializer_class = VirtualClassSerializer
+    permission_classes = [IsSchoolMember, permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        school_id = self.request.query_params.get('school')
+        if school_id:
+            qs = qs.filter(school_id=school_id)
+        
+        # Filter for active classes if requested
+        if self.request.query_params.get('active') == 'true':
+            qs = qs.filter(is_active=True)
+            
+        # If student role, filter by their class/section
+        user = self.request.user
+        profile = getattr(user, 'profile', None)
+        if profile and profile.role == 'student':
+            student_profile = getattr(user, 'student_profile', None)
+            if student_profile:
+                qs = qs.filter(classroom=student_profile.classroom)
+                if student_profile.section:
+                    qs = qs.filter(Q(section=student_profile.section) | Q(section__isnull=True))
+            
+        return qs.order_by('-started_at')
+
+    def perform_create(self, serializer):
+        import uuid
+        # Generate a unique meeting ID for Jitsi
+        meeting_id = f"sms-{uuid.uuid4().hex[:12]}"
+        serializer.save(teacher=self.request.user, meeting_id=meeting_id, is_active=True)
+
+    @action(detail=True, methods=['post'])
+    def end_class(self, request, pk=None):
+        vclass = self.get_object()
+        # Only the teacher who started it or an admin can end it
+        if vclass.teacher != request.user and not request.user.is_staff:
+            return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
+            
+        vclass.is_active = False
+        vclass.ended_at = timezone.now()
+        vclass.save()
+        return Response({'status': 'class ended'})

@@ -68,6 +68,11 @@ class StudentProfile(models.Model):
         ('O+', 'O+'),
         ('O-', 'O-'),
     ], blank=True, null=True)
+    gender = models.CharField(max_length=10, choices=[
+        ('male', 'Male'),
+        ('female', 'Female'),
+        ('other', 'Other'),
+    ], blank=True, null=True)
     # Parent linkage
     guardian_name = models.CharField(max_length=255, blank=True, null=True)
     guardian = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='children')
@@ -136,3 +141,17 @@ class StudentYearRecord(models.Model):
         except:
             nm = str(self.student_id)
         return f"{nm} - {self.academic_year} ({self.status})"
+
+class VirtualClass(models.Model):
+    school = models.ForeignKey(School, on_delete=models.CASCADE, related_name='virtual_classes')
+    teacher = models.ForeignKey(User, on_delete=models.CASCADE, related_name='virtual_classes')
+    classroom = models.ForeignKey(ClassRoom, on_delete=models.CASCADE, related_name='virtual_classes')
+    section = models.ForeignKey(Section, on_delete=models.SET_NULL, null=True, blank=True, related_name='virtual_classes')
+    subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name='virtual_classes')
+    meeting_id = models.CharField(max_length=100, unique=True)
+    is_active = models.BooleanField(default=True)
+    started_at = models.DateTimeField(auto_now_add=True)
+    ended_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.subject.name} - {self.teacher}"

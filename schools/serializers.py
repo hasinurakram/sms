@@ -42,6 +42,12 @@ class AdvertisementSerializer(serializers.ModelSerializer):
                 url = getattr(obj.media, 'url', None) or str(obj.media)
                 if request:
                     return request.build_absolute_uri(url)
+                
+                # Fallback to SITE_BASE_URL if available
+                from django.conf import settings
+                base = getattr(settings, 'SITE_BASE_URL', '').rstrip('/')
+                if base:
+                    return f"{base}{url if url.startswith('/') else '/' + url}"
                 return url
         except Exception:
             pass

@@ -24,6 +24,9 @@ export const AcademicsProvider = ({ children }) => {
   const refreshClassrooms = useCallback(async (schoolId = currentSchoolId) => {
     if (!schoolId) return;
     
+    // CACHE: If data exists for current school, don't refetch
+    if (classrooms.length > 0 && currentSchoolId === schoolId) return classrooms;
+
     try {
       const response = await scopedGet('/api/academics/classrooms/', schoolId, {}, { timeout: 30000 });
       const data = Array.isArray(response.data) ? response.data : response.data.results || [];
@@ -33,12 +36,15 @@ export const AcademicsProvider = ({ children }) => {
       console.error('Error fetching classrooms:', error);
       throw error;
     }
-  }, [currentSchoolId]);
+  }, [currentSchoolId, classrooms.length]);
 
   // Fetch sections
   const refreshSections = useCallback(async (schoolId = currentSchoolId) => {
     if (!schoolId) return;
     
+    // CACHE: If data exists for current school, don't refetch
+    if (sections.length > 0 && currentSchoolId === schoolId) return sections;
+
     try {
       const response = await scopedGet('/api/academics/sections/', schoolId, {}, { timeout: 15000 });
       const data = Array.isArray(response.data) ? response.data : response.data.results || [];
@@ -48,11 +54,15 @@ export const AcademicsProvider = ({ children }) => {
       console.error('Error fetching sections:', error);
       throw error;
     }
-  }, [currentSchoolId]);
+  }, [currentSchoolId, sections.length]);
 
   // Fetch students
   const refreshStudents = useCallback(async (schoolId = currentSchoolId) => {
     if (!schoolId) return;
+
+    // CACHE: If data exists for current school, don't refetch
+    if (students.length > 0 && currentSchoolId === schoolId) return students;
+
     let attempts = 0;
     const maxAttempts = 3;
     while (attempts < maxAttempts) {
@@ -116,6 +126,7 @@ export const AcademicsProvider = ({ children }) => {
           sorted = dataAll;
         }
         setStudents(sorted);
+        setCurrentSchoolId(schoolId); // Update school ID on success
         return sorted;
       } catch (error) {
         attempts++;
@@ -124,7 +135,7 @@ export const AcademicsProvider = ({ children }) => {
         await new Promise(resolve => setTimeout(resolve, attempts * 1000));
       }
     }
-  }, [currentSchoolId]);
+  }, [currentSchoolId, students.length]);
 
   const fetchStudentsScoped = useCallback(async (schoolId = currentSchoolId, filters = {}) => {
     if (!schoolId) return [];
@@ -183,8 +194,11 @@ export const AcademicsProvider = ({ children }) => {
   const refreshSubjects = useCallback(async (schoolId = currentSchoolId) => {
     if (!schoolId) return;
     
+    // CACHE: If data exists for current school, don't refetch
+    if (subjects.length > 0 && currentSchoolId === schoolId) return subjects;
+
     try {
-      const response = await scopedGet('/api/academics/subjects/', schoolId, {}, { timeout: 15000 });
+      const response = await scopedGet('/api/academics/subjects/', schoolId, {}, { timeout: 60000 });
       const data = Array.isArray(response.data) ? response.data : response.data.results || [];
       setSubjects(data);
       return data;
@@ -192,7 +206,7 @@ export const AcademicsProvider = ({ children }) => {
       console.error('Error fetching subjects:', error);
       throw error;
     }
-  }, [currentSchoolId]);
+  }, [currentSchoolId, subjects.length]);
 
   // Refresh all academic data
   const refreshAll = useCallback(async (schoolId) => {
@@ -228,6 +242,18 @@ export const AcademicsProvider = ({ children }) => {
     setCurrentSchoolId(null);
   }, []);
 
+  const updateStudentInContext = (updatedStudent) => {
+    setStudents(prevStudents => {
+      const index = prevStudents.findIndex(s => s.id === updatedStudent.id);
+      if (index !== -1) {
+        const newStudents = [...prevStudents];
+        newStudents[index] = { ...newStudents[index], ...updatedStudent };
+        return newStudents;
+      }
+      return [...prevStudents, updatedStudent]; // Or handle as a new student
+    });
+  };
+
   const value = {
     // Data
     classrooms,
@@ -245,6 +271,7 @@ export const AcademicsProvider = ({ children }) => {
     refreshAll,
     clearData,
     fetchStudentsScoped,
+    updateStudentInContext, // Expose the new function
     
     // Setters (for external updates)
     setClassrooms,
